@@ -37,7 +37,7 @@ export default function RelatedLinks({
   const detailColor = slate ? "text-slate-600" : "text-brand-900/65";
 
   return (
-    <section className={`relative ${slate ? "bg-[#f7f8fb]" : "bg-white"} px-4 py-14 sm:px-6 lg:px-8 lg:py-16`}>
+    <section className={`marketing-section relative ${slate ? "bg-[#f7f8fb]" : "bg-white"} px-4 py-14 sm:px-6 lg:px-8 lg:py-16`}>
       <div className="mx-auto max-w-7xl">
         <nav aria-label={heading}>
           {eyebrow ? (
@@ -53,7 +53,7 @@ export default function RelatedLinks({
               <li key={link.href}>
                 <Link
                   href={link.href}
-                  className={`group flex h-full flex-col rounded-xl border ${border} bg-white px-4 py-4 shadow-sm shadow-brand-900/5 transition hover:-translate-y-0.5 ${hoverBorder} hover:bg-brand-50`}
+                  className={`marketing-card group flex h-full flex-col rounded-xl border ${border} bg-white px-4 py-4 shadow-sm shadow-brand-900/5 transition hover:-translate-y-0.5 ${hoverBorder} hover:bg-brand-50`}
                 >
                   <span className={`flex items-center justify-between gap-2 text-sm font-black ${labelColor} group-hover:text-brand`}>
                     {link.label}

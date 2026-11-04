@@ -114,13 +114,13 @@ export default function CentrePage({ config }: { config: CentreConfig }) {
   ];
 
   return (
-    <main className="landing-compact min-h-screen bg-white text-brand-900">
+    <main className="marketing-site min-h-screen bg-white text-brand-900">
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(schema) }} />
 
       <MarketingHeader demoHref={contactHref} ctaLabel="Contact Us" />
 
       {/* ------------------------------------------------------------- hero */}
-      <section className="relative isolate overflow-hidden bg-[#f5edf8] text-brand-900">
+      <section className="marketing-hero relative isolate overflow-hidden bg-[#f5edf8] text-brand-900">
         <div className="absolute inset-0 bg-[linear-gradient(118deg,#ffffff_0%,#f5edf8_52%,#e8d4f0_100%)]" />
         <div className="absolute inset-0 opacity-[0.6] [background-image:linear-gradient(rgba(90,19,114,0.05)_1px,transparent_1px),linear-gradient(90deg,rgba(90,19,114,0.05)_1px,transparent_1px)] [background-size:64px_64px]" />
         <div className="absolute inset-x-0 bottom-0 h-28 bg-gradient-to-t from-white to-transparent" />
@@ -150,7 +150,7 @@ export default function CentrePage({ config }: { config: CentreConfig }) {
           </div>
 
           {/* The card a local searcher actually came for: where, when, who. */}
-          <aside className="rounded-2xl border border-brand/10 bg-white p-5 shadow-xl shadow-brand-900/10 sm:p-6">
+          <aside className="centre-details rounded-2xl border border-brand/10 bg-white p-5 shadow-xl shadow-brand-900/10 sm:p-6">
             <h2 className="text-sm font-black uppercase tracking-[0.14em] text-brand-900/70">Centre details</h2>
             <dl className="mt-4 grid gap-4">
               <div className="flex gap-3">
@@ -194,13 +194,13 @@ export default function CentrePage({ config }: { config: CentreConfig }) {
       </section>
 
       {/* ------------------------------------------------------------ facts */}
-      <section className="relative bg-white py-10">
+      <section className="marketing-facts relative bg-white py-10">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
             {facts.map((fact) => {
               const Icon = fact.icon;
               return (
-                <div key={fact.label} className="group rounded-2xl border border-brand/10 bg-white p-5 shadow-lg shadow-brand-900/5 transition duration-300 hover:-translate-y-1 hover:border-brand/30 hover:shadow-xl hover:shadow-brand-900/10">
+                <div key={fact.label} className="marketing-card group rounded-2xl border border-brand/10 bg-white p-5 shadow-lg shadow-brand-900/5 transition duration-300 hover:-translate-y-1 hover:border-brand/30 hover:shadow-xl hover:shadow-brand-900/10">
                   <span className="grid h-11 w-11 place-items-center rounded-xl bg-brand text-accent shadow-sm shadow-brand-900/20 transition-transform duration-300 group-hover:-rotate-6 group-hover:scale-110">
                     <Icon size={20} />
                   </span>
@@ -214,7 +214,7 @@ export default function CentrePage({ config }: { config: CentreConfig }) {
       </section>
 
       {/* ------------------------------------------------- timings and map */}
-      <section id="timings" className="relative overflow-hidden bg-white py-16 text-brand-900 lg:py-24">
+      <section id="timings" className="marketing-section relative overflow-hidden bg-white py-16 text-brand-900 lg:py-24">
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_12%_14%,rgba(253,231,90,0.4),transparent_30%),linear-gradient(180deg,#ffffff_0%,#f5edf8_100%)]" />
         <div className="absolute inset-0 opacity-[0.55] [background-image:linear-gradient(rgba(90,19,114,0.05)_1px,transparent_1px),linear-gradient(90deg,rgba(90,19,114,0.05)_1px,transparent_1px)] [background-size:84px_84px]" />
         <div className="relative mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
@@ -232,7 +232,7 @@ export default function CentrePage({ config }: { config: CentreConfig }) {
           <div className="grid gap-6 lg:grid-cols-[1.1fr_0.9fr]">
             <div className="grid gap-3 sm:grid-cols-2">
               {config.schedule.map((entry) => (
-                <article key={entry.day} className="rounded-2xl border border-brand/10 bg-white p-5 shadow-lg shadow-brand-900/5 transition duration-300 hover:-translate-y-1 hover:border-brand/30">
+                <article key={entry.day} className="marketing-card rounded-2xl border border-brand/10 bg-white p-5 shadow-lg shadow-brand-900/5 transition duration-300 hover:-translate-y-1 hover:border-brand/30">
                   <h3 className="text-sm font-black uppercase tracking-[0.12em] text-brand">{entry.day}</h3>
                   <ul className="mt-3 divide-y divide-brand/10">
                     {entry.slots.map((slot) => (
@@ -273,10 +273,10 @@ export default function CentrePage({ config }: { config: CentreConfig }) {
       </section>
 
       {/* ------------------------------------------- coach and programmes */}
-      <section className="relative overflow-hidden bg-[#f5edf8] py-16 text-brand-900 lg:py-24">
+      <section className="marketing-section relative overflow-hidden bg-[#f5edf8] py-16 text-brand-900 lg:py-24">
         <div className="absolute inset-0 bg-[linear-gradient(180deg,#f5edf8_0%,#ffffff_100%)]" />
         <div className="relative mx-auto grid max-w-7xl gap-6 px-4 sm:px-6 lg:grid-cols-2 lg:px-8">
-          <article className="rounded-2xl border border-brand/10 bg-white p-6 shadow-lg shadow-brand-900/5">
+          <article className="marketing-card rounded-2xl border border-brand/10 bg-white p-6 shadow-lg shadow-brand-900/5">
             <p className="inline-flex rounded-full bg-brand px-3.5 py-1.5 text-xs font-black uppercase tracking-[0.16em] text-white shadow-sm shadow-brand-900/20">The Coach</p>
             <h2 className="mt-4 text-xl font-black text-brand-900 sm:text-2xl">Who teaches at {config.name}</h2>
             <p className="mt-2 text-sm font-black text-brand">{config.coachName}</p>
@@ -288,7 +288,7 @@ export default function CentrePage({ config }: { config: CentreConfig }) {
             </p>
           </article>
 
-          <article className="rounded-2xl border border-brand/10 bg-white p-6 shadow-lg shadow-brand-900/5">
+          <article className="marketing-card rounded-2xl border border-brand/10 bg-white p-6 shadow-lg shadow-brand-900/5">
             <p className="inline-flex rounded-full bg-brand px-3.5 py-1.5 text-xs font-black uppercase tracking-[0.16em] text-white shadow-sm shadow-brand-900/20">Programmes</p>
             <h2 className="mt-4 text-xl font-black text-brand-900 sm:text-2xl">What runs at this centre</h2>
             <ul className="mt-4 grid gap-2.5">
@@ -310,7 +310,7 @@ export default function CentrePage({ config }: { config: CentreConfig }) {
       </section>
 
       {/* ------------------------------------------------- the same ladder */}
-      <section className="relative overflow-hidden bg-white py-16 text-brand-900 lg:py-24">
+      <section className="marketing-section relative overflow-hidden bg-white py-16 text-brand-900 lg:py-24">
         <div className="absolute inset-0 bg-[linear-gradient(180deg,#ffffff_0%,#f5edf8_100%)]" />
         <div className="relative mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
           <div className="mb-8 max-w-3xl">
@@ -359,7 +359,7 @@ export default function CentrePage({ config }: { config: CentreConfig }) {
       />
 
       {/* -------------------------------------------------------------- FAQ */}
-      <section className="relative overflow-hidden bg-[#f5edf8] py-16 text-brand-900 lg:py-24">
+      <section className="marketing-section relative overflow-hidden bg-[#f5edf8] py-16 text-brand-900 lg:py-24">
         <div className="absolute inset-0 bg-[linear-gradient(180deg,#f5edf8_0%,#ffffff_100%)]" />
         <div className="relative mx-auto max-w-4xl px-4 sm:px-6 lg:px-8">
           <p className="inline-flex rounded-full bg-brand px-3.5 py-1.5 text-xs font-black uppercase tracking-[0.16em] text-white shadow-sm shadow-brand-900/20">Questions</p>
@@ -383,7 +383,7 @@ export default function CentrePage({ config }: { config: CentreConfig }) {
       </section>
 
       {/* --------------------------------------------------- other centres */}
-      <section className="relative bg-white py-16 text-brand-900 lg:py-20">
+      <section className="marketing-section relative bg-white py-16 text-brand-900 lg:py-20">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
           <nav aria-label="Other Kolkata chess centres">
             <h2 className="text-sm font-black uppercase tracking-[0.14em] text-brand-900/70">Our other chess academy centres in Kolkata</h2>
@@ -419,7 +419,7 @@ export default function CentrePage({ config }: { config: CentreConfig }) {
       </section>
 
       {/* ---------------------------------------------------------- last CTA */}
-      <section className="relative overflow-hidden bg-white px-4 pb-16 text-brand-900 sm:px-6 lg:px-8 lg:pb-24">
+      <section className="marketing-cta marketing-section relative overflow-hidden bg-white px-4 pb-16 text-brand-900 sm:px-6 lg:px-8 lg:pb-24">
         <div className="relative mx-auto max-w-7xl rounded-2xl border border-brand/10 bg-white p-6 shadow-lg shadow-brand-900/5 sm:p-8 lg:flex lg:items-center lg:justify-between lg:gap-8">
           <div>
             <p className="inline-flex rounded-full bg-accent px-3.5 py-1.5 text-xs font-black uppercase tracking-[0.16em] text-brand-900 shadow-sm shadow-accent-600/30">Talk to us</p>

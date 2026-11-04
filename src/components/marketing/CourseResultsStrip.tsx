@@ -29,7 +29,7 @@ export default function CourseResultsStrip({
   if (!featured.length) return null;
 
   return (
-    <section className="relative overflow-hidden bg-white py-14 text-brand-900 lg:py-20">
+    <section className="marketing-section relative overflow-hidden bg-white py-14 text-brand-900 lg:py-20">
       <div className="absolute inset-0 bg-[linear-gradient(180deg,#f5edf8_0%,#ffffff_100%)]" />
       <div className="absolute inset-0 opacity-[0.5] [background-image:linear-gradient(115deg,rgba(90,19,114,0.06)_1px,transparent_1px)] [background-size:74px_74px]" />
       <div className="relative mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
@@ -50,7 +50,7 @@ export default function CourseResultsStrip({
           {featured.map((item) => (
             <article
               key={`${item.studentName}-${item.displayOrder}`}
-              className="group relative rounded-xl border border-brand/10 bg-white p-2 shadow-lg shadow-brand-900/5 transition duration-300 hover:-translate-y-0.5 hover:border-brand/30 hover:bg-brand-50"
+              className="marketing-card group relative rounded-xl border border-brand/10 bg-white p-2 shadow-lg shadow-brand-900/5 transition duration-300 hover:-translate-y-0.5 hover:border-brand/30 hover:bg-brand-50"
             >
               <figure className="m-0">
                 <div className="relative aspect-[1.08] overflow-hidden rounded-xl bg-brand-50 shadow-inner shadow-brand-900/10">

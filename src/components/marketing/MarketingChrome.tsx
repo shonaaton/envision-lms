@@ -1,3 +1,4 @@
+import MarketingExperience from "./MarketingExperience";
 import Image from "next/image";
 import Link from "next/link";
 import { ChevronDown, Mail, MapPin, Menu, Phone } from "lucide-react";
@@ -45,15 +46,14 @@ export const siteNav: NavEntry[] = [
 /**
  * The courses dropdown, the same on every page.
  *
- * The trigger is the sitewide internal link into the hub, so it spells out
- * "Online Chess Coaching Courses" - the phrase that page targets - rather than
- * spending the anchor text on the word "Courses".
+ * A short label keeps the desktop navigation readable at smaller widths;
+ * the hub and its five course links remain available in the dropdown.
  */
 function CoursesMenu() {
   return (
     <div className="group relative">
       <Link href={hubHref} className="inline-flex items-center gap-1 whitespace-nowrap text-sm font-semibold text-white/80 hover:text-accent">
-        Online Chess Coaching Courses <ChevronDown size={14} className="shrink-0 transition-transform duration-200 group-hover:rotate-180" />
+        Online Classes <ChevronDown size={14} className="shrink-0 transition-transform duration-200 group-hover:rotate-180" />
       </Link>
       {/* Hover-opened so it works without client JavaScript; the hub link above
           is the keyboard and touch path into the same content. */}
@@ -77,15 +77,13 @@ function CoursesMenu() {
  * The Kolkata centres dropdown, the offline counterpart to `CoursesMenu`,
  * likewise the same on every page.
  *
- * The trigger is the sitewide internal link into the city hub, so it spells out
- * "Chess Academy in Kolkata" - the phrase that page targets - and the children
- * spell out the localities theirs do.
+ * The trigger opens the Kolkata hub; the children name each locality.
  */
 function CentresMenu() {
   return (
     <div className="group relative">
       <Link href={centreHubHref} className="inline-flex items-center gap-1 whitespace-nowrap text-sm font-semibold text-white/80 hover:text-accent">
-        {centreHub.navLabel} <ChevronDown size={14} className="shrink-0 transition-transform duration-200 group-hover:rotate-180" />
+        Kolkata Centres <ChevronDown size={14} className="shrink-0 transition-transform duration-200 group-hover:rotate-180" />
       </Link>
       <div className="invisible absolute left-0 top-full z-50 w-[min(80vw,300px)] translate-y-1 pt-3 opacity-0 transition duration-200 group-hover:visible group-hover:translate-y-0 group-hover:opacity-100 group-focus-within:visible group-focus-within:translate-y-0 group-focus-within:opacity-100">
         <div className="overflow-hidden rounded-xl border border-brand/10 bg-white p-2 shadow-xl shadow-brand-900/15">
@@ -130,7 +128,7 @@ const centreChildren: NavItem[] = kolkataCentres.map((centre) => [centre.name, c
  */
 export function MarketingHeader({ demoHref, ctaLabel = "Book Free Demo Class" }: { demoHref: string; ctaLabel?: string }) {
   return (
-    <header className="sticky top-0 z-50 border-b border-brand-700 bg-brand/95 text-white backdrop-blur-xl">
+    <header className="marketing-header sticky top-0 z-50 border-b border-brand-700 bg-brand/95 text-white backdrop-blur-xl">
       <div className="mx-auto flex max-w-7xl items-center justify-between gap-3 px-4 py-3 sm:px-6 lg:px-8">
         {/* The logo artwork is yellow-on-transparent, so it sits directly on the brand purple bar. */}
         <Link href="/" className="flex shrink-0 items-center" aria-label="Envision Chess Academy home">
@@ -168,7 +166,7 @@ export function MarketingHeader({ demoHref, ctaLabel = "Book Free Demo Class" }:
           </Link>
         </div>
         <details className="relative xl:hidden">
-          <summary className="grid h-11 w-11 cursor-pointer list-none place-items-center rounded-lg border border-white/30 bg-white/10 text-accent">
+          <summary aria-label="Open navigation menu" className="grid h-11 w-11 cursor-pointer list-none place-items-center rounded-lg border border-white/30 bg-white/10 text-accent">
             <Menu size={20} />
           </summary>
           <div className="absolute right-0 mt-3 max-h-[70vh] w-[min(88vw,340px)] overflow-y-auto rounded-xl border border-brand-700 bg-brand-900 p-3 shadow-lg shadow-brand-900/30">
@@ -199,6 +197,7 @@ export function MarketingHeader({ demoHref, ctaLabel = "Book Free Demo Class" }:
           </div>
         </details>
       </div>
+      <MarketingExperience />
     </header>
   );
 }
@@ -257,7 +256,7 @@ export function MarketingFooter() {
       exactly as it does in the header - the dark box it used to need only
       existed because the old footer was light.
     */
-    <footer className="border-t border-brand-700 bg-brand text-white">
+    <footer className="marketing-footer border-t border-brand-700 bg-brand text-white">
       <div className="mx-auto max-w-7xl px-4 py-12 sm:px-6 lg:px-8 lg:py-16">
         <div className="grid gap-10 lg:grid-cols-[1.35fr_1fr_1.25fr_1fr]">
           {/* ---------------------------------------------------------- brand */}

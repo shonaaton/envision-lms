@@ -70,7 +70,7 @@ export default function AnimatedImpactCounters({
   }, [counters, started]);
 
   return (
-    <section ref={ref} className="relative z-10 bg-brand-50 px-4 pb-10 pt-8 sm:px-6 lg:px-8">
+    <section ref={ref} className="impact-section relative z-10 bg-brand-50 px-4 pb-10 pt-8 sm:px-6 lg:px-8">
       {heading ? (
         <div className="mx-auto mb-6 max-w-7xl">
           <h2 className="text-2xl font-black leading-tight text-brand-900 sm:text-3xl">{heading}</h2>

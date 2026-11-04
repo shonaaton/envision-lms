@@ -1,92 +1,76 @@
-import Image from "next/image";
-import { ExternalLink } from "lucide-react";
-import { academyCoaches, COACH_RATINGS_AS_OF, fideProfileUrl, type AcademyCoach } from "@/lib/academyCoaches";
+"use client";
 
-const ratingRows: { key: "standard" | "rapid" | "blitz"; label: string }[] = [
+import { useState } from "react";
+import Image from "next/image";
+import { ArrowUpRight, BadgeCheck, Crown } from "lucide-react";
+import { academyCoaches, COACH_RATINGS_AS_OF, fideProfileUrl } from "@/lib/academyCoaches";
+
+const ratingRows = [
   { key: "standard", label: "Classical" },
   { key: "rapid", label: "Rapid" },
   { key: "blitz", label: "Blitz" },
-];
+] as const;
 
-function CoachCard({ coach }: { coach: AcademyCoach }) {
-  return (
-    <li className="flex flex-col rounded-2xl border border-brand/10 bg-white p-5 shadow-sm shadow-brand-900/5">
-      <div className="flex items-center gap-4">
-        <span className="relative h-20 w-20 shrink-0 overflow-hidden rounded-full bg-brand-50 ring-2 ring-accent/70">
-          <Image src={coach.photo} alt={`${coach.name}, chess coach at Envision Chess Academy`} fill sizes="80px" className="object-cover" />
-        </span>
-        <div className="min-w-0">
-          <h3 className="text-base font-black leading-tight text-brand-900">{coach.name}</h3>
-          <ul className="mt-2 flex flex-wrap gap-1.5">
-            {coach.designations.map((designation, index) => (
-              <li
-                key={designation}
-                className={
-                  index === 0
-                    ? "rounded-full bg-brand px-2.5 py-0.5 text-[10.5px] font-extrabold uppercase tracking-[0.06em] text-white"
-                    : "rounded-full border border-brand/20 bg-brand-50 px-2.5 py-0.5 text-[10.5px] font-extrabold uppercase tracking-[0.06em] text-brand"
-                }
-              >
-                {designation}
-              </li>
-            ))}
-          </ul>
-        </div>
-      </div>
-      <dl className="mt-4 grid grid-cols-3 divide-x divide-brand/10 rounded-xl border border-brand/10 bg-brand-50/60 text-center">
-        {ratingRows.map(({ key, label }) => (
-          <div key={key} className="px-2 py-2">
-            <dt className="text-[10px] font-bold uppercase tracking-[0.08em] text-brand-900/50">{label}</dt>
-            <dd className="mt-0.5 text-base font-black text-brand-900">{coach[key] ?? "-"}</dd>
-          </div>
-        ))}
-      </dl>
-      <a
-        href={fideProfileUrl(coach.fideId)}
-        target="_blank"
-        rel="noopener noreferrer"
-        className="mt-3 inline-flex items-center gap-1 self-start text-xs font-bold text-brand hover:underline"
-      >
-        FIDE ID {coach.fideId} <ExternalLink size={12} aria-hidden />
-        <span className="sr-only">(opens the FIDE ratings profile)</span>
-      </a>
-    </li>
-  );
-}
+const isInstructor = (coach: (typeof academyCoaches)[number]) => coach.designations.some((title) => /^(FIDE|National) Instructor$/.test(title));
+const instructors = academyCoaches.filter(isInstructor);
 
-/**
- * "Meet our coaches": the academy's coaching team with their FIDE trainer
- * titles and ratings, each linked to the public FIDE profile so the numbers
- * can be checked. Shared by the homepage, the centre and city pages, the
- * course pages and the online-class hubs; callers may override the copy.
- */
 export default function CoachesSection({
-  heading = "Learn from FIDE-certified, FIDE-rated coaches.",
-  intro = "Our coaching team is led by FIDE and National Instructors, and every coach below holds an official FIDE rating. Each card links to that coach's profile on FIDE's own ratings site.",
-  className = "bg-white",
+  heading = "Good moves start with great mentors.",
+  intro = "Learn with FIDE and National Instructors, backed by a team of rated players. Real experience at the board. Personal guidance at every step.",
+  className = "",
 }: {
   heading?: string;
   intro?: string;
   className?: string;
 }) {
+  const [instructorsOnly, setInstructorsOnly] = useState(false);
+  const coaches = instructorsOnly ? instructors : academyCoaches;
+
   return (
-    <section id="coaches" aria-labelledby="coaches-heading" className={`relative overflow-hidden py-16 text-brand-900 lg:py-20 ${className}`}>
+    <section id="coaches" aria-labelledby="coaches-heading" className={`coach-section ${className}`}>
+      <div className="coach-section__pattern" aria-hidden="true" />
       <div className="relative mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-        <div className="mb-8 max-w-3xl">
-          <p className="inline-flex rounded-full bg-brand px-3.5 py-1.5 text-xs font-black uppercase tracking-[0.16em] text-white shadow-sm shadow-brand-900/20">
-            Our Coaches
-          </p>
-          <h2 id="coaches-heading" className="mt-4 text-2xl font-black leading-tight text-brand-900 sm:text-3xl">
-            {heading}
-          </h2>
-          <p className="mt-3 text-sm leading-7 text-brand-900/70">{intro}</p>
+        <div className="coach-section__heading">
+          <div className="max-w-2xl">
+            <p className="marketing-eyebrow"><span /> The people behind your progress</p>
+            <h2 id="coaches-heading">{heading}</h2>
+            <p className="coach-section__intro">{intro}</p>
+          </div>
+          <div className="coach-section__seal"><BadgeCheck size={25} aria-hidden="true" /><span>Every coach.<br /><strong>Officially FIDE-rated.</strong></span></div>
         </div>
-        <ul className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {academyCoaches.map((coach) => (
-            <CoachCard key={coach.fideId} coach={coach} />
+        <div className="coach-section__toolbar">
+          <div className="coach-filters" role="group" aria-label="Filter coaching team">
+            <button type="button" aria-pressed={!instructorsOnly} onClick={() => setInstructorsOnly(false)}>Entire team <span>{academyCoaches.length}</span></button>
+            <button type="button" aria-pressed={instructorsOnly} onClick={() => setInstructorsOnly(true)}>Certified instructors <span>{instructors.length}</span></button>
+          </div>
+          <p className="coach-section__hint" role="status">{coaches.length} coaches · Explore their FIDE profiles</p>
+        </div>
+        <ul className="coach-grid">
+          {coaches.map((coach) => (
+            <li key={coach.fideId} className="coach-card">
+              <div className="coach-card__identity">
+                <div className="coach-card__portrait">
+                  <Image src={coach.photo} alt={`${coach.name}, chess coach at Envision Chess Academy`} fill sizes="(min-width: 640px) 104px, 88px" className="object-cover" />
+                </div>
+                <div className="coach-card__name">
+                  <span className="coach-card__label">{isInstructor(coach) ? <><Crown size={12} aria-hidden="true" /> Certified instructor</> : "Academy coach"}</span>
+                  <h3>{coach.name}</h3>
+                  <ul className="coach-card__titles">{coach.designations.map((title) => <li key={title}>{title}</li>)}</ul>
+                </div>
+              </div>
+              <dl className="coach-card__ratings">
+                {ratingRows.map(({ key, label }) => (
+                  <div key={key}><dt>{label}</dt><dd>{coach[key] ?? <span aria-label="Not rated">—</span>}</dd></div>
+                ))}
+              </dl>
+              <a className="coach-card__profile" href={fideProfileUrl(coach.fideId)} target="_blank" rel="noopener noreferrer" aria-label={`View ${coach.name}'s FIDE profile (opens in a new tab)`}>
+                <span><span className="coach-card__id">FIDE ID {coach.fideId}</span>View FIDE profile</span>
+                <span className="coach-card__arrow"><ArrowUpRight size={20} aria-hidden="true" /></span>
+              </a>
+            </li>
           ))}
         </ul>
-        <p className="mt-4 text-[11px] text-brand-900/45">FIDE ratings as of {COACH_RATINGS_AS_OF}.</p>
+        <p className="coach-section__footnote">Ratings as of {COACH_RATINGS_AS_OF}. Profiles link directly to the official FIDE ratings website.</p>
       </div>
     </section>
   );

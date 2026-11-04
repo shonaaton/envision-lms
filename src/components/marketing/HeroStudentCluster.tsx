@@ -93,7 +93,7 @@ function Confetti({ item }: { item: (typeof confetti)[number] }) {
 
 export default function HeroStudentCluster() {
   return (
-    <div className="relative mx-auto aspect-square w-full max-w-[640px]" aria-label="Envision Chess Academy students learning chess online and at our Kolkata centres">
+    <div className="hero-student-cluster relative mx-auto aspect-square w-full max-w-[640px]" aria-label="Envision Chess Academy students learning chess online and at our Kolkata centres">
       {confetti.map((item, index) => (
         <Confetti key={index} item={item} />
       ))}

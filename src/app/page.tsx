@@ -26,6 +26,7 @@ import DynamicLandingShowcase from "@/components/marketing/DynamicLandingShowcas
 import HeroStudentCluster from "@/components/marketing/HeroStudentCluster";
 import RelatedLinks from "@/components/marketing/RelatedLinks";
 import CoachesSection from "@/components/marketing/CoachesSection";
+import CentreLocationPreview from "@/components/marketing/CentreLocationPreview";
 import StudentRatingsMarquee from "@/components/marketing/StudentRatingsMarquee";
 import WhyEnvision from "@/components/marketing/WhyEnvision";
 import { MarketingFooter, MarketingHeader } from "@/components/marketing/MarketingChrome";
@@ -307,12 +308,12 @@ export default async function Home() {
   ];
 
   return (
-    <main id="home" className="landing-compact min-h-screen bg-[#ffffff] text-brand-900">
+    <main id="home" className="marketing-site min-h-screen bg-[#ffffff] text-brand-900">
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(schema) }} />
 
       <MarketingHeader demoHref={demoHref} />
 
-      <section className="relative isolate overflow-hidden bg-[#f5edf8] text-brand-900">
+      <section className="marketing-hero relative isolate overflow-hidden bg-[#f5edf8] text-brand-900">
         <div className="absolute inset-0 bg-[linear-gradient(118deg,#ffffff_0%,#f5edf8_52%,#e8d4f0_100%)]" />
         <div className="absolute inset-0 opacity-[0.6] [background-image:linear-gradient(rgba(90,19,114,0.05)_1px,transparent_1px),linear-gradient(90deg,rgba(90,19,114,0.05)_1px,transparent_1px)] [background-size:64px_64px]" />
         <div className="absolute inset-x-0 bottom-0 h-28 bg-gradient-to-t from-[#f5edf8] to-transparent" />
@@ -404,7 +405,7 @@ export default async function Home() {
 
       <CoachesSection />
 
-      <section id="programs" className="relative overflow-hidden bg-[#ffffff] py-16 text-brand-900 lg:py-24">
+      <section id="programs" className="marketing-section relative overflow-hidden bg-[#ffffff] py-16 text-brand-900 lg:py-24">
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_12%_14%,rgba(253,231,90,0.55),transparent_32%),radial-gradient(circle_at_86%_22%,rgba(90,19,114,0.10),transparent_34%),linear-gradient(180deg,#ffffff_0%,#f5edf8_100%)]" />
         <div className="absolute inset-0 opacity-[0.55] [background-image:linear-gradient(rgba(90,19,114,0.05)_1px,transparent_1px),linear-gradient(90deg,rgba(90,19,114,0.05)_1px,transparent_1px)] [background-size:84px_84px]" />
         <div className="relative mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
@@ -436,7 +437,7 @@ export default async function Home() {
 
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
             {groupClassTracks.map((track) => (
-              <article key={track.tier} className="group flex min-h-full flex-col rounded-xl border border-brand/10 bg-white p-5 shadow-xl shadow-brand-900/5 transition duration-300 hover:-translate-y-0.5 hover:border-brand/30 hover:bg-brand-50">
+              <article key={track.tier} className="marketing-card group flex min-h-full flex-col rounded-xl border border-brand/10 bg-white p-5 shadow-xl shadow-brand-900/5 transition duration-300 hover:-translate-y-0.5 hover:border-brand/30 hover:bg-brand-50">
                 <div className="flex items-start justify-between gap-3">
                   <div>
                     <p className="text-[10px] font-black uppercase tracking-[0.14em] text-brand/70">{track.stage} &middot; {track.accent}</p>
@@ -491,7 +492,7 @@ export default async function Home() {
         </div>
       </section>
 
-      <section id="platform" className="relative overflow-hidden bg-[#ffffff] py-12 text-brand-900 lg:py-16">
+      <section id="platform" className="marketing-section relative overflow-hidden bg-[#ffffff] py-12 text-brand-900 lg:py-16">
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_16%_18%,rgba(90,19,114,0.10),transparent_30%),radial-gradient(circle_at_84%_12%,rgba(253,231,90,0.45),transparent_28%),linear-gradient(180deg,#f5edf8_0%,#ffffff_100%)]" />
         <div className="absolute inset-0 opacity-[0.55] [background-image:linear-gradient(rgba(90,19,114,0.05)_1px,transparent_1px),linear-gradient(90deg,rgba(90,19,114,0.05)_1px,transparent_1px)] [background-size:84px_84px]" />
         <div className="relative mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
@@ -516,7 +517,7 @@ export default async function Home() {
               {portalTabs.map((item) => {
                 const Icon = item.icon;
                 return (
-                  <article key={item.title} className="group rounded-xl border border-brand/10 bg-white p-4 shadow-lg shadow-brand-900/5 transition duration-300 hover:-translate-y-0.5 hover:border-brand/30 hover:bg-brand-50">
+                  <article key={item.title} className="marketing-card group rounded-xl border border-brand/10 bg-white p-4 shadow-lg shadow-brand-900/5 transition duration-300 hover:-translate-y-0.5 hover:border-brand/30 hover:bg-brand-50">
                     <Icon size={19} className="text-brand" />
                     <h3 className="mt-3 text-sm font-black text-brand-900">{item.title}</h3>
                     <p className="mt-2 text-xs leading-5 text-brand-900/70">{item.points.slice(0, 3).join(" · ")}</p>
@@ -536,7 +537,7 @@ export default async function Home() {
             </div>
             <div className="grid gap-4 lg:grid-cols-2">
               {portalTutorials.map((tutorial) => (
-                <article key={tutorial.videoId} className="overflow-hidden rounded-xl border border-brand/10 bg-white shadow-xl shadow-brand-900/5 transition hover:-translate-y-0.5 hover:border-brand/30 hover:bg-brand-50">
+                <article key={tutorial.videoId} className="marketing-card overflow-hidden rounded-xl border border-brand/10 bg-white shadow-xl shadow-brand-900/5 transition hover:-translate-y-0.5 hover:border-brand/30 hover:bg-brand-50">
                   <figure className="m-0">
                     <div className="aspect-video bg-brand-900">
                       <iframe
@@ -563,7 +564,7 @@ export default async function Home() {
         </div>
       </section>
 
-      <section className="relative overflow-hidden bg-[#f5edf8] py-16 text-brand-900 lg:py-24">
+      <section className="marketing-section relative overflow-hidden bg-[#f5edf8] py-16 text-brand-900 lg:py-24">
         <div className="absolute inset-0 bg-[linear-gradient(180deg,#f5edf8_0%,#ffffff_100%)]" />
         <div className="absolute inset-0 opacity-[0.55] [background-image:linear-gradient(rgba(90,19,114,0.05)_1px,transparent_1px),linear-gradient(90deg,rgba(90,19,114,0.05)_1px,transparent_1px)] [background-size:84px_84px]" />
         <div className="relative mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
@@ -579,7 +580,7 @@ export default async function Home() {
             {practiceTools.map((tool) => {
               const Icon = tool.icon;
               return (
-                <article key={tool.title} className="group relative overflow-hidden rounded-xl border border-brand/10 bg-white p-5 shadow-xl shadow-brand-900/5 transition duration-300 hover:-translate-y-0.5 hover:border-brand/30 hover:bg-brand-50">
+                <article key={tool.title} className="marketing-card group relative overflow-hidden rounded-xl border border-brand/10 bg-white p-5 shadow-xl shadow-brand-900/5 transition duration-300 hover:-translate-y-0.5 hover:border-brand/30 hover:bg-brand-50">
                   <div className="absolute inset-x-0 top-0 h-0.5 bg-gradient-to-r from-transparent via-accent/70 to-transparent opacity-0 transition group-hover:opacity-100" />
                   <span className="grid h-12 w-12 place-items-center rounded-xl bg-brand text-accent shadow-sm shadow-brand-900/20 transition group-hover:bg-brand group-hover:text-accent">
                     <Icon size={21} />
@@ -593,7 +594,7 @@ export default async function Home() {
         </div>
       </section>
 
-      <section id="reviews" className="relative overflow-hidden bg-[#ffffff] py-16 text-brand-900 lg:py-24">
+      <section id="reviews" className="marketing-section relative overflow-hidden bg-[#ffffff] py-16 text-brand-900 lg:py-24">
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_16%_16%,rgba(253,231,90,0.5),transparent_30%),linear-gradient(180deg,#ffffff_0%,#f5edf8_100%)]" />
         <div className="absolute inset-0 opacity-[0.55] [background-image:linear-gradient(rgba(90,19,114,0.05)_1px,transparent_1px),linear-gradient(90deg,rgba(90,19,114,0.05)_1px,transparent_1px)] [background-size:84px_84px]" />
         <div className="relative mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
@@ -614,7 +615,7 @@ export default async function Home() {
         </div>
       </section>
 
-      <section id="anish" className="relative overflow-hidden bg-[#ffffff] py-12 text-brand-900 lg:py-16">
+      <section id="anish" className="marketing-section relative overflow-hidden bg-[#ffffff] py-12 text-brand-900 lg:py-16">
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_22%_28%,rgba(253,231,90,0.5),transparent_30%),radial-gradient(circle_at_76%_14%,rgba(90,19,114,0.13),transparent_32%),linear-gradient(180deg,#f5edf8_0%,#ffffff_100%)]" />
         <div className="absolute inset-0 opacity-[0.55] [background-image:linear-gradient(rgba(90,19,114,0.05)_1px,transparent_1px),linear-gradient(90deg,rgba(90,19,114,0.05)_1px,transparent_1px)] [background-size:84px_84px]" />
         <div className="relative mx-auto grid max-w-7xl gap-8 px-4 sm:px-6 lg:grid-cols-[0.58fr_1.42fr] lg:px-8">
@@ -648,7 +649,7 @@ export default async function Home() {
         </div>
       </section>
 
-      <section id="achievements" className="relative overflow-hidden bg-[#ffffff] py-12 text-brand-900 lg:py-16">
+      <section id="achievements" className="marketing-section relative overflow-hidden bg-[#ffffff] py-12 text-brand-900 lg:py-16">
         <div className="absolute inset-0 bg-[linear-gradient(180deg,#ffffff_0%,#f5edf8_100%)]" />
         <div className="absolute inset-x-0 top-24 h-px bg-gradient-to-r from-transparent via-brand/20 to-transparent" />
         <div className="absolute inset-0 opacity-[0.5] [background-image:linear-gradient(115deg,rgba(90,19,114,0.06)_1px,transparent_1px)] [background-size:74px_74px]" />
@@ -672,7 +673,7 @@ export default async function Home() {
             {featuredAchievements.slice(0, 8).map((item, index) => (
               <article
                 key={`${item.studentName}-${item.displayOrder}`}
-                className="group relative rounded-xl border border-brand/10 bg-white p-2 shadow-lg shadow-brand-900/5 transition duration-300 hover:-translate-y-0.5 hover:border-brand/30 hover:bg-brand-50"
+                className="marketing-card group relative rounded-xl border border-brand/10 bg-white p-2 shadow-lg shadow-brand-900/5 transition duration-300 hover:-translate-y-0.5 hover:border-brand/30 hover:bg-brand-50"
               >
                 {/*
                   Each card is a figure now: the photo gets alt text built from
@@ -705,7 +706,7 @@ export default async function Home() {
         </div>
       </section>
 
-      <section className="relative overflow-hidden bg-[#ffffff] py-16 text-brand-900 lg:py-24">
+      <section className="marketing-section relative overflow-hidden bg-[#ffffff] py-16 text-brand-900 lg:py-24">
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_16%,rgba(90,19,114,0.09),transparent_28%),radial-gradient(circle_at_78%_26%,rgba(253,231,90,0.5),transparent_28%),linear-gradient(180deg,#f5edf8_0%,#ffffff_100%)]" />
         <div className="absolute inset-0 opacity-[0.55] [background-image:linear-gradient(rgba(90,19,114,0.05)_1px,transparent_1px),linear-gradient(90deg,rgba(90,19,114,0.05)_1px,transparent_1px)] [background-size:84px_84px]" />
         <div className="relative mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
@@ -720,7 +721,7 @@ export default async function Home() {
             {supportTools.map((item) => {
               const Icon = item.icon;
               return (
-                <article key={item.title} className="rounded-xl border border-brand/10 bg-white p-5 shadow-xl shadow-brand-900/5 transition hover:-translate-y-0.5 hover:border-brand/30 hover:bg-brand-50">
+                <article key={item.title} className="marketing-card rounded-xl border border-brand/10 bg-white p-5 shadow-xl shadow-brand-900/5 transition hover:-translate-y-0.5 hover:border-brand/30 hover:bg-brand-50">
                   <span className="grid h-12 w-12 place-items-center rounded-xl bg-brand text-accent shadow-sm shadow-brand-900/20">
                     <Icon size={21} />
                   </span>
@@ -733,7 +734,7 @@ export default async function Home() {
         </div>
       </section>
 
-      <section className="bg-[#f5edf8] py-16 text-brand-900 lg:py-24">
+      <section className="marketing-section bg-[#f5edf8] py-16 text-brand-900 lg:py-24">
         <div className="mx-auto grid max-w-7xl gap-10 px-4 sm:px-6 lg:grid-cols-[0.8fr_1.2fr] lg:px-8">
           <div>
             <p className="inline-flex rounded-full bg-brand px-3.5 py-1.5 text-xs font-black uppercase tracking-[0.16em] text-white shadow-sm shadow-brand-900/20">How it works</p>
@@ -754,7 +755,7 @@ export default async function Home() {
         </div>
       </section>
 
-      <section id="centres" className="relative overflow-hidden bg-[#ffffff] py-16 text-brand-900 lg:py-24">
+      <section id="centres" className="marketing-section relative overflow-hidden bg-[#ffffff] py-16 text-brand-900 lg:py-24">
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_22%_22%,rgba(90,19,114,0.09),transparent_28%),radial-gradient(circle_at_80%_28%,rgba(253,231,90,0.45),transparent_28%),linear-gradient(180deg,#ffffff_0%,#f5edf8_100%)]" />
         <div className="absolute inset-0 opacity-[0.55] [background-image:linear-gradient(rgba(90,19,114,0.05)_1px,transparent_1px),linear-gradient(90deg,rgba(90,19,114,0.05)_1px,transparent_1px)] [background-size:84px_84px]" />
         <div className="relative mx-auto grid max-w-7xl gap-8 px-4 sm:px-6 lg:grid-cols-[0.78fr_1.22fr] lg:px-8">
@@ -770,7 +771,7 @@ export default async function Home() {
           </div>
           <div className="grid gap-3 sm:grid-cols-2">
             {academyBranches.map((centre) => (
-              <div key={centre.name} className="overflow-hidden rounded-xl border border-brand/10 bg-white shadow-xl shadow-brand-900/5 transition hover:border-brand/30 hover:bg-brand-50">
+              <div key={centre.name} className="marketing-card overflow-hidden rounded-xl border border-brand/10 bg-white shadow-xl shadow-brand-900/5 transition hover:border-brand/30 hover:bg-brand-50">
                 <div className="p-4">
                 <MapPin size={18} className="text-brand" />
                 <h3 className="mt-3 font-black text-brand-900">
@@ -782,12 +783,7 @@ export default async function Home() {
                 </Link>
                 </div>
                 <figure className="m-0">
-                  <iframe
-                    title={`Map to the Envision Chess Academy ${centre.name} chess coaching centre in Kolkata`}
-                    src={`https://maps.google.com/maps?q=${encodeURIComponent(centre.address)}&output=embed`}
-                    className="h-32 w-full border-0 grayscale contrast-125"
-                    loading="lazy"
-                  />
+                  <CentreLocationPreview name={centre.name} href={centre.href} />
                   <figcaption className="border-t border-brand/10 px-4 py-2 text-[11px] leading-4 text-brand-900/60">
                     Offline chess classes at our {centre.name} centre, Kolkata.
                   </figcaption>
@@ -832,7 +828,7 @@ export default async function Home() {
         ever reach the site, and the same list feeds the FAQPage schema at the
         top of the page, so the two can never drift apart.
       */}
-      <section id="faq" className="relative overflow-hidden bg-[#ffffff] py-16 text-brand-900 lg:py-24">
+      <section id="faq" className="marketing-section relative overflow-hidden bg-[#ffffff] py-16 text-brand-900 lg:py-24">
         <div className="absolute inset-0 bg-[linear-gradient(180deg,#f5edf8_0%,#ffffff_100%)]" />
         <div className="absolute inset-0 opacity-[0.55] [background-image:linear-gradient(rgba(90,19,114,0.05)_1px,transparent_1px),linear-gradient(90deg,rgba(90,19,114,0.05)_1px,transparent_1px)] [background-size:84px_84px]" />
         <div className="relative mx-auto max-w-4xl px-4 sm:px-6 lg:px-8">
@@ -859,7 +855,7 @@ export default async function Home() {
         </div>
       </section>
 
-      <section className="relative overflow-hidden bg-[#f5edf8] px-4 py-16 text-brand-900 sm:px-6 lg:px-8 lg:py-24">
+      <section className="marketing-cta marketing-section relative overflow-hidden bg-[#f5edf8] px-4 py-16 text-brand-900 sm:px-6 lg:px-8 lg:py-24">
         <div className="absolute inset-0 bg-[linear-gradient(180deg,#ffffff_0%,#f5edf8_100%)]" />
         <div className="relative mx-auto max-w-7xl rounded-2xl border border-brand/10 bg-white p-6 shadow-lg shadow-brand-900/5 sm:p-8 lg:flex lg:items-center lg:justify-between lg:gap-8">
           <div>

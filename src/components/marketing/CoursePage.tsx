@@ -96,13 +96,13 @@ export default function CoursePage({ config }: { config: CoursePageConfig }) {
   ];
 
   return (
-    <main className="landing-compact min-h-screen bg-white text-brand-900">
+    <main className="marketing-site min-h-screen bg-white text-brand-900">
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(schema) }} />
 
       <MarketingHeader demoHref={demoHref} />
 
       {/* ------------------------------------------------------------- hero */}
-      <section className="relative isolate overflow-hidden bg-[#f5edf8] text-brand-900">
+      <section className="marketing-hero relative isolate overflow-hidden bg-[#f5edf8] text-brand-900">
         <div className="absolute inset-0 bg-[linear-gradient(118deg,#ffffff_0%,#f5edf8_52%,#e8d4f0_100%)]" />
         <div className="absolute inset-0 opacity-[0.6] [background-image:linear-gradient(rgba(90,19,114,0.05)_1px,transparent_1px),linear-gradient(90deg,rgba(90,19,114,0.05)_1px,transparent_1px)] [background-size:64px_64px]" />
         <div className="absolute inset-x-0 bottom-0 h-28 bg-gradient-to-t from-white to-transparent" />
@@ -149,13 +149,13 @@ export default function CoursePage({ config }: { config: CoursePageConfig }) {
       </section>
 
       {/* ------------------------------------------------------ course facts */}
-      <section className="relative bg-white py-10">
+      <section className="marketing-facts relative bg-white py-10">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
             {courseFacts.map((fact) => {
               const Icon = fact.icon;
               return (
-                <div key={fact.label} className="group rounded-2xl border border-brand/10 bg-white p-5 shadow-lg shadow-brand-900/5 transition duration-300 hover:-translate-y-1 hover:border-brand/30 hover:shadow-xl hover:shadow-brand-900/10">
+                <div key={fact.label} className="marketing-card group rounded-2xl border border-brand/10 bg-white p-5 shadow-lg shadow-brand-900/5 transition duration-300 hover:-translate-y-1 hover:border-brand/30 hover:shadow-xl hover:shadow-brand-900/10">
                   <span className="grid h-11 w-11 place-items-center rounded-xl bg-brand text-accent shadow-sm shadow-brand-900/20 transition-transform duration-300 group-hover:-rotate-6 group-hover:scale-110">
                     <Icon size={20} />
                   </span>
@@ -171,7 +171,7 @@ export default function CoursePage({ config }: { config: CoursePageConfig }) {
       <WhyEnvision demoHref={demoHref} heading={config.whyHeading} ctaLabel={ctaLabel} secondary={{ href: "#curriculum", label: `See all ${totalSessions} sessions` }} />
 
       {/* ------------------------------------------------------- curriculum */}
-      <section id="curriculum" className="relative overflow-hidden bg-white py-16 text-brand-900 lg:py-24">
+      <section id="curriculum" className="marketing-section relative overflow-hidden bg-white py-16 text-brand-900 lg:py-24">
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_12%_14%,rgba(253,231,90,0.4),transparent_30%),linear-gradient(180deg,#ffffff_0%,#f5edf8_100%)]" />
         <div className="absolute inset-0 opacity-[0.55] [background-image:linear-gradient(rgba(90,19,114,0.05)_1px,transparent_1px),linear-gradient(90deg,rgba(90,19,114,0.05)_1px,transparent_1px)] [background-size:84px_84px]" />
         <div className="relative mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
@@ -190,7 +190,7 @@ export default function CoursePage({ config }: { config: CoursePageConfig }) {
             {levels.map((level, levelIndex) => (
               <article
                 key={level.name}
-                className="group flex min-h-full flex-col overflow-hidden rounded-2xl border border-brand/10 bg-white shadow-lg shadow-brand-900/5 transition duration-300 ease-out hover:-translate-y-1.5 hover:border-brand/30 hover:shadow-xl hover:shadow-brand-900/15"
+                className="marketing-card group flex min-h-full flex-col overflow-hidden rounded-2xl border border-brand/10 bg-white shadow-lg shadow-brand-900/5 transition duration-300 ease-out hover:-translate-y-1.5 hover:border-brand/30 hover:shadow-xl hover:shadow-brand-900/15"
               >
                 <div className="relative overflow-hidden border-b border-brand/10 bg-brand-50 p-5">
                   <span className="pointer-events-none absolute inset-x-0 top-0 h-1 origin-left scale-x-0 bg-gradient-to-r from-brand via-accent to-brand transition-transform duration-500 ease-out group-hover:scale-x-100" aria-hidden />
@@ -284,7 +284,7 @@ export default function CoursePage({ config }: { config: CoursePageConfig }) {
       />
 
       {/* -------------------------------------------------------------- FAQ */}
-      <section className="relative overflow-hidden bg-[#f5edf8] py-16 text-brand-900 lg:py-24">
+      <section className="marketing-section relative overflow-hidden bg-[#f5edf8] py-16 text-brand-900 lg:py-24">
         <div className="absolute inset-0 bg-[linear-gradient(180deg,#f5edf8_0%,#ffffff_100%)]" />
         <div className="relative mx-auto max-w-4xl px-4 sm:px-6 lg:px-8">
           <p className="inline-flex rounded-full bg-brand px-3.5 py-1.5 text-xs font-black uppercase tracking-[0.16em] text-white shadow-sm shadow-brand-900/20">Questions</p>
@@ -310,7 +310,7 @@ export default function CoursePage({ config }: { config: CoursePageConfig }) {
       </section>
 
       {/* ---------------------------------------------------------- last CTA */}
-      <section className="relative overflow-hidden bg-white px-4 py-16 text-brand-900 sm:px-6 lg:px-8 lg:py-24">
+      <section className="marketing-cta marketing-section relative overflow-hidden bg-white px-4 py-16 text-brand-900 sm:px-6 lg:px-8 lg:py-24">
         <div className="relative mx-auto max-w-7xl rounded-2xl border border-brand/10 bg-white p-6 shadow-lg shadow-brand-900/5 sm:p-8 lg:flex lg:items-center lg:justify-between lg:gap-8">
           <div>
             <p className="inline-flex rounded-full bg-accent px-3.5 py-1.5 text-xs font-black uppercase tracking-[0.16em] text-brand-900 shadow-sm shadow-accent-600/30">Start with a free assessment</p>

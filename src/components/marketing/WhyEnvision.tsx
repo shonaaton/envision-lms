@@ -24,7 +24,7 @@ export default function WhyEnvision({
   intro?: string;
 }) {
   return (
-    <section id="why" className="relative overflow-hidden bg-[#f5edf8] py-16 text-brand-900 lg:py-24">
+    <section id="why" className="marketing-section relative overflow-hidden bg-[#f5edf8] py-16 text-brand-900 lg:py-24">
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_14%_16%,rgba(253,231,90,0.4),transparent_30%),radial-gradient(circle_at_88%_20%,rgba(90,19,114,0.08),transparent_32%),linear-gradient(180deg,#f5edf8_0%,#ffffff_100%)]" />
       <div className="absolute inset-0 opacity-[0.55] [background-image:linear-gradient(rgba(90,19,114,0.05)_1px,transparent_1px),linear-gradient(90deg,rgba(90,19,114,0.05)_1px,transparent_1px)] [background-size:84px_84px]" />
       <div className="relative mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
@@ -33,13 +33,13 @@ export default function WhyEnvision({
           <h2 className="mt-4 text-2xl font-black leading-tight text-brand-900 sm:text-3xl">{heading}</h2>
           <p className="mt-3 text-sm leading-7 text-brand-900/70">{intro}</p>
         </div>
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="envision-reasons grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {academyReasons.map((reason, index) => {
             const Icon = reason.icon;
             return (
               <article
                 key={reason.title}
-                className="group relative flex min-h-full flex-col overflow-hidden rounded-2xl border border-brand/10 bg-white p-6 shadow-lg shadow-brand-900/5 transition duration-300 ease-out hover:-translate-y-1.5 hover:border-brand/30 hover:shadow-xl hover:shadow-brand-900/15"
+                className="marketing-card group relative flex min-h-full flex-col overflow-hidden rounded-2xl border border-brand/10 bg-white p-6 shadow-lg shadow-brand-900/5 transition duration-300 ease-out hover:-translate-y-1.5 hover:border-brand/30 hover:shadow-xl hover:shadow-brand-900/15"
               >
                 {/* A yellow wash rises from the bottom as the card is hovered. */}
                 <span className="pointer-events-none absolute inset-x-0 bottom-0 h-0 bg-gradient-to-t from-accent/25 to-transparent transition-all duration-500 ease-out group-hover:h-full" aria-hidden />

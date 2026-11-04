@@ -8,7 +8,7 @@ import { coursePages, courseSessionTotal } from "@/lib/coursePages";
 import { curriculumLevels } from "@/lib/demoCurriculum";
 import { LEGAL_LINKS } from "@/lib/publicLinks";
 import { faqSchema, publicMetadata } from "@/lib/seo";
-import { studentRatings } from "@/lib/studentRatings";
+import { studentRatingsByHonour } from "@/lib/studentRatings";
 import CurriculumJourney, { type JourneyStage } from "./CurriculumJourney";
 import LandingMotion from "./LandingMotion";
 import ScreenTimePlanner from "./ScreenTimePlanner";
@@ -408,8 +408,8 @@ export default function BookFreeDemoClassPage() {
               on to earn recognition on bigger stages. Your child&apos;s journey could start here.
             </SectionHead>
           </div>
-          {/* The homepage's auto-scrolling strip, edge to edge, without its own heading. */}
-          <StudentRatingsStrip students={studentRatings} photoSize={116} />
+          {/* The homepage's student cards, as a row swiped by hand, international results first. */}
+          <StudentRatingsStrip students={studentRatingsByHonour()} photoSize={116} swipe />
         </section>
 
         <section className="section soft">

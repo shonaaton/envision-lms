@@ -498,12 +498,13 @@
 .bfd .student-section .section-head {
   margin-bottom: 26px;
 }
-.bfd .student-marquee {
+.bfd .student-swipe {
   text-align: left;
 }
-.bfd .student-section .student-marquee li > a,
-.bfd .student-section .student-marquee li > div {
-  width: 360px;
+.bfd .student-section .student-swipe li > a,
+.bfd .student-section .student-swipe li > div {
+  /* Narrower than the screen on a phone, so the next card peeks in and invites a swipe. */
+  width: min(360px, 84vw);
 }
 
 /* The homepage's coaches section, scrolling. Undo this page's type rules inside it. */

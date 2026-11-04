@@ -19,8 +19,37 @@ export type StudentRating = {
   /** What the value is, e.g. "FIDE" or "England U-7". */
   label: string;
   detail: string;
+  /**
+   * The level of the achievement, shown in bold above the name on the
+   * /book-free-demo-class strip. Read from the card's own facts; never claim
+   * more than `detail` says.
+   */
+  honour: StudentHonour;
   href?: string;
 };
+
+export type StudentHonour =
+  | "International achiever"
+  | "National champion"
+  | "FIDE Online Arena title"
+  | "FIDE-rated player"
+  | "District achiever"
+  | "District champion";
+
+/** Strongest first: the landing page leads with the international results. */
+export const HONOUR_ORDER: StudentHonour[] = [
+  "International achiever",
+  "National champion",
+  "FIDE Online Arena title",
+  "FIDE-rated player",
+  "District champion",
+  "District achiever",
+];
+
+/** The list ordered by honour, keeping the sheet's order within each level. */
+export function studentRatingsByHonour(list: StudentRating[] = studentRatings) {
+  return [...list].sort((a, b) => HONOUR_ORDER.indexOf(a.honour) - HONOUR_ORDER.indexOf(b.honour));
+}
 
 export const RATINGS_AS_OF = "November 2026";
 
@@ -30,6 +59,7 @@ const story = (slug: string) => `/success-stories/${slug}`;
 export const studentRatings: StudentRating[] = [
   {
     name: "Anish Bijibilla",
+    honour: "International achiever",
     photo: photo("anish-bijibilla"),
     value: "No. 1",
     label: "England U-7",
@@ -38,6 +68,7 @@ export const studentRatings: StudentRating[] = [
   },
   {
     name: "Kartik Kumbhar",
+    honour: "FIDE-rated player",
     photo: photo("kartik-kumbhar"),
     value: "1981",
     label: "FIDE",
@@ -45,6 +76,7 @@ export const studentRatings: StudentRating[] = [
   },
   {
     name: "Shreyan Bag",
+    honour: "FIDE-rated player",
     photo: photo("shreyan-bag"),
     value: "1860",
     label: "FIDE",
@@ -53,6 +85,7 @@ export const studentRatings: StudentRating[] = [
   },
   {
     name: "Ywun Poe Mel (Sarah)",
+    honour: "National champion",
     photo: photo("ywun-poe-mel-sarah"),
     value: "1657",
     label: "FIDE",
@@ -61,6 +94,7 @@ export const studentRatings: StudentRating[] = [
   },
   {
     name: "Yash Lohana",
+    honour: "FIDE Online Arena title",
     photo: photo("yash-lohana"),
     value: "AIM",
     label: "Title",
@@ -69,6 +103,7 @@ export const studentRatings: StudentRating[] = [
   },
   {
     name: "Sayak Dutta",
+    honour: "FIDE-rated player",
     photo: photo("sayak-dutta"),
     value: "1613",
     label: "FIDE",
@@ -76,6 +111,7 @@ export const studentRatings: StudentRating[] = [
   },
   {
     name: "Ahilaan Baishya",
+    honour: "FIDE-rated player",
     photo: photo("ahilaan-baishya"),
     value: "1640",
     label: "FIDE",
@@ -84,6 +120,7 @@ export const studentRatings: StudentRating[] = [
   },
   {
     name: "Adyashis Biswas",
+    honour: "FIDE-rated player",
     photo: photo("adyashis-biswas"),
     value: "1627",
     label: "FIDE",
@@ -92,6 +129,7 @@ export const studentRatings: StudentRating[] = [
   },
   {
     name: "Shreehan Sengupta",
+    honour: "FIDE-rated player",
     photo: photo("shreehan-sengupta"),
     value: "1587",
     label: "FIDE",
@@ -99,6 +137,7 @@ export const studentRatings: StudentRating[] = [
   },
   {
     name: "Urvil Maurya",
+    honour: "District achiever",
     photo: photo("urvil-maurya"),
     value: "1583",
     label: "FIDE",
@@ -107,6 +146,7 @@ export const studentRatings: StudentRating[] = [
   },
   {
     name: "Rudra Chintan Tiwary",
+    honour: "FIDE-rated player",
     photo: photo("rudra-tiwary"),
     value: "1564",
     label: "FIDE",
@@ -115,6 +155,7 @@ export const studentRatings: StudentRating[] = [
   },
   {
     name: "Nilavo Pal",
+    honour: "FIDE-rated player",
     photo: photo("nilavo-pal"),
     value: "1500",
     label: "FIDE Classical",
@@ -123,6 +164,7 @@ export const studentRatings: StudentRating[] = [
   },
   {
     name: "Anumegha Kundu",
+    honour: "International achiever",
     photo: photo("anumegha-kundu"),
     value: "1419",
     label: "FIDE",
@@ -131,6 +173,7 @@ export const studentRatings: StudentRating[] = [
   },
   {
     name: "Prithviraj Ganguly",
+    honour: "FIDE-rated player",
     photo: photo("prithviraj-ganguly"),
     value: "1472",
     label: "FIDE Rapid",
@@ -139,6 +182,7 @@ export const studentRatings: StudentRating[] = [
   },
   {
     name: "Nilasha Konwar",
+    honour: "District champion",
     value: "1st",
     label: "District",
     detail: "District champion, U-7 Girls, Purba Bardhaman 2025.",
@@ -146,6 +190,7 @@ export const studentRatings: StudentRating[] = [
   },
   {
     name: "Vedantika Chowdhury",
+    honour: "District achiever",
     photo: photo("vedantika-chowdhury"),
     value: "2nd",
     label: "Surat District",

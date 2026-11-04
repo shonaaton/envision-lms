@@ -457,6 +457,28 @@ main td {
   }
 }
 
+/* The same cards as a row the visitor swipes by hand (book-free-demo page). */
+.student-swipe {
+  overflow-x: auto;
+  scroll-snap-type: x mandatory;
+  scroll-padding-inline: 16px;
+  overscroll-behavior-x: contain;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+}
+.student-swipe::-webkit-scrollbar {
+  display: none;
+}
+.student-swipe-track {
+  display: flex;
+  gap: 16px;
+  width: max-content;
+  padding: 4px 16px 8px;
+}
+.student-swipe-track > li {
+  scroll-snap-align: start;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .student-marquee {
     overflow-x: auto;

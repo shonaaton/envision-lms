@@ -12,7 +12,7 @@ function initials(name: string) {
     .join("");
 }
 
-function Card({ student, hidden, photoSize = 88 }: { student: StudentRating; hidden?: boolean; photoSize?: number }) {
+function Card({ student, hidden, photoSize = 88, showHonour }: { student: StudentRating; hidden?: boolean; photoSize?: number; showHonour?: boolean }) {
   const external = student.href?.startsWith("http");
   const body = (
     <>
@@ -32,6 +32,9 @@ function Card({ student, hidden, photoSize = 88 }: { student: StudentRating; hid
         )}
       </span>
       <span className="min-w-0">
+        {showHonour && (
+          <span className="mb-1 block text-[11px] font-black uppercase tracking-[0.08em] text-[#a26f00]">{student.honour}</span>
+        )}
         <span className="block text-[15px] font-bold leading-tight text-brand-900">{student.name}</span>
         <span className="mt-2 inline-flex items-baseline gap-1.5 rounded-md border border-brand/15 bg-brand-50 px-2.5 py-1">
           <span className="text-sm font-black text-brand">{student.value}</span>
@@ -61,19 +64,35 @@ function Card({ student, hidden, photoSize = 88 }: { student: StudentRating; hid
 }
 
 /**
- * The moving strip on its own, for pages that bring their own heading (the
- * /book-free-demo-class landing page uses it under its achievements copy).
+ * The strip on its own, for pages that bring their own heading. The homepage
+ * scrolls it by itself; the /book-free-demo-class page passes `swipe`, a plain
+ * row the visitor moves by hand, with each card's honour above the name.
  */
 export function StudentRatingsStrip({
   students,
   className = "",
   photoSize,
+  swipe = false,
 }: {
   students: StudentRating[];
   className?: string;
   /** Portrait diameter in px; the homepage keeps the 88px default. */
   photoSize?: number;
+  swipe?: boolean;
 }) {
+  if (swipe) {
+    return (
+      <div className={`student-swipe ${className}`.trim()} tabIndex={0} aria-label="Student achievements, scroll sideways for more">
+        <ul className="student-swipe-track">
+          {students.map((student) => (
+            <li key={student.name} className="shrink-0">
+              <Card student={student} photoSize={photoSize} showHonour />
+            </li>
+          ))}
+        </ul>
+      </div>
+    );
+  }
   return (
     <div className={`student-marquee ${className}`.trim()}>
       <ul className="student-marquee-track">

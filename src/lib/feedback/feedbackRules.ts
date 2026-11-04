@@ -107,6 +107,16 @@ export type FeedbackActionInput = z.infer<typeof feedbackActionSchema>;
 
 export const bulkApproveSchema = z.object({ ids: z.array(z.string().regex(/^[a-f0-9]{24}$/i)).min(1).max(200) });
 
+/** Reports that can still change hands: anything the coach has not submitted (a returned report is back with its coach). */
+export const REASSIGNABLE_STATUSES = COACH_EDITABLE_STATUSES;
+
+export const reassignSchema = z.object({
+  ids: z.array(z.string().regex(/^[a-f0-9]{24}$/i)).min(1).max(200),
+  coachId: z.string().regex(/^[a-f0-9]{24}$/i, "Pick a coach."),
+  note: z.string().trim().max(300).default(""),
+});
+export type ReassignInput = z.infer<typeof reassignSchema>;
+
 export function isReviewer(viewer: FeedbackViewer) {
   return (viewer.role === "admin" || viewer.role === "sub-admin") && viewer.canApprove !== false;
 }
@@ -195,6 +205,10 @@ export function serializeFeedback(doc: any, viewer: FeedbackViewer) {
     emailTo: String(doc.emailTo || ""),
     emailError: String(doc.emailError || ""),
     updatedAt: doc.updatedAt ? new Date(doc.updatedAt).toISOString() : null,
+    coachPinned: Boolean(doc.coachPinned),
+    reassignedAt: doc.reassignedAt ? new Date(doc.reassignedAt).toISOString() : null,
+    reassignedFromName: String(doc.reassignedFromName || ""),
+    reassignNote: String(doc.reassignNote || ""),
   };
 }
 
@@ -208,4 +222,8 @@ export type SerializedFeedback = NonNullable<ReturnType<typeof serializeFeedback
   emailTo?: string;
   emailError?: string;
   updatedAt?: string | null;
+  coachPinned?: boolean;
+  reassignedAt?: string | null;
+  reassignedFromName?: string;
+  reassignNote?: string;
 };

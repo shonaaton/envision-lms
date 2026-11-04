@@ -96,3 +96,14 @@ describe("transferPendingFeedbackToCoach", () => {
     expect(MonthlyFeedback.distinct).not.toHaveBeenCalled();
   });
 });
+
+describe("transfer leaves reassigned reports alone", () => {
+  it("never picks up a report an admin pinned to a coach", async () => {
+    (MonthlyFeedback.distinct as any).mockResolvedValue(["2026-10"]);
+    (MonthlyFeedback.find as any).mockReturnValue(chain([]));
+
+    await transferPendingFeedbackToCoach({ classroomId: CLASSROOM, fromCoachId: OLD, toCoachId: NEW });
+
+    expect((MonthlyFeedback.find as any).mock.calls[0][0].coachPinned).toEqual({ $ne: true });
+  });
+});

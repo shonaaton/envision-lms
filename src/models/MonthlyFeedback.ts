@@ -53,6 +53,16 @@ const MonthlyFeedbackSchema = new Schema(
     sentAt: { type: Date, default: null },
     emailTo: { type: String, default: "" },
     emailError: { type: String, default: "" },
+
+    // An admin moved this report to another coach before it was submitted. A
+    // pinned report stays with that coach: the hourly re-homing (which follows
+    // the coach who taught the month) and a classroom coach change leave it
+    // alone, unless the pinned coach leaves the academy.
+    coachPinned: { type: Boolean, default: false },
+    reassignedBy: { type: Schema.Types.ObjectId, ref: "User", default: null },
+    reassignedAt: { type: Date, default: null },
+    reassignedFromName: { type: String, default: "" },
+    reassignNote: { type: String, default: "" },
   },
   { timestamps: true }
 );

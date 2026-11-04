@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ArrowRight, BookOpen, CalendarCheck2, History, Lock, Plus, RotateCcw, Save, SkipForward, Sparkles, Target, X } from "lucide-react";
+import { ArrowRight, ArrowRightLeft, BookOpen, CalendarCheck2, History, Lock, Plus, RotateCcw, Save, SkipForward, Sparkles, Target, X } from "lucide-react";
 import { toast } from "sonner";
 
 import {
@@ -260,6 +260,16 @@ export default function FeedbackForm({ item, previous, position, onClose, onSave
         </div>
 
         <div className="flex-1 space-y-5 px-5 py-5">
+          {editable && item.reassignedAt && (
+            <div className="flex gap-2 rounded-xl border border-sky-200 bg-sky-50 p-3 text-sm text-sky-900">
+              <ArrowRightLeft size={16} className="mt-0.5 shrink-0" />
+              <div>
+                <div className="font-black">Reassigned to you{item.reassignedFromName ? ` from Coach ${item.reassignedFromName}` : ""}</div>
+                {item.reassignNote && <div className="mt-0.5">{item.reassignNote}</div>}
+              </div>
+            </div>
+          )}
+
           {item.status === "changes_requested" && item.reviewNote && (
             <div className="flex gap-2 rounded-xl border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800">
               <RotateCcw size={16} className="mt-0.5 shrink-0" />

@@ -185,7 +185,13 @@ export async function cancelAutoTask(referenceType: string, referenceId: unknown
 }
 
 /** Hand every open task of these kinds about `referenceIds` to a new owner. */
-export async function reassignAutoTasks(referenceType: string, referenceIds: unknown[], ownerId: unknown, reason = "Lead owner change") {
+export async function reassignAutoTasks(
+  referenceType: string,
+  referenceIds: unknown[],
+  ownerId: unknown,
+  reason = "Lead owner change",
+  options: { notify?: boolean } = {}
+) {
   const owner = toObjectId(ownerId);
   const ids = referenceIds.map(toObjectId).filter(Boolean);
   if (!owner || !ids.length) return 0;
@@ -197,7 +203,7 @@ export async function reassignAutoTasks(referenceType: string, referenceIds: unk
     const updated = await InternalTask.findByIdAndUpdate(task._id, { $set: { assignedTo: owner, pool: null } }, { new: true }).lean();
     if (updated) {
       moved += 1;
-      await notifyTaskReassigned(updated, reason).catch(() => undefined);
+      if (options.notify !== false) await notifyTaskReassigned(updated, reason).catch(() => undefined);
     }
   }
   return moved;

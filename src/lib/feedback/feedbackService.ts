@@ -21,6 +21,7 @@ import { QUESTION_SET_VERSION, reportTier } from "@/lib/feedback/feedbackQuestio
 import {
   COACH_EDITABLE_STATUSES,
   MIN_CLASSES_FOR_FEEDBACK,
+  REASSIGNABLE_STATUSES,
   WITHDRAWABLE_STATUSES,
   duplicateReportsToWithdraw,
   hasEnoughClasses,
@@ -32,6 +33,7 @@ import {
   serializeFeedback,
   type FeedbackActionInput,
   type FeedbackViewer,
+  type ReassignInput,
 } from "@/lib/feedback/feedbackRules";
 import { resolveStudentContact } from "@/lib/studentContact";
 import {
@@ -272,7 +274,7 @@ async function withdrawDuplicateReports() {
   ]);
   if (!groups.length) return 0;
   const docs: any[] = await MonthlyFeedback.find({ _id: { $in: groups.flatMap((group) => group.ids) } })
-    .select("_id month student coach classroom status createdAt")
+    .select("_id month student coach classroom status createdAt coachPinned")
     .lean();
   const classrooms: any[] = await Classroom.find({ _id: { $in: Array.from(new Set(docs.map((doc) => idOf(doc.classroom)).filter(Boolean))) } })
     .select("coach instructor generatedSessions")
@@ -286,7 +288,12 @@ async function withdrawDuplicateReports() {
     const withdraw = duplicateReportsToWithdraw(
       members.map((doc) => {
         const classroom = classroomById.get(idOf(doc.classroom));
-        const taughtCoachId = classroom && isFeedbackMonth(doc.month) ? reportCoachId(classroom, monthBounds(doc.month), () => true) : "";
+        // An admin's reassignment outranks the computed teaching coach.
+        const taughtCoachId = doc.coachPinned
+          ? idOf(doc.coach)
+          : classroom && isFeedbackMonth(doc.month)
+            ? reportCoachId(classroom, monthBounds(doc.month), () => true)
+            : "";
         return { id: idOf(doc), status: String(doc.status), coachId: idOf(doc.coach), taughtCoachId, createdAt: doc.createdAt };
       })
     );
@@ -309,6 +316,7 @@ async function withdrawDuplicateReports() {
  * only took the group afterwards.
  */
 async function rehomeUnfinishedReports() {
+  await releasePinsOfDepartedCoaches();
   const groups: any[] = await MonthlyFeedback.aggregate([
     { $match: { status: { $in: COACH_EDITABLE_STATUSES }, classroom: { $ne: null } } },
     { $group: { _id: { month: "$month", classroom: "$classroom" } } },
@@ -344,6 +352,24 @@ async function rehomeUnfinishedReports() {
   return moved;
 }
 
+/**
+ * A report an admin pinned to a coach who has since left (or was deactivated)
+ * goes back to the automatic rule, so it is not stranded with nobody to write it.
+ */
+async function releasePinsOfDepartedCoaches() {
+  const pinnedCoachIds: any[] = await MonthlyFeedback.distinct("coach", { coachPinned: true, status: { $in: COACH_EDITABLE_STATUSES } });
+  if (!pinnedCoachIds.length) return 0;
+  const active: any[] = await User.find({ _id: { $in: pinnedCoachIds }, isActive: { $ne: false }, role: { $ne: "student" } }).select("_id").lean();
+  const activeIds = new Set(active.map(idOf));
+  const departed = pinnedCoachIds.filter((id) => !activeIds.has(idOf(id)));
+  if (!departed.length) return 0;
+  const result = await MonthlyFeedback.updateMany(
+    { coachPinned: true, coach: { $in: departed }, status: { $in: COACH_EDITABLE_STATUSES } },
+    { $set: { coachPinned: false } }
+  );
+  return Number(result?.modifiedCount || 0);
+}
+
 /** Today's coach of each classroom plus the coach who taught it this month, for one User lookup. */
 async function coachesForMonth(classrooms: any[], bounds: { start: Date; end: Date }) {
   const ids = new Set<string>();
@@ -364,7 +390,14 @@ async function coachesForMonth(classrooms: any[], bounds: { start: Date; end: Da
  */
 async function rehomeClassroomReports(classroom: any, month: string, ownerId: string, people?: Map<string, any>) {
   if (!ownerId || !Types.ObjectId.isValid(ownerId)) return { moved: 0, kept: 0 };
-  const misplaced: any[] = await MonthlyFeedback.find({ month, classroom: classroom._id, coach: { $ne: ownerId }, status: { $in: COACH_EDITABLE_STATUSES } })
+  // Reports an admin reassigned by hand stay with the coach they chose.
+  const misplaced: any[] = await MonthlyFeedback.find({
+    month,
+    classroom: classroom._id,
+    coach: { $ne: ownerId },
+    status: { $in: COACH_EDITABLE_STATUSES },
+    coachPinned: { $ne: true },
+  })
     .select("_id month student coach status")
     .lean();
   if (!misplaced.length) return { moved: 0, kept: 0 };
@@ -380,7 +413,7 @@ async function rehomeClassroomReports(classroom: any, month: string, ownerId: st
       continue;
     }
     const updated = await MonthlyFeedback.updateOne(
-      { _id: report._id, coach: report.coach, status: { $in: COACH_EDITABLE_STATUSES } },
+      { _id: report._id, coach: report.coach, status: { $in: COACH_EDITABLE_STATUSES }, coachPinned: { $ne: true } },
       { $set: { coach: ownerId, coachName: String(owner.name || owner.username || "Coach") } }
     ).catch(() => null);
     if (updated?.modifiedCount) movedIds.push(String(report._id));
@@ -812,4 +845,170 @@ export async function transferPendingFeedbackToCoach(input: { classroomId: unkno
     kept += result.kept;
   }
   return { moved, kept };
+}
+
+// ---------------------------------------------------------------------------
+// Reassigning a report to another coach (admin, before it is submitted)
+// ---------------------------------------------------------------------------
+
+const LIVE_CLASSROOM = { isActive: { $ne: false }, isTestClassroom: { $ne: true }, isSessionInstance: { $ne: true }, classroomType: { $ne: "demo" }, status: { $ne: "cancelled" } };
+
+function isActiveStaff(person: any) {
+  return Boolean(person && person.isActive !== false && person.role !== "student");
+}
+
+/**
+ * Coaches a report can be given to: every active instructor, plus anyone else
+ * (an admin who teaches) holding a live classroom. Coaches who teach one of the
+ * reports' students today are flagged so the picker can list them first.
+ */
+export async function reassignableCoaches(viewer: FeedbackViewer, feedbackIds: string[] = []) {
+  if (!isReviewer(viewer)) throw new FeedbackError("Only admins can reassign feedback.", 403);
+  await dbConnect();
+  const ids = feedbackIds.map(toObjectId).filter(Boolean);
+  const reports: any[] = ids.length ? await MonthlyFeedback.find({ _id: { $in: ids } }).select("student coach").lean() : [];
+  const studentIds = Array.from(new Set(reports.map((row) => idOf(row.student)))).map(toObjectId).filter(Boolean);
+  const currentCoachIds = new Set(reports.map((row) => idOf(row.coach)));
+
+  const [roomCoaches, roomInstructors, teachingRooms] = await Promise.all([
+    Classroom.distinct("coach", LIVE_CLASSROOM),
+    Classroom.distinct("instructor", LIVE_CLASSROOM),
+    studentIds.length ? Classroom.find({ ...LIVE_CLASSROOM, students: { $in: studentIds } }).select("coach instructor").lean<any[]>() : Promise.resolve([] as any[]),
+  ]);
+  const teaches = new Set(teachingRooms.map((room) => idOf(room.coach || room.instructor)).filter(Boolean));
+  const holdsClassroom = [...roomCoaches, ...roomInstructors].filter(Boolean);
+
+  const people: any[] = await User.find({
+    isActive: { $ne: false },
+    $or: [{ role: "instructor" }, { _id: { $in: holdsClassroom }, role: { $ne: "student" } }],
+  })
+    .select("name username role")
+    .sort({ name: 1 })
+    .lean();
+  return people.map((person) => ({
+    id: idOf(person),
+    name: String(person.name || person.username || "Coach"),
+    role: String(person.role || ""),
+    teachesStudent: teaches.has(idOf(person)),
+    isCurrent: currentCoachIds.size === 1 && currentCoachIds.has(idOf(person)),
+  }));
+}
+
+/**
+ * Moves reports the coach has not submitted yet (pending, draft, or sent back
+ * for changes) to another coach, with their tasks. A draft keeps what was
+ * written so far. The report is pinned to the chosen coach so the hourly
+ * re-homing does not move it back - unless the chosen coach is the one the
+ * automatic rule picks anyway, in which case it just follows the rule again.
+ */
+export async function reassignFeedback(input: ReassignInput, viewer: FeedbackViewer) {
+  if (!isReviewer(viewer)) throw new FeedbackError("Only admins can reassign feedback.", 403);
+  await dbConnect();
+  const target: any = await User.findById(input.coachId).select("name username email role isActive").lean();
+  if (!isActiveStaff(target)) throw new FeedbackError("That coach is not an active account.");
+  const targetId = idOf(target);
+  const targetName = String(target.name || target.username || "Coach");
+  const admin: any = await User.findById(viewer.id).select("name username").lean();
+  const adminName = String(admin?.name || admin?.username || "An admin");
+
+  const results: { id: string; ok: boolean; error?: string }[] = [];
+  const moved: any[] = [];
+  const fromCoaches = new Map<string, string[]>();
+
+  for (const id of input.ids) {
+    try {
+      const doc: any = await MonthlyFeedback.findById(id).lean();
+      if (!doc) throw new FeedbackError("Feedback not found.", 404);
+      const name = String(doc.studentName || "This student");
+      if (!REASSIGNABLE_STATUSES.includes(doc.status)) {
+        throw new FeedbackError(
+          doc.status === "skipped" ? `${name}'s report was skipped - reopen it first.` : `${name}'s report has already been submitted and can no longer be reassigned.`,
+          409
+        );
+      }
+      const fromId = idOf(doc.coach);
+      if (fromId === targetId) throw new FeedbackError(`${name}'s report is already with ${targetName}.`, 409);
+      const clash = await MonthlyFeedback.exists({ _id: { $ne: doc._id }, month: doc.month, student: doc.student, coach: target._id });
+      if (clash) throw new FeedbackError(`${targetName} already has a report for ${name} this month.`, 409);
+
+      // Handing it back to the coach the automatic rule would pick? Then no pin.
+      let automaticOwner = "";
+      if (doc.classroom && isFeedbackMonth(doc.month)) {
+        const classroom: any = await Classroom.findById(doc.classroom).select("coach instructor generatedSessions").lean();
+        if (classroom) automaticOwner = reportCoachId(classroom, monthBounds(doc.month), () => true);
+      }
+
+      const updated = await MonthlyFeedback.updateOne(
+        { _id: doc._id, coach: doc.coach, status: { $in: REASSIGNABLE_STATUSES } },
+        {
+          $set: {
+            coach: target._id,
+            coachName: targetName,
+            coachPinned: automaticOwner !== targetId,
+            reassignedBy: toObjectId(viewer.id),
+            reassignedAt: new Date(),
+            reassignedFromName: String(doc.coachName || ""),
+            reassignNote: input.note,
+          },
+        }
+      );
+      if (!updated.modifiedCount) throw new FeedbackError(`${name}'s report changed while you were reassigning it - reload and try again.`, 409);
+
+      moved.push({ ...doc, coach: target._id, coachName: targetName });
+      fromCoaches.set(fromId, [...(fromCoaches.get(fromId) || []), name]);
+      results.push({ id, ok: true });
+    } catch (error) {
+      results.push({ id, ok: false, error: error instanceof Error ? error.message : "Failed" });
+    }
+  }
+
+  if (moved.length) {
+    // The open task follows the report; a report whose task went missing gets
+    // a fresh one. Both quietly - the coach gets one summary below, not one
+    // email per student.
+    await reassignAutoTasks("MonthlyFeedback", moved.map(idOf), target._id, adminName, { notify: false });
+    for (const doc of moved) await raiseMonthlyFeedbackTask({ feedback: doc, monthLabel: monthLabel(doc.month), silent: true });
+    await notifyReassignment({ target, targetName, adminName, moved, fromCoaches, note: input.note }).catch((error) =>
+      console.error("[feedback] reassignment notice failed", error)
+    );
+  }
+  return { results, moved: moved.length };
+}
+
+function nameList(names: string[]) {
+  return names.slice(0, 5).join(", ") + (names.length > 5 ? ` and ${names.length - 5} more` : "");
+}
+
+async function notifyReassignment(input: { target: any; targetName: string; adminName: string; moved: any[]; fromCoaches: Map<string, string[]>; note: string }) {
+  const first = input.moved[0];
+  const month = String(first.month);
+  const label = monthLabel(month);
+  const count = input.moved.length;
+  const names = input.moved.map((doc) => String(doc.studentName || "a student"));
+  const noteLine = input.note ? ` Note: ${input.note}` : "";
+  const href = count === 1 ? `/feedback?month=${month}&open=${idOf(first)}` : `/feedback?month=${month}`;
+  const title = count === 1 ? `${names[0]}'s ${label} feedback is now yours` : `${count} ${label} feedback reports moved to you`;
+  const message = `${input.adminName} gave you ${count === 1 ? "this report" : nameList(names)} to write.${noteLine}`;
+
+  await Notification.create({ user: input.target._id, type: "monthly_feedback", title, message, metadata: { href, month } });
+  if (input.target.email) {
+    const appUrl = resolvePublicAppUrl();
+    await sendAutomationEmail({
+      to: String(input.target.email),
+      subject: title,
+      message: [`Hello ${input.targetName},`, "", message, "", appUrl ? `Open feedback: ${appUrl}${href}` : ""].filter(Boolean).join("\n"),
+      metadata: { kind: "monthly_feedback_reassigned", month, href, actionLabel: "Open Feedback" },
+    }).catch(() => null);
+  }
+
+  for (const [coachId, list] of Array.from(input.fromCoaches.entries())) {
+    if (!Types.ObjectId.isValid(coachId)) continue;
+    await Notification.create({
+      user: coachId,
+      type: "monthly_feedback",
+      title: list.length === 1 ? `${list[0]}'s ${label} feedback moved to ${input.targetName}` : `${list.length} ${label} feedback reports moved to ${input.targetName}`,
+      message: `${input.adminName} gave ${nameList(list)} to ${input.targetName}. You no longer need to write ${list.length === 1 ? "it" : "them"}.`,
+      metadata: { href: `/feedback?month=${month}`, month },
+    }).catch(() => null);
+  }
 }

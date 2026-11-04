@@ -2,15 +2,19 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
-import { AlertTriangle, CheckCheck, FilePlus2, CheckCircle2, Clock3, Eye, Lock, Mail, MessageSquareHeart, RotateCcw, Search, Send, SkipForward, Users, X } from "lucide-react";
+import { AlertTriangle, ArrowRightLeft, CheckCheck, FilePlus2, CheckCircle2, Clock3, Eye, Lock, Mail, MessageSquareHeart, RotateCcw, Search, Send, SkipForward, Users, X } from "lucide-react";
 import { toast } from "sonner";
 
 import { PageHeader, StatCard } from "@/components/common/PageHeader";
+import ReassignFeedbackDialog from "@/components/feedback/ReassignFeedbackDialog";
 import { Avatar, MonthSwitcher, ParentReportCard, StatusBadge, TabBar, dueLabel, isOverdue, patchFeedback, useFeedbackList, type FeedbackItem } from "@/components/feedback/feedbackUi";
 import { PARENT_NOTE_MAX, PARENT_NOTE_MIN, questionSetFor } from "@/lib/feedback/feedbackQuestions";
 import { MIN_CLASSES_FOR_FEEDBACK, isParentNoteComplete } from "@/lib/feedback/feedbackRules";
 
 type Tab = "pending" | "submitted" | "changes_requested" | "sent" | "skipped";
+
+/** Reports a coach has not submitted yet - the only ones an admin can hand to another coach. */
+const REASSIGNABLE = ["pending", "draft", "changes_requested"];
 
 const TAB_STATUSES: Record<Tab, string[]> = {
   pending: ["pending", "draft"],
@@ -20,7 +24,19 @@ const TAB_STATUSES: Record<Tab, string[]> = {
   skipped: ["skipped"],
 };
 
-function ReviewDrawer({ item, canApprove, onClose, onChanged }: { item: FeedbackItem; canApprove: boolean; onClose: () => void; onChanged: (item: FeedbackItem) => void }) {
+function ReviewDrawer({
+  item,
+  canApprove,
+  onClose,
+  onChanged,
+  onReassign,
+}: {
+  item: FeedbackItem;
+  canApprove: boolean;
+  onClose: () => void;
+  onChanged: (item: FeedbackItem) => void;
+  onReassign: () => void;
+}) {
   const [parentNote, setParentNote] = useState(item.parentNote);
   const [returnOpen, setReturnOpen] = useState(false);
   const [returnNote, setReturnNote] = useState("");
@@ -91,6 +107,27 @@ function ReviewDrawer({ item, canApprove, onClose, onChanged }: { item: Feedback
                 <div className="font-black text-slate-800">Skipped by coach</div>
                 <div className="mt-0.5 text-slate-600">{item.skipReason || "No reason given."}</div>
               </div>
+            )}
+
+            {item.reassignedAt && REASSIGNABLE.includes(item.status) && (
+              <div className="rounded-xl border border-sky-200 bg-sky-50 p-3 text-sm text-sky-900">
+                <div className="flex items-center gap-1.5 font-black">
+                  <ArrowRightLeft size={14} />
+                  Reassigned{item.reassignedFromName ? ` from ${item.reassignedFromName}` : ""}
+                </div>
+                <div className="mt-0.5 text-xs opacity-80">
+                  {new Date(item.reassignedAt).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" })}
+                  {item.coachPinned ? " · stays with this coach" : " · follows the month's coach"}
+                </div>
+                {item.reassignNote && <div className="mt-1">{item.reassignNote}</div>}
+              </div>
+            )}
+
+            {canApprove && REASSIGNABLE.includes(item.status) && (
+              <button type="button" className="btn btn-outline w-full justify-center" disabled={Boolean(busy)} onClick={onReassign}>
+                <ArrowRightLeft size={15} />
+                Reassign to another coach
+              </button>
             )}
 
             {item.reviewNote && item.status === "changes_requested" && (
@@ -195,6 +232,7 @@ export default function AdminFeedbackClient({ canApprove, initialMonth = "", ini
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [bulkBusy, setBulkBusy] = useState(false);
   const [generating, setGenerating] = useState(false);
+  const [reassignIds, setReassignIds] = useState<string[] | null>(null);
   const { data, loading, error, reload, setData } = useFeedbackList({ month, coach, q: debouncedQ });
 
   useEffect(() => {
@@ -270,6 +308,13 @@ export default function AdminFeedbackClient({ canApprove, initialMonth = "", ini
   }
 
   const allSelected = visible.length > 0 && visible.every((row) => selected.has(row.id));
+  // Submitted reports are selected to approve; unsubmitted ones to reassign.
+  const selectable = canApprove && (tab === "submitted" || tab === "pending" || tab === "changes_requested");
+  const reassignSummary = (ids: string[]) => {
+    if (ids.length !== 1) return `${ids.length} reports`;
+    const name = items.find((row) => row.id === ids[0])?.studentName || "this";
+    return `${name.split(" ")[0]}'s report`;
+  };
 
   return (
     <div className="min-w-0 space-y-4 text-slate-950">
@@ -369,6 +414,12 @@ export default function AdminFeedbackClient({ canApprove, initialMonth = "", ini
             {bulkBusy ? "Sending…" : `Approve & send ${selected.size}`}
           </button>
         )}
+        {canApprove && tab !== "submitted" && selectable && selected.size > 0 && (
+          <button type="button" className="btn btn-primary ml-auto" onClick={() => setReassignIds(Array.from(selected))}>
+            <ArrowRightLeft size={16} />
+            Reassign {selected.size}
+          </button>
+        )}
       </div>
 
       {error && <p className="rounded-xl bg-rose-50 p-3 text-sm text-rose-700">{error}</p>}
@@ -389,7 +440,7 @@ export default function AdminFeedbackClient({ canApprove, initialMonth = "", ini
         )}
         {visible.length > 0 && (
           <ul className="divide-y divide-slate-100">
-            {canApprove && tab === "submitted" && (
+            {selectable && (
               <li className="flex items-center gap-3 bg-slate-50/70 px-4 py-2 text-xs font-bold text-slate-500">
                 <input
                   type="checkbox"
@@ -406,7 +457,7 @@ export default function AdminFeedbackClient({ canApprove, initialMonth = "", ini
               const average = rated.length ? rated.reduce((sum, value) => sum + value, 0) / rated.length : 0;
               return (
                 <li key={row.id} className="flex items-center gap-3 px-4 py-3 hover:bg-slate-50/70">
-                  {canApprove && tab === "submitted" && (
+                  {selectable && (
                     <input
                       type="checkbox"
                       className="h-4 w-4 shrink-0 accent-[#5a1372]"
@@ -441,6 +492,15 @@ export default function AdminFeedbackClient({ canApprove, initialMonth = "", ini
                           </span>
                         )}
                         {row.status === "skipped" && <SkipForward size={13} className="text-slate-400" />}
+                        {row.reassignedAt && REASSIGNABLE.includes(row.status) && (
+                          <span
+                            className="inline-flex items-center gap-1 rounded-full bg-sky-50 px-2 py-0.5 text-[11px] font-bold text-sky-700"
+                            title={row.reassignedFromName ? `Moved from ${row.reassignedFromName}` : "Moved by an admin"}
+                          >
+                            <ArrowRightLeft size={11} />
+                            Reassigned
+                          </span>
+                        )}
                       </div>
                       <div className="mt-0.5 flex flex-wrap gap-x-3 text-xs text-slate-500">
                         <span>Coach {row.coachName}</span>
@@ -452,6 +512,12 @@ export default function AdminFeedbackClient({ canApprove, initialMonth = "", ini
                       </div>
                     </div>
                   </button>
+                  {canApprove && REASSIGNABLE.includes(row.status) && (
+                    <button type="button" className="btn btn-outline hidden shrink-0 px-3 py-1.5 text-xs sm:inline-flex" onClick={() => setReassignIds([row.id])}>
+                      <ArrowRightLeft size={13} />
+                      Reassign
+                    </button>
+                  )}
                   {canApprove && row.status === "submitted" && (
                     <button
                       type="button"
@@ -486,6 +552,23 @@ export default function AdminFeedbackClient({ canApprove, initialMonth = "", ini
           onChanged={(saved) => {
             replaceItem(saved);
             if (saved.status !== openItem.status) setOpenId(null);
+          }}
+          onReassign={() => setReassignIds([openItem.id])}
+        />
+      )}
+
+      {reassignIds && (
+        <ReassignFeedbackDialog
+          ids={reassignIds}
+          summary={reassignSummary(reassignIds)}
+          onClose={() => setReassignIds(null)}
+          onDone={(moved) => {
+            setReassignIds(null);
+            if (moved) {
+              setSelected(new Set());
+              setOpenId(null);
+              void reload();
+            }
           }}
         />
       )}

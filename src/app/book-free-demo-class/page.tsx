@@ -1,11 +1,14 @@
 import Image from "next/image";
 import Link from "next/link";
 import { Fragment, type CSSProperties, type ReactNode } from "react";
+import CoachesSection from "@/components/marketing/CoachesSection";
+import { StudentRatingsStrip } from "@/components/marketing/StudentRatingsMarquee";
 import { ACADEMY_LOGO_URL } from "@/lib/branding";
 import { coursePages, courseSessionTotal } from "@/lib/coursePages";
 import { curriculumLevels } from "@/lib/demoCurriculum";
 import { LEGAL_LINKS } from "@/lib/publicLinks";
 import { faqSchema, publicMetadata } from "@/lib/seo";
+import { studentRatings } from "@/lib/studentRatings";
 import CurriculumJourney, { type JourneyStage } from "./CurriculumJourney";
 import LandingMotion from "./LandingMotion";
 import ScreenTimePlanner from "./ScreenTimePlanner";
@@ -43,33 +46,6 @@ export const metadata = publicMetadata({
   ],
   imageAlt: "Envision Chess Academy student concentrating on a chess tournament game",
 });
-
-const students = [
-  {
-    name: "Anish Bijibilla",
-    level: "International achievement",
-    detail: "Qualified for the FIDE World Cadets Cup in Batumi, representing England. England's No. 1 Under-7 across formats.",
-    image: "/images/achievements/682626726_122217430778279433_7786835792267057544_n.jpg",
-  },
-  {
-    name: "Anumega Kundu",
-    level: "International tournament",
-    detail: "8th position in U-12 Girls at the 1st Rangamati International Rapid and Blitz Tournament, 2026.",
-    image: "/images/achievements/732018737_122223099770279433_9055084044092369505_n.jpg",
-  },
-  {
-    name: "Nilasha Konwar",
-    level: "District champion",
-    detail: "1st place in U-7 Girls at the Purba Bardhaman District Chess Championship 2025.",
-    image: "/images/achievements/500411390_122179989356279433_6003444726920825586_n.jpg",
-  },
-  {
-    name: "Urvil Maurya",
-    level: "District tournament",
-    detail: "3rd place in Under-13 Open at the Kota District Under-15 Open Chess Tournament 2025.",
-    image: "/images/achievements/517604773_122185349084279433_6977536861914066886_n.jpg",
-  },
-];
 
 const features = [
   { icon: "◎", title: "Stay focused in class", detail: "Practise giving one problem their attention, noticing details and staying with a task before moving on." },
@@ -357,7 +333,7 @@ export default function BookFreeDemoClassPage() {
             <a href="#pricing">Fees</a>
             <a href="#students">Student achievements</a>
             <Link className="btn small" href={demoHref}>
-              Book free demo <span aria-hidden="true">↗</span>
+              Book free demo
             </Link>
           </nav>
         </div>
@@ -386,13 +362,9 @@ export default function BookFreeDemoClassPage() {
                   </span>
                 </em>
               </h1>
-              <p className="hero-in" style={{ "--d": 6 } as CSSProperties}>
-                Instead of another hour of passive scrolling, give your child an hour of thinking, planning and problem-solving.
-                Envision&apos;s live chess classes turn screen time into a guided learning experience that challenges young minds.
-              </p>
               <div className="hero-actions hero-in" style={{ "--d": 7 } as CSSProperties} data-hero-cta>
                 <Link className="btn shine" href={demoHref}>
-                  Book a free demo <span aria-hidden="true">↗</span>
+                  Book a free demo
                 </Link>
               </div>
               <ul className="hero-proof hero-in" style={{ "--d": 8 } as CSSProperties}>
@@ -404,8 +376,8 @@ export default function BookFreeDemoClassPage() {
             <div className="hero-photo">
               <div className="hero-ring" aria-hidden="true" />
               <Image
-                src="/images/students/tournament-play.webp"
-                alt="Envision Chess Academy student concentrating on a chess tournament game"
+                src="/images/students/student-at-the-board-hero.webp"
+                alt="Envision Chess Academy student seated at a chessboard before a tournament game"
                 fill
                 priority
                 sizes="(max-width: 900px) 92vw, 540px"
@@ -421,32 +393,9 @@ export default function BookFreeDemoClassPage() {
               Every achievement begins with a first move. Meet Envision students who started their own chess journey and went
               on to earn recognition on bigger stages. Your child&apos;s journey could start here.
             </SectionHead>
-            <div className="student-track" data-carousel aria-label="Student achievement carousel" tabIndex={0}>
-              {students.map((student, index) => (
-                <article className="student-card" key={student.name} data-reveal style={{ "--d": index } as CSSProperties}>
-                  <div className="student-photo">
-                    <Image src={student.image} alt={`Envision student ${student.name}`} fill sizes="(max-width: 600px) 80vw, 300px" />
-                  </div>
-                  <div className="student-copy">
-                    <div className="level">{student.level}</div>
-                    <h3>{student.name}</h3>
-                    <p>{student.detail}</p>
-                  </div>
-                </article>
-              ))}
-            </div>
-            <div className="carousel-dots" data-carousel-dots aria-hidden="true">
-              {students.map((student) => (
-                <span key={student.name} />
-              ))}
-            </div>
-            <div className="carousel-hint">
-              <span className="swipe" aria-hidden="true">
-                ←→
-              </span>{" "}
-              Swipe to explore more student achievements.
-            </div>
           </div>
+          {/* The homepage's auto-scrolling strip, edge to edge, without its own heading. */}
+          <StudentRatingsStrip students={studentRatings} photoSize={116} />
         </section>
 
         <section className="section soft">
@@ -471,6 +420,70 @@ export default function BookFreeDemoClassPage() {
             </div>
           </div>
         </section>
+
+        <section className="section" id="pricing">
+          <div className="wrap">
+            <SectionHead eyebrow="Fees" title="Start the journey. Pick how you learn.">
+              Beginner and Intermediate fees below. For Semi-Pro, Pro and Masters, ask us during your free demo.
+            </SectionHead>
+
+            {/* On a phone only one stage and one plan show at a time; these
+                radios pick which, with CSS alone. Wider screens show all four. */}
+            <div className="pricing" data-reveal>
+              <input type="radio" name="bfd-stage" id="bfd-stage-beginner" defaultChecked />
+              <input type="radio" name="bfd-stage" id="bfd-stage-intermediate" />
+              <input type="radio" name="bfd-plan" id="bfd-plan-group" defaultChecked />
+              <input type="radio" name="bfd-plan" id="bfd-plan-individual" />
+              <div className="toggles">
+                <div className="seg seg-stage" role="group" aria-label="Stage">
+                  <label htmlFor="bfd-stage-beginner">Beginner</label>
+                  <label htmlFor="bfd-stage-intermediate">Intermediate</label>
+                </div>
+                <div className="seg seg-plan" role="group" aria-label="Class type">
+                  <label htmlFor="bfd-plan-group">Group</label>
+                  <label htmlFor="bfd-plan-individual">Individual</label>
+                </div>
+              </div>
+              <div className="pricing-levels">
+                {pricedStages.map((stage) => (
+                  <article className={`pricing-level stage-${stage.id}`} key={stage.id}>
+                    <div className="stage-no">{stage.stage}</div>
+                    <h3>{stage.name}</h3>
+                    <p>{stage.detail}</p>
+                    <div className="pricing-options">
+                      <PlanCard plan={plans.group} kind="group" />
+                      <PlanCard plan={plans.individual} kind="individual" />
+                    </div>
+                  </article>
+                ))}
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section className="final-cta">
+          <div className="wrap">
+            <div className="cta-panel" data-reveal data-final-cta>
+              <span className="cta-knight" aria-hidden="true">
+                ♞
+              </span>
+              <div>
+                <div className="eyebrow">Make their next screen session count</div>
+                <h2>Replace passive scrolling with a challenge that makes them think.</h2>
+                <p>
+                  Book a free demo. Meet an Envision coach, understand your child&apos;s current level and get a clear
+                  recommendation. No obligation to enrol.
+                </p>
+              </div>
+              <Link className="btn shine" href={demoHref}>
+                Book a free demo
+              </Link>
+            </div>
+          </div>
+        </section>
+
+        {/* The homepage's coaching team, as an endless sideways strip. */}
+        <CoachesSection scrolling className="bfd-coaches" />
 
         <section className="section">
           <div className="wrap">
@@ -540,46 +553,6 @@ export default function BookFreeDemoClassPage() {
           </div>
         </section>
 
-        <section className="section" id="pricing">
-          <div className="wrap">
-            <SectionHead eyebrow="Fees" title="Start the journey. Pick how you learn.">
-              Beginner and Intermediate fees below. For Semi-Pro, Pro and Masters, ask us during your free demo.
-            </SectionHead>
-
-            {/* On a phone only one stage and one plan show at a time; these
-                radios pick which, with CSS alone. Wider screens show all four. */}
-            <div className="pricing" data-reveal>
-              <input type="radio" name="bfd-stage" id="bfd-stage-beginner" defaultChecked />
-              <input type="radio" name="bfd-stage" id="bfd-stage-intermediate" />
-              <input type="radio" name="bfd-plan" id="bfd-plan-group" defaultChecked />
-              <input type="radio" name="bfd-plan" id="bfd-plan-individual" />
-              <div className="toggles">
-                <div className="seg seg-stage" role="group" aria-label="Stage">
-                  <label htmlFor="bfd-stage-beginner">Beginner</label>
-                  <label htmlFor="bfd-stage-intermediate">Intermediate</label>
-                </div>
-                <div className="seg seg-plan" role="group" aria-label="Class type">
-                  <label htmlFor="bfd-plan-group">Group</label>
-                  <label htmlFor="bfd-plan-individual">Individual</label>
-                </div>
-              </div>
-              <div className="pricing-levels">
-                {pricedStages.map((stage) => (
-                  <article className={`pricing-level stage-${stage.id}`} key={stage.id}>
-                    <div className="stage-no">{stage.stage}</div>
-                    <h3>{stage.name}</h3>
-                    <p>{stage.detail}</p>
-                    <div className="pricing-options">
-                      <PlanCard plan={plans.group} kind="group" />
-                      <PlanCard plan={plans.individual} kind="individual" />
-                    </div>
-                  </article>
-                ))}
-              </div>
-            </div>
-          </div>
-        </section>
-
         <section className="section soft">
           <div className="wrap">
             <SectionHead eyebrow="Simple to get started" title="Five steps from curiosity to a clear learning plan." />
@@ -613,27 +586,6 @@ export default function BookFreeDemoClassPage() {
             </div>
           </div>
         </section>
-
-        <section className="final-cta">
-          <div className="wrap">
-            <div className="cta-panel" data-reveal data-final-cta>
-              <span className="cta-knight" aria-hidden="true">
-                ♞
-              </span>
-              <div>
-                <div className="eyebrow">Make their next screen session count</div>
-                <h2>Replace passive scrolling with a challenge that makes them think.</h2>
-                <p>
-                  Book a free demo. Meet an Envision coach, understand your child&apos;s current level and get a clear
-                  recommendation. No obligation to enrol.
-                </p>
-              </div>
-              <Link className="btn shine" href={demoHref}>
-                Book a free demo <span aria-hidden="true">↗</span>
-              </Link>
-            </div>
-          </div>
-        </section>
       </main>
 
       <footer className="footer">
@@ -650,7 +602,7 @@ export default function BookFreeDemoClassPage() {
 
       <div className="mobile-cta" data-mobile-cta>
         <Link className="btn" href={demoHref}>
-          Book a free demo <span aria-hidden="true">↗</span>
+          Book a free demo
         </Link>
       </div>
 

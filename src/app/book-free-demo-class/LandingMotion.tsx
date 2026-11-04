@@ -4,7 +4,7 @@ import { useEffect } from "react";
 
 /**
  * The scroll-driven half of the landing page's motion: reveals, count-ups, the
- * carousel dots and auto-advance, the header shadow and the phone's sticky CTA.
+ * header shadow and the phone's sticky CTA.
  *
  * Renders nothing. Content is visible in the server HTML; only once this runs
  * does `.motion` hide what has not yet scrolled into view, and anything already
@@ -74,46 +74,6 @@ export default function LandingMotion() {
       });
       anchors.forEach((el) => ctaObserver.observe(el));
       cleanups.push(() => ctaObserver.disconnect());
-    }
-
-    // Carousel: dots follow the scroll; it advances itself until touched.
-    const track = root.querySelector<HTMLElement>("[data-carousel]");
-    const dots = Array.from(root.querySelectorAll<HTMLElement>("[data-carousel-dots] span"));
-    if (track && dots.length) {
-      const cards = Array.from(track.children) as HTMLElement[];
-      const current = () => {
-        const left = track.scrollLeft;
-        let best = 0;
-        cards.forEach((card, index) => {
-          if (Math.abs(card.offsetLeft - cards[0].offsetLeft - left) < Math.abs(cards[best].offsetLeft - cards[0].offsetLeft - left)) best = index;
-        });
-        // At the far end the last card may never reach the left edge.
-        if (left + track.clientWidth >= track.scrollWidth - 4) best = cards.length - 1;
-        return best;
-      };
-      const paint = () => dots.forEach((dot, index) => dot.classList.toggle("on", index === current()));
-      paint();
-      track.addEventListener("scroll", paint, { passive: true });
-      cleanups.push(() => track.removeEventListener("scroll", paint));
-
-      if (!reduced) {
-        let touched = false;
-        let onScreen = false;
-        const stop = () => (touched = true);
-        ["pointerdown", "touchstart", "wheel", "keydown"].forEach((type) => track.addEventListener(type, stop, { passive: true }));
-        const seen = new IntersectionObserver(([entry]) => (onScreen = entry.isIntersecting), { threshold: 0.5 });
-        seen.observe(track);
-        const timer = window.setInterval(() => {
-          if (touched || !onScreen || track.scrollWidth <= track.clientWidth + 4) return;
-          const next = (current() + 1) % cards.length;
-          track.scrollTo({ left: cards[next].offsetLeft - cards[0].offsetLeft, behavior: "smooth" });
-        }, 3800);
-        cleanups.push(() => {
-          window.clearInterval(timer);
-          seen.disconnect();
-          ["pointerdown", "touchstart", "wheel", "keydown"].forEach((type) => track.removeEventListener(type, stop));
-        });
-      }
     }
 
     return () => cleanups.forEach((cleanup) => cleanup());

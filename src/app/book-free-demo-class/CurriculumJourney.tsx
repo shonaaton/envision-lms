@@ -175,8 +175,7 @@ export default function CurriculumJourney({
               step up the board.
             </p>
             <Link className="btn shine" href={demoHref}>
-              Make the first move: book a free demo{" "}
-              <span aria-hidden="true">↗</span>
+              Make the first move: book a free demo
             </Link>
           </div>
         </li>

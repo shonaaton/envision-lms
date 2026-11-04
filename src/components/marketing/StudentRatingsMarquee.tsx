@@ -12,17 +12,17 @@ function initials(name: string) {
     .join("");
 }
 
-function Card({ student, hidden }: { student: StudentRating; hidden?: boolean }) {
+function Card({ student, hidden, photoSize = 88 }: { student: StudentRating; hidden?: boolean; photoSize?: number }) {
   const external = student.href?.startsWith("http");
   const body = (
     <>
-      <span className="relative h-[88px] w-[88px] shrink-0 overflow-hidden rounded-full bg-brand-50 ring-1 ring-brand/10">
+      <span className="relative h-[88px] w-[88px] shrink-0 overflow-hidden rounded-full bg-brand-50 ring-1 ring-brand/10" style={photoSize === 88 ? undefined : { width: photoSize, height: photoSize }}>
         {student.photo ? (
           <Image
             src={student.photo}
             alt={hidden ? "" : `${student.name}, Envision Chess Academy student`}
             fill
-            sizes="88px"
+            sizes={`${photoSize}px`}
             className="object-cover"
           />
         ) : (
@@ -61,6 +61,35 @@ function Card({ student, hidden }: { student: StudentRating; hidden?: boolean })
 }
 
 /**
+ * The moving strip on its own, for pages that bring their own heading (the
+ * /book-free-demo-class landing page uses it under its achievements copy).
+ */
+export function StudentRatingsStrip({
+  students,
+  className = "",
+  photoSize,
+}: {
+  students: StudentRating[];
+  className?: string;
+  /** Portrait diameter in px; the homepage keeps the 88px default. */
+  photoSize?: number;
+}) {
+  return (
+    <div className={`student-marquee ${className}`.trim()}>
+      <ul className="student-marquee-track">
+        {[0, 1].map((copy) =>
+          students.map((student) => (
+            <li key={`${copy}-${student.name}`} className="shrink-0 pr-4" aria-hidden={copy === 1 ? true : undefined}>
+              <Card student={student} hidden={copy === 1} photoSize={photoSize} />
+            </li>
+          ))
+        )}
+      </ul>
+    </div>
+  );
+}
+
+/**
  * A slow, endless strip of student cards. Pure CSS: the list is rendered twice
  * and the track slides by exactly half its width, so the loop has no seam. The
  * second copy is hidden from screen readers and the tab order. Hover or focus
@@ -75,17 +104,7 @@ export default function StudentRatingsMarquee({ students }: { students: StudentR
       >
         Our students. Their achievements.
       </h2>
-      <div className="student-marquee mt-5">
-        <ul className="student-marquee-track">
-          {[0, 1].map((copy) =>
-            students.map((student) => (
-              <li key={`${copy}-${student.name}`} className="shrink-0 pr-4" aria-hidden={copy === 1 ? true : undefined}>
-                <Card student={student} hidden={copy === 1} />
-              </li>
-            ))
-          )}
-        </ul>
-      </div>
+      <StudentRatingsStrip students={students} className="mt-5" />
       <p className="mt-4 px-4 text-center text-[11px] text-brand-900/45">FIDE ratings as of {RATINGS_AS_OF}.</p>
     </section>
   );

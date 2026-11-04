@@ -121,12 +121,6 @@
   font-size: 0.86rem;
   box-shadow: none;
 }
-.bfd .btn span {
-  transition: transform 0.2s var(--ease);
-}
-.bfd .btn:hover span {
-  transform: translate(2px, -2px);
-}
 /* A light sweep across the main buttons every few seconds. */
 .bfd .btn.shine::after {
   content: "";
@@ -496,120 +490,38 @@
   margin-top: 14px;
 }
 
-/* Student carousel */
+/* Student achievements: the homepage's auto-scrolling strip, with larger portraits on this page. */
 .bfd .student-section {
   padding: 80px 0 72px;
   background: var(--cream);
 }
-.bfd .student-track {
-  position: relative;
-  display: flex;
-  gap: 18px;
-  overflow-x: auto;
-  scroll-snap-type: x mandatory;
-  overscroll-behavior-x: contain;
-  padding: 6px 2px 18px;
-  scrollbar-width: none;
+.bfd .student-section .section-head {
+  margin-bottom: 26px;
 }
-.bfd .student-track::-webkit-scrollbar {
-  display: none;
+.bfd .student-marquee {
+  text-align: left;
 }
-.bfd .student-track:focus-visible {
-  outline: 3px solid var(--purple3);
-  outline-offset: 4px;
-  border-radius: 24px;
+.bfd .student-section .student-marquee li > a,
+.bfd .student-section .student-marquee li > div {
+  width: 360px;
 }
-.bfd .student-card {
-  flex: 0 0 300px;
-  scroll-snap-align: start;
-  background: #fff;
-  border: 1px solid var(--line);
-  border-radius: 23px;
-  overflow: hidden;
-  box-shadow: 0 10px 30px rgba(43, 11, 75, 0.07);
-  transition: transform 0.3s var(--ease), box-shadow 0.3s;
+
+/* The homepage's coaches section, scrolling. Undo this page's type rules inside it. */
+.bfd .coach-section {
+  text-align: left;
 }
-@media (hover: hover) {
-  .bfd .student-card:hover {
-    transform: translateY(-6px);
-    box-shadow: 0 18px 40px rgba(43, 11, 75, 0.14);
-  }
-  .bfd .student-card:hover .student-photo img {
-    transform: scale(1.05);
-  }
+.bfd .coach-section h2 {
+  color: #fff;
 }
-.bfd .student-photo {
-  position: relative;
-  height: 290px;
-  margin: 13px 13px 0;
-  border-radius: 15px;
-  overflow: hidden;
-  background: #eee4f5;
+.bfd .coach-section .coach-section__intro {
+  color: #e2cce9;
 }
-.bfd .student-photo img {
-  object-fit: cover;
-  object-position: center 28%;
-  transition: transform 0.5s var(--ease);
+.bfd .coach-section .coach-section__footnote {
+  color: #c8a6d6;
 }
-.bfd .student-copy {
-  padding: 18px 20px 22px;
-}
-.bfd .student-copy .level {
-  display: inline-block;
-  padding: 3px 10px;
-  border-radius: 99px;
-  background: #fff4c4;
-  color: #7d6100;
-  font-size: 0.66rem;
-  text-transform: uppercase;
-  letter-spacing: 0.12em;
-  font-weight: 800;
-}
-.bfd .student-copy h3 {
-  font-size: 1.15rem;
-  margin: 9px 0 6px;
-  color: var(--purple);
-}
-.bfd .student-copy p {
-  font-size: 0.86rem;
-  line-height: 1.5;
-}
-.bfd .carousel-dots {
-  display: flex;
-  justify-content: center;
-  gap: 7px;
-  margin-top: 4px;
-}
-.bfd .carousel-dots span {
-  width: 8px;
-  height: 8px;
-  border-radius: 99px;
-  background: #d8c7e6;
-  transition: width 0.35s var(--ease), background 0.35s;
-}
-.bfd .carousel-dots span.on {
-  width: 26px;
-  background: var(--purple3);
-}
-.bfd .carousel-hint {
-  font-size: 0.77rem;
-  color: #887c91;
-  margin-top: 10px;
-}
-.bfd .swipe {
-  display: inline-block;
-  font-weight: 800;
-  color: var(--purple3);
-  animation: bfd-nudge 1.8s ease-in-out infinite;
-}
-@keyframes bfd-nudge {
-  0%,
-  100% {
-    transform: translateX(0);
-  }
-  50% {
-    transform: translateX(6px);
-  }
+.bfd .coach-marquee .coach-card {
+  width: 340px;
+  height: 100%;
 }
 
 /* Screen-time concern */
@@ -1489,9 +1401,6 @@
   .bfd .promo-card p {
     margin: 0 0 18px;
   }
-  .bfd .promo-card .btn {
-    width: 100%;
-  }
   .bfd .promo-burst {
     left: auto;
     right: -30px;
@@ -1842,17 +1751,17 @@
   .bfd .wrap {
     width: calc(100% - 32px);
   }
+  /* Logo only on a phone: the hero button and the sticky bar carry the booking. */
   .bfd .bfd-nav {
     height: 60px;
+    justify-content: center;
+  }
+  .bfd .navlinks {
+    display: none;
   }
   .bfd .bfd-logo img {
     height: 40px;
     max-width: 140px;
-  }
-  .bfd .navlinks .btn {
-    padding: 8px 14px;
-    min-height: 38px;
-    font-size: 0.8rem;
   }
   .bfd section[id] {
     scroll-margin-top: 60px;
@@ -1860,24 +1769,52 @@
   .bfd .hero {
     padding: 30px 0 30px;
   }
+  /* Phone order: headline, its sub-header, the photo, then the big button under it. */
+  .bfd .hero-grid {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0;
+  }
+  .bfd .hero-copy {
+    display: contents;
+  }
+  .bfd .hero h1 { order: 1; }
+  .bfd .hero .eyebrow { order: 2; }
+  .bfd .hero-photo { order: 4; }
+  .bfd .hero-actions { order: 5; }
+  .bfd .hero-proof { order: 6; }
   .bfd .hero .eyebrow {
-    font-size: 0.6rem;
-    letter-spacing: 0.1em;
-    padding: 6px 12px;
-    margin-bottom: 16px;
+    align-self: center;
+    margin: 14px 0 0;
+    padding: 0;
+    border: 0;
+    background: none;
+    font-size: 1.02rem;
+    font-weight: 700;
+    letter-spacing: 0;
+    text-transform: none;
+    color: var(--yellow2);
+  }
+  .bfd .hero .eyebrow .live-dot {
+    display: none;
   }
   .bfd .hero h1 {
     font-size: clamp(2.05rem, 9.6vw, 2.8rem);
   }
   .bfd .hero-copy > p {
-    font-size: 0.98rem;
-    line-height: 1.6;
-    margin: 14px auto 20px;
+    font-size: 0.96rem;
+    line-height: 1.55;
+    margin: 12px auto 18px;
   }
+  .bfd .hero-actions {
+    margin-top: 26px;
+  }
+  /* Buttons hug their label: just the padding around the text, never stretched. */
   .bfd .hero-actions .btn {
-    width: 100%;
-    min-height: 54px;
-    font-size: 1.02rem;
+    min-height: 0;
+    padding: 14px 28px;
+    font-size: 1.1rem;
   }
   .bfd .hero-proof {
     font-size: 0.78rem;
@@ -1885,7 +1822,8 @@
     margin-top: 14px;
   }
   .bfd .hero-photo {
-    height: 270px;
+    height: 330px;
+    margin-top: 18px;
   }
   /* Bottom-left: the WhatsApp button owns the bottom-right corner. */
   .bfd .photo-note {
@@ -1907,21 +1845,6 @@
   }
   .bfd .section-head p {
     font-size: 0.95rem;
-  }
-
-  /* The carousel runs edge to edge, with the next card peeking in. */
-  .bfd .student-track {
-    margin: 0 -16px;
-    padding: 6px 16px 16px;
-    scroll-padding: 0 16px;
-    gap: 14px;
-  }
-  .bfd .student-card {
-    flex-basis: 80vw;
-    max-width: 320px;
-  }
-  .bfd .student-photo {
-    height: 250px;
   }
 
   .bfd .concern-card {
@@ -2051,9 +1974,6 @@
     padding: 32px 20px;
     border-radius: 24px;
   }
-  .bfd .cta-panel .btn {
-    width: 100%;
-  }
   .bfd .cta-knight {
     font-size: 160px;
   }
@@ -2061,7 +1981,8 @@
   /* Sticky booking bar. The right gutter leaves room for the WhatsApp button,
      which floats at the same height in the bottom-right corner. */
   .bfd .mobile-cta {
-    display: block;
+    display: flex;
+    justify-content: center;
     position: fixed;
     left: 0;
     right: 0;
@@ -2080,8 +2001,8 @@
     transform: none;
   }
   .bfd .mobile-cta .btn {
-    width: 100%;
-    min-height: 52px;
+    min-height: 0;
+    padding: 13px 26px;
   }
   .bfd .footer {
     padding-bottom: 110px;

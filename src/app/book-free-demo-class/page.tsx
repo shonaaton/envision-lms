@@ -270,6 +270,20 @@ function SectionHead({ eyebrow, title, children, id }: { eyebrow: string; title?
   );
 }
 
+/**
+ * The booking button that closes every second section. It replaced a sticky
+ * bottom bar: the button sits in the page, so it never covers the content.
+ */
+function SectionCta() {
+  return (
+    <div className="section-cta" data-reveal>
+      <Link className="btn shine" href={demoHref}>
+        Book a free demo
+      </Link>
+    </div>
+  );
+}
+
 function PlanCard({ plan, kind }: { plan: (typeof plans)["group"]; kind: "group" | "individual" }) {
   return (
     <div className={`pricing-option ${kind}-plan`}>
@@ -362,7 +376,7 @@ export default function BookFreeDemoClassPage() {
                   </span>
                 </em>
               </h1>
-              <div className="hero-actions hero-in" style={{ "--d": 7 } as CSSProperties} data-hero-cta>
+              <div className="hero-actions hero-in" style={{ "--d": 7 } as CSSProperties}>
                 <Link className="btn shine" href={demoHref}>
                   Book a free demo
                 </Link>
@@ -418,6 +432,7 @@ export default function BookFreeDemoClassPage() {
                 </a>
               </div>
             </div>
+            <SectionCta />
           </div>
         </section>
 
@@ -463,7 +478,7 @@ export default function BookFreeDemoClassPage() {
 
         <section className="final-cta">
           <div className="wrap">
-            <div className="cta-panel" data-reveal data-final-cta>
+            <div className="cta-panel" data-reveal>
               <span className="cta-knight" aria-hidden="true">
                 ♞
               </span>
@@ -504,6 +519,7 @@ export default function BookFreeDemoClassPage() {
                 </article>
               ))}
             </div>
+            <SectionCta />
           </div>
         </section>
 
@@ -533,6 +549,7 @@ export default function BookFreeDemoClassPage() {
             <div data-reveal>
               <ScreenTimePlanner />
             </div>
+            <SectionCta />
           </div>
         </section>
 
@@ -584,6 +601,7 @@ export default function BookFreeDemoClassPage() {
                 </details>
               ))}
             </div>
+            <SectionCta />
           </div>
         </section>
       </main>
@@ -599,12 +617,6 @@ export default function BookFreeDemoClassPage() {
           </nav>
         </div>
       </footer>
-
-      <div className="mobile-cta" data-mobile-cta>
-        <Link className="btn" href={demoHref}>
-          Book a free demo
-        </Link>
-      </div>
 
       <LandingMotion />
     </div>

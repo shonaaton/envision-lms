@@ -4,7 +4,7 @@ import { useEffect } from "react";
 
 /**
  * The scroll-driven half of the landing page's motion: reveals, count-ups, the
- * header shadow and the phone's sticky CTA.
+ * header shadow.
  *
  * Renders nothing. Content is visible in the server HTML; only once this runs
  * does `.motion` hide what has not yet scrolled into view, and anything already
@@ -62,19 +62,6 @@ export default function LandingMotion() {
     onScroll();
     window.addEventListener("scroll", onScroll, { passive: true });
     cleanups.push(() => window.removeEventListener("scroll", onScroll));
-
-    // The phone's sticky CTA: shown only while neither on-page button is on screen.
-    const bar = root.querySelector<HTMLElement>("[data-mobile-cta]");
-    const anchors = [root.querySelector("[data-hero-cta]"), root.querySelector("[data-final-cta]")].filter(Boolean) as Element[];
-    if (bar && anchors.length && "IntersectionObserver" in window) {
-      const visible = new Set<Element>();
-      const ctaObserver = new IntersectionObserver((entries) => {
-        entries.forEach((entry) => (entry.isIntersecting ? visible.add(entry.target) : visible.delete(entry.target)));
-        bar.classList.toggle("show", visible.size === 0);
-      });
-      anchors.forEach((el) => ctaObserver.observe(el));
-      cleanups.push(() => ctaObserver.disconnect());
-    }
 
     return () => cleanups.forEach((cleanup) => cleanup());
   }, []);

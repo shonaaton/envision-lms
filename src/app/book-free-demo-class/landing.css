@@ -1608,8 +1608,11 @@
   text-decoration: underline;
   text-underline-offset: 3px;
 }
-.bfd .mobile-cta {
-  display: none;
+/* The booking button that closes every second section. */
+.bfd .section-cta {
+  display: flex;
+  justify-content: center;
+  margin-top: 36px;
 }
 
 /* Scroll reveals. Only once LandingMotion has run (.motion), so no-JS keeps everything visible. */
@@ -1982,34 +1985,8 @@
     font-size: 160px;
   }
 
-  /* Sticky booking bar. The right gutter leaves room for the WhatsApp button,
-     which floats at the same height in the bottom-right corner. */
-  .bfd .mobile-cta {
-    display: flex;
-    justify-content: center;
-    position: fixed;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    z-index: 30;
-    padding: 8px 88px calc(14px + env(safe-area-inset-bottom)) 16px;
-    background: rgba(255, 253, 243, 0.96);
-    backdrop-filter: blur(12px);
-    -webkit-backdrop-filter: blur(12px);
-    border-top: 1px solid var(--line);
-    box-shadow: 0 -10px 30px rgba(43, 11, 75, 0.08);
-    transform: translateY(110%);
-    transition: transform 0.35s var(--ease);
-  }
-  .bfd .mobile-cta.show {
-    transform: none;
-  }
-  .bfd .mobile-cta .btn {
-    min-height: 0;
-    padding: 13px 26px;
-  }
   .bfd .footer {
-    padding-bottom: 110px;
+    padding-bottom: 40px;
   }
   .bfd .footer-row {
     flex-direction: column;

@@ -24,6 +24,31 @@ const TAB_STATUSES: Record<Tab, string[]> = {
   skipped: ["skipped"],
 };
 
+/**
+ * Who has the report, the batch's permanent coach today, and who has taken the
+ * most of this month's classes - amber where they differ from the assignee.
+ */
+function CoachContextLine({ item }: { item: FeedbackItem }) {
+  const differs = (id?: string) => Boolean(id) && id !== item.coachId;
+  return (
+    <>
+      <span>
+        Assigned: <span className="font-semibold text-slate-700">{item.coachName}</span>
+      </span>
+      {item.permanentCoachName && (
+        <span className={differs(item.permanentCoachId) ? "font-semibold text-amber-700" : ""} title="The batch's permanent coach today">
+          Permanent: {item.permanentCoachName}
+        </span>
+      )}
+      {item.topCoachName && (
+        <span className={differs(item.topCoachId) ? "font-semibold text-amber-700" : ""} title="Coach who has taken the most of this month's classes so far">
+          Most classes: {item.topCoachName} ({item.topCoachClasses})
+        </span>
+      )}
+    </>
+  );
+}
+
 function ReviewDrawer({
   item,
   canApprove,
@@ -70,9 +95,10 @@ function ReviewDrawer({
               <h2 className="truncate text-lg font-black">{item.studentName}</h2>
               <StatusBadge status={item.status} overdue={isOverdue(item)} />
             </div>
-            <div className="text-xs text-slate-500">
-              Coach {item.coachName} · {questionSetFor(item.tier).tierLabel}
-              {item.submittedAt && ` · submitted ${new Date(item.submittedAt).toLocaleDateString("en-IN", { day: "numeric", month: "short" })}`}
+            <div className="flex flex-wrap gap-x-3 text-xs text-slate-500">
+              <CoachContextLine item={item} />
+              <span>{questionSetFor(item.tier).tierLabel}</span>
+              {item.submittedAt && <span>submitted {new Date(item.submittedAt).toLocaleDateString("en-IN", { day: "numeric", month: "short" })}</span>}
             </div>
           </div>
           <button type="button" onClick={onClose} className="rounded-lg p-1.5 text-slate-500 hover:bg-slate-100" aria-label="Close">
@@ -503,7 +529,7 @@ export default function AdminFeedbackClient({ canApprove, initialMonth = "", ini
                         )}
                       </div>
                       <div className="mt-0.5 flex flex-wrap gap-x-3 text-xs text-slate-500">
-                        <span>Coach {row.coachName}</span>
+                        <CoachContextLine item={row} />
                         <span>{questionSetFor(row.tier).tierLabel}</span>
                         <span>
                           {row.stats.classesAttended}/{row.stats.classesScheduled} classes

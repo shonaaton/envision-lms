@@ -91,6 +91,27 @@ describe("transferPendingFeedbackToCoach", () => {
     expect(reassignAutoTasks).toHaveBeenCalledWith("MonthlyFeedback", ["r1", "r2"], NEW, "Report follows the coach who taught the month");
   });
 
+  it("from November 2026, moves the month to the new permanent coach even though the old one taught most of it", async () => {
+    const lateHandover = {
+      _id: CLASSROOM,
+      coach: NEW,
+      generatedSessions: [
+        session("2026-11-03T12:00:00Z", { conductedBy: OLD }),
+        session("2026-11-10T12:00:00Z", { conductedBy: OLD }),
+        session("2026-11-17T12:00:00Z", { conductedBy: OLD }),
+        session("2026-11-24T12:00:00Z"),
+      ],
+    };
+    (Classroom.findById as any).mockReturnValue(chain(lateHandover));
+    (MonthlyFeedback.distinct as any).mockResolvedValue(["2026-11"]);
+    (MonthlyFeedback.find as any).mockReturnValue(chain([{ _id: "r1", month: "2026-11", student: "s1", coach: OLD, status: "pending" }]));
+
+    const result = await transferPendingFeedbackToCoach({ classroomId: CLASSROOM, fromCoachId: OLD, toCoachId: NEW });
+
+    expect(result).toEqual({ moved: 1, kept: 0 });
+    expect((MonthlyFeedback.updateOne as any).mock.calls[0][1]).toEqual({ $set: { coach: NEW, coachName: "New Coach" } });
+  });
+
   it("does nothing when the coach did not actually change", async () => {
     expect(await transferPendingFeedbackToCoach({ classroomId: CLASSROOM, fromCoachId: OLD, toCoachId: OLD })).toEqual({ moved: 0, kept: 0 });
     expect(MonthlyFeedback.distinct).not.toHaveBeenCalled();

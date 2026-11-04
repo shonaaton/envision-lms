@@ -226,4 +226,10 @@ export type SerializedFeedback = NonNullable<ReturnType<typeof serializeFeedback
   reassignedAt?: string | null;
   reassignedFromName?: string;
   reassignNote?: string;
+  // Admin list only: live coach context for the report's batch and month.
+  permanentCoachId?: string;
+  permanentCoachName?: string;
+  topCoachId?: string;
+  topCoachName?: string;
+  topCoachClasses?: number;
 };

@@ -26,6 +26,8 @@ export type ReviewRecord = {
   rating: number;
   text: string;
   profilePhotoUrl?: string;
+  /** The Google listing the review sits on, for a "read all reviews" link. */
+  googleMapsUrl?: string;
 };
 
 const imageBase = "/images/achievements";

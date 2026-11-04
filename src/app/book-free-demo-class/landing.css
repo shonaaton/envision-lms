@@ -529,122 +529,13 @@
   height: 100%;
 }
 
-/* Reviews: wide slabs in a row the visitor swipes by hand. */
+/* Google reviews: the Elfsight widget, which brings its own layout. */
 .bfd .reviews-section {
   background: linear-gradient(180deg, var(--cream), #f6f0fc);
 }
-.bfd .review-slabs {
-  overflow-x: auto;
-  scroll-snap-type: x mandatory;
-  overscroll-behavior-x: contain;
-  scrollbar-width: none;
-  -webkit-overflow-scrolling: touch;
-  /* The first slab lines up with the page's text column. */
-  scroll-padding-inline: max(16px, calc((100vw - var(--max)) / 2));
-}
-.bfd .review-slabs::-webkit-scrollbar {
-  display: none;
-}
-.bfd .review-slabs:focus-visible {
-  outline: 3px solid var(--purple3);
-  outline-offset: -3px;
-}
-.bfd .review-track {
-  display: flex;
-  gap: 16px;
-  width: max-content;
-  margin: 0;
-  padding: 6px max(16px, calc((100vw - var(--max)) / 2)) 14px;
-  list-style: none;
-}
-.bfd .review-slab {
-  scroll-snap-align: start;
-  display: flex;
-  flex-direction: column;
-  width: min(380px, 84vw);
-  padding: 24px 24px 20px;
-  border-radius: 24px;
-  border: 1px solid var(--line);
-  background: #fff;
+.bfd .reviews-widget {
+  min-height: 200px;
   text-align: left;
-  box-shadow: 0 14px 36px rgba(43, 11, 75, 0.08);
-}
-.bfd .review-top {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-}
-.bfd .review-stars {
-  color: #f2b52e;
-  font-size: 1.15rem;
-  letter-spacing: 0.08em;
-}
-.bfd .review-source {
-  padding: 3px 10px;
-  border-radius: 999px;
-  background: #f3ecfa;
-  color: var(--purple3);
-  font-size: 0.68rem;
-  font-weight: 800;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-}
-.bfd .review-text {
-  flex: 1;
-  margin: 16px 0 18px;
-  color: #3d3247;
-  font-size: 0.95rem;
-  line-height: 1.6;
-  display: -webkit-box;
-  -webkit-line-clamp: 8;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-}
-.bfd .review-text::before {
-  content: "C";
-  display: block;
-  height: 0.6em;
-  margin-bottom: 6px;
-  font: 800 2.6rem/1 Manrope, system-ui, sans-serif;
-  color: var(--yellow);
-}
-.bfd .review-by {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding-top: 14px;
-  border-top: 1px solid #f0e8dc;
-}
-.bfd .review-avatar {
-  position: relative;
-  display: grid;
-  place-items: center;
-  width: 44px;
-  height: 44px;
-  flex-shrink: 0;
-  overflow: hidden;
-  border-radius: 50%;
-  background: var(--purple);
-  color: var(--yellow);
-  font-weight: 800;
-  font-size: 0.9rem;
-}
-.bfd .review-avatar img {
-  object-fit: cover;
-}
-.bfd .review-name {
-  font-weight: 800;
-  color: var(--purple);
-}
-.bfd .reviews-more {
-  margin-top: 22px;
-}
-.bfd .reviews-more a {
-  font-weight: 700;
-  color: var(--purple3);
-  text-decoration: underline;
-  text-underline-offset: 3px;
 }
 
 /* Screen-time concern */

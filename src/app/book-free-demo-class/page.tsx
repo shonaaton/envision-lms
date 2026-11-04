@@ -2,17 +2,16 @@ import Image from "next/image";
 import Link from "next/link";
 import { Fragment, type CSSProperties, type ReactNode } from "react";
 import CoachesSection from "@/components/marketing/CoachesSection";
+import GoogleReviewsWidget from "@/components/marketing/GoogleReviewsWidget";
 import { StudentRatingsStrip } from "@/components/marketing/StudentRatingsMarquee";
 import { ACADEMY_LOGO_URL } from "@/lib/branding";
 import { coursePages, courseSessionTotal } from "@/lib/coursePages";
 import { curriculumLevels } from "@/lib/demoCurriculum";
 import { LEGAL_LINKS } from "@/lib/publicLinks";
-import { getLandingReviews } from "@/lib/googleReviews";
 import { faqSchema, publicMetadata } from "@/lib/seo";
 import { studentRatingsByHonour } from "@/lib/studentRatings";
 import CurriculumJourney, { type JourneyStage } from "./CurriculumJourney";
 import LandingMotion from "./LandingMotion";
-import ReviewSlabs from "./ReviewSlabs";
 import ScreenTimePlanner from "./ScreenTimePlanner";
 import "./landing.css";
 
@@ -32,10 +31,6 @@ import "./landing.css";
  */
 
 const PATH = "/book-free-demo-class";
-
-// The Google reviews are read from the database, so the page is rebuilt every
-// half hour instead of once at deploy - the same window as the homepage.
-export const revalidate = 1800;
 const demoHref = "/register";
 
 export const metadata = publicMetadata({
@@ -330,8 +325,7 @@ function PlanCard({ plan, kind }: { plan: (typeof plans)["group"]; kind: "group"
   );
 }
 
-export default async function BookFreeDemoClassPage() {
-  const reviews = await getLandingReviews();
+export default function BookFreeDemoClassPage() {
   return (
     <div className="bfd" id="top">
       <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -612,7 +606,16 @@ export default async function BookFreeDemoClassPage() {
           </div>
         </section>
 
-        <ReviewSlabs reviews={reviews} />
+        <section className="section reviews-section" id="reviews">
+          <div className="wrap">
+            <SectionHead eyebrow="Google reviews" title="What families say about Envision.">
+              Real reviews from parents and students, straight from our Google listing.
+            </SectionHead>
+            <div className="reviews-widget">
+              <GoogleReviewsWidget />
+            </div>
+          </div>
+        </section>
       </main>
 
       <footer className="footer">

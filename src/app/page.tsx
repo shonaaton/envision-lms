@@ -1,7 +1,6 @@
 import type { Metadata } from "next";
 import Image from "next/image";
 import Link from "next/link";
-import Script from "next/script";
 import {
   ArrowRight,
   CalendarDays,
@@ -26,6 +25,7 @@ import DynamicLandingShowcase from "@/components/marketing/DynamicLandingShowcas
 import HeroStudentCluster from "@/components/marketing/HeroStudentCluster";
 import RelatedLinks from "@/components/marketing/RelatedLinks";
 import CoachesSection from "@/components/marketing/CoachesSection";
+import GoogleReviewsWidget from "@/components/marketing/GoogleReviewsWidget";
 import CentreLocationPreview from "@/components/marketing/CentreLocationPreview";
 import StudentRatingsMarquee from "@/components/marketing/StudentRatingsMarquee";
 import WhyEnvision from "@/components/marketing/WhyEnvision";
@@ -609,9 +609,8 @@ export default async function Home() {
             </Link>
           </div>
           <div className="overflow-hidden rounded-2xl border border-brand/10 bg-white p-3 shadow-lg shadow-brand-900/5">
-            <div className="sk-ww-google-reviews" data-embed-id="25710479" />
+            <GoogleReviewsWidget />
           </div>
-          <Script src="https://widgets.sociablekit.com/google-reviews/widget.js" strategy="afterInteractive" />
         </div>
       </section>
 

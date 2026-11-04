@@ -183,6 +183,7 @@ export const studentRatings: StudentRating[] = [
   {
     name: "Nilasha Konwar",
     honour: "District champion",
+    photo: photo("nilasha-konwar"),
     value: "1st",
     label: "District",
     detail: "District champion, U-7 Girls, Purba Bardhaman 2025.",

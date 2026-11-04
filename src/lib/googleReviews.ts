@@ -216,7 +216,6 @@ function serializeReview(item: any): ReviewRecord {
     rating: Number(item.rating || 5),
     text: item.text,
     profilePhotoUrl: item.profilePhotoUrl || "",
-    googleMapsUrl: item.googleMapsUrl || "",
   };
 }
 

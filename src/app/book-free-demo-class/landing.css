@@ -519,6 +519,10 @@
 .bfd .coach-section .coach-section__footnote {
   color: #c8a6d6;
 }
+/* Break out of the section's centred container so the strip runs the full page width. */
+.bfd .coach-marquee {
+  margin-inline: calc(50% - 50vw);
+}
 .bfd .coach-marquee .coach-card {
   width: 340px;
   height: 100%;

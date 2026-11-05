@@ -588,6 +588,15 @@ export default function BookFreeDemoClassPage() {
           </div>
         </section>
 
+        <section className="section reviews-section" id="reviews" aria-label="Google reviews">
+          <div className="wrap">
+            <div className="reviews-widget">
+              <GoogleReviewsWidget hideTitle />
+            </div>
+            <SectionCta />
+          </div>
+        </section>
+
         <section className="section">
           <div className="wrap">
             <SectionHead eyebrow="Questions parents ask" title="A few things worth knowing before you begin." />
@@ -603,17 +612,6 @@ export default function BookFreeDemoClassPage() {
               ))}
             </div>
             <SectionCta />
-          </div>
-        </section>
-
-        <section className="section reviews-section" id="reviews">
-          <div className="wrap">
-            <SectionHead eyebrow="Google reviews" title="What families say about Envision.">
-              Real reviews from parents and students, straight from our Google listing.
-            </SectionHead>
-            <div className="reviews-widget">
-              <GoogleReviewsWidget />
-            </div>
           </div>
         </section>
       </main>

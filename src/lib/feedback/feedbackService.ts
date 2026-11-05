@@ -16,7 +16,7 @@ import {
   openCycleMonth,
   shiftMonth,
 } from "@/lib/feedback/feedbackCycleDates";
-import { currentCoachId, monthTeachingCoachId, monthTopCoach, reportCoachId } from "@/lib/feedback/feedbackCoach";
+import { classroomRanInMonth, currentCoachId, liveClassroomForStudent, monthTeachingCoachId, monthTopCoach, reportCoachId } from "@/lib/feedback/feedbackCoach";
 import { QUESTION_SET_VERSION, reportTier } from "@/lib/feedback/feedbackQuestions";
 import {
   COACH_EDITABLE_STATUSES,
@@ -147,13 +147,14 @@ export async function processMonthlyFeedbackCycle(now = new Date(), options: { m
   // Runs every hour, cycle open or not: a late report for last month still
   // belongs to the coach who taught it.
   const duplicates = await withdrawDuplicateReports();
+  const repointed = await repointReportsToLiveClassrooms();
   const rehomed = await rehomeUnfinishedReports();
-  if (!month) return { month: null, created: 0, retiered: 0, removed: 0, rehomed, duplicates };
+  if (!month) return { month: null, created: 0, retiered: 0, removed: 0, rehomed, duplicates, repointed };
   const cycle = await ensureCycle(month);
   const { start, end } = monthBounds(month);
   const label = monthLabel(month);
 
-  const classrooms: any[] = await Classroom.find({
+  const found: any[] = await Classroom.find({
     isActive: { $ne: false },
     isTestClassroom: { $ne: true },
     isSessionInstance: { $ne: true },
@@ -164,11 +165,16 @@ export async function processMonthlyFeedbackCycle(now = new Date(), options: { m
       { $or: [{ "generatedSessions.scheduledFor": { $gte: start, $lte: end } }, { classDate: { $gte: start, $lte: end } }] },
     ],
   })
-    .select("title level course levelName courseName coach instructor students studentExits closedForStudents generatedSessions")
+    .select("title level course levelName courseName coach instructor students studentExits closedForStudents generatedSessions status completedAt isActive isPaused pausedFrom")
     .lean();
+  // A student gets one report, from the first classroom reached: running
+  // classrooms go first, and a completed one that only has ghost classes is out.
+  const classrooms = found
+    .filter((room) => classroomRanInMonth(room, { start, end }))
+    .sort((a, b) => Number(a.status === "completed") - Number(b.status === "completed"));
   if (!classrooms.length) {
     const removed = await withdrawReportsForNewStudents(month);
-    return { month, created: 0, retiered: 0, removed, rehomed, duplicates };
+    return { month, created: 0, retiered: 0, removed, rehomed, duplicates, repointed };
   }
   const tierOf = await classroomTierResolver(classrooms);
 
@@ -260,7 +266,58 @@ export async function processMonthlyFeedbackCycle(now = new Date(), options: { m
   }
 
   await FeedbackCycle.updateOne({ _id: cycle?._id }, { $set: { lastSweepAt: new Date() } });
-  return { month, created, retiered, removed, rehomed, duplicates };
+  return { month, created, retiered, removed, rehomed, duplicates, repointed };
+}
+
+/**
+ * Reports not yet sent that were raised from a completed classroom holding only
+ * ghost classes that month move to the student's running classroom, with their
+ * numbers recomputed. The approval step recalculates from `classroom`, so left
+ * alone they would tell the family 0 classes attended. The coach is not changed
+ * here: `rehomeUnfinishedReports` applies the usual rule, and pins still hold.
+ */
+export async function repointReportsToLiveClassrooms() {
+  const reports: any[] = await MonthlyFeedback.find({ status: { $in: WITHDRAWABLE_STATUSES }, classroom: { $ne: null } })
+    .select("_id month student classroom")
+    .lean();
+  if (!reports.length) return 0;
+  const completed: any[] = await Classroom.find({ _id: { $in: Array.from(new Set(reports.map((row) => idOf(row.classroom)))) }, status: "completed" })
+    .select("status completedAt isActive isPaused pausedFrom batches generatedSessions")
+    .lean();
+  const completedById = new Map(completed.map((room) => [idOf(room), room]));
+  const stranded = reports.filter((row) => {
+    const room = completedById.get(idOf(row.classroom));
+    return room && isFeedbackMonth(row.month) && !classroomRanInMonth(room, monthBounds(row.month));
+  });
+  if (!stranded.length) return 0;
+
+  const running: any[] = await Classroom.find({
+    ...LIVE_CLASSROOM,
+    status: { $nin: ["cancelled", "completed"] },
+    students: { $in: Array.from(new Set(stranded.map((row) => idOf(row.student)))) },
+  })
+    .select("title level course levelName courseName coach instructor students studentExits closedForStudents batches generatedSessions status")
+    .lean();
+  if (!running.length) return 0;
+  const tierOf = await classroomTierResolver(running);
+
+  let moved = 0;
+  for (const row of stranded) {
+    const studentId = idOf(row.student);
+    const room = liveClassroomForStudent(completedById.get(idOf(row.classroom)), running, studentId, monthBounds(row.month));
+    if (!room) continue;
+    const doc: any = await MonthlyFeedback.findOne({ _id: row._id, classroom: row.classroom, status: { $in: WITHDRAWABLE_STATUSES } });
+    if (!doc) continue;
+    doc.classroom = room._id;
+    doc.stats = await computeMonthStats(room, studentId, row.month);
+    doc.courseName = String(room.courseName || room.title || "");
+    doc.levelName = String(room.levelName || "");
+    // A submitted report keeps the questions its coach answered.
+    if (COACH_EDITABLE_STATUSES.includes(doc.status) && tierOf(room) !== doc.tier) applyTier(doc, tierOf(room));
+    await doc.save();
+    moved += 1;
+  }
+  return moved;
 }
 
 /**

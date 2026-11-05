@@ -18,6 +18,8 @@
  * Pure: the caller supplies the classroom with its sessions.
  */
 
+import { isSessionOffSchedule } from "@/lib/classroomSessions";
+import { hasStudentExited } from "@/lib/classroomStudentExits";
 import { monthBounds } from "@/lib/feedback/feedbackCycleDates";
 import { effectiveSessionCoachId } from "@/lib/teachingStats";
 
@@ -62,6 +64,46 @@ export function monthTopCoach(classroom: any, bounds: { start: Date; end: Date }
  */
 export function monthTeachingCoachId(classroom: any, bounds: { start: Date; end: Date }) {
   return monthTopCoach(classroom, bounds).coachId;
+}
+
+const sessionsInMonth = (classroom: any, bounds: { start: Date; end: Date }) =>
+  (classroom?.generatedSessions || []).filter((session: any) => {
+    const at = new Date(session?.scheduledFor || 0).getTime();
+    return Number.isFinite(at) && at >= bounds.start.getTime() && at <= bounds.end.getTime();
+  });
+
+/**
+ * False for a completed classroom whose classes that month are only ghosts.
+ * Completing a classroom leaves its later classes `scheduled`, so a batch moved
+ * to a new classroom keeps an old one with classes on every date, under the old
+ * coach and with no attendance. A report raised from it names the wrong
+ * permanent coach and counts 0 classes attended.
+ */
+export function classroomRanInMonth(classroom: any, bounds: { start: Date; end: Date }) {
+  if (classroom?.status !== "completed") return true;
+  const sessions = sessionsInMonth(classroom, bounds);
+  if (!sessions.length) return true;
+  return sessions.some((session: any) => !isSessionOffSchedule(classroom, session) || Boolean(session?.attendanceMarkedAt));
+}
+
+/**
+ * The running classroom a student's report should use instead of a completed
+ * one that held nothing that month: the same batch's if there is one. Null when
+ * the student has no running classroom with classes that month.
+ */
+export function liveClassroomForStudent(stranded: any, candidates: any[], studentId: string, bounds: { start: Date; end: Date }) {
+  const idsOf = (rows: any[] | undefined) => (rows || []).map((row) => String(row?._id ?? row));
+  const usable = candidates.filter(
+    (room) =>
+      String(room?._id) !== String(stranded?._id) &&
+      room?.status !== "completed" &&
+      idsOf(room?.students).includes(studentId) &&
+      !idsOf(room?.closedForStudents).includes(studentId) &&
+      !hasStudentExited(room, studentId) &&
+      sessionsInMonth(room, bounds).length > 0
+  );
+  const batches = new Set(idsOf(stranded?.batches));
+  return usable.find((room) => idsOf(room?.batches).some((id) => batches.has(id))) || usable[0] || null;
 }
 
 /** First month whose reports go to the batch's current permanent coach. */

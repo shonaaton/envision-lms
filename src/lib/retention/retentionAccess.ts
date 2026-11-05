@@ -9,6 +9,19 @@ export async function requireRetentionAccess(permission: "view" | "manage") {
   return (await canAccessFeature("retention", session.user as any, permission)) ? session : null;
 }
 
+/** The same viewer shape the Sales pages log and watermark with. */
+export async function requireRetentionViewer() {
+  const session = await requireRetentionAccess("view");
+  const user = session?.user as any;
+  if (!user?.id) return null;
+  return {
+    id: String(user.id),
+    name: String(user.name || user.email || "Unknown user"),
+    role: String(user.role || ""),
+    permissions: { view: true },
+  };
+}
+
 export function retentionActor(session: any) {
   const user = session?.user || {};
   return { id: String(user.id || ""), name: String(user.name || "") };

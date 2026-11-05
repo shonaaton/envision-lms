@@ -3,7 +3,25 @@ import { crmCallsConfig, krayaCallStatus } from "@/lib/crm/client";
 import { guessGroup } from "@/lib/crm/catalogue";
 import { customAttributes } from "@/lib/crm/mirror";
 import { parseCsv } from "@/lib/crm/import";
-import { isIndividualBatch } from "@/lib/batchVacancy";
+import { isIndividualBatch, ladderLevelKey } from "@/lib/batchVacancy";
+
+describe("ladderLevelKey", () => {
+  it("joins the tier to the number in a free-text level name", () => {
+    expect(ladderLevelKey("intermediate", "Level 2")).toBe("intermediate:2");
+    expect(ladderLevelKey("beginner", "Beginner Level1")).toBe("beginner:1");
+    expect(ladderLevelKey("pro", "L3")).toBe("pro:3");
+  });
+
+  it("trusts a tier named in the level over the defaulted tier field", () => {
+    expect(ladderLevelKey("beginner", "Semi Pro Level 3")).toBe("semi_pro:3");
+  });
+
+  it("falls back to the tier alone when no sub-level can be read", () => {
+    expect(ladderLevelKey("masters", "")).toBe("masters");
+    expect(ladderLevelKey("beginner", "Level 9")).toBe("beginner");
+    expect(ladderLevelKey("advanced", "")).toBe("advanced");
+  });
+});
 
 describe("isIndividualBatch", () => {
   it("treats the PIC prefix as an individual class", () => {

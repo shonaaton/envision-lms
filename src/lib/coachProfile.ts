@@ -178,6 +178,84 @@ export function weeklyAvailableMinutes(slots: AvailabilitySlot[]) {
   return slots.reduce((sum, slot) => sum + Math.max(0, minutesOf(slot.endTime) - minutesOf(slot.startTime)), 0);
 }
 
+/** A weekly class a coach is already teaching, with the batches that sit in it. */
+export type TakenSlot = AvailabilitySlot & { batches: string[] };
+
+export type WeekSegment =
+  | { kind: "free"; startTime: string; endTime: string }
+  | { kind: "taken"; startTime: string; endTime: string; batches: string[] };
+
+export type WeekDaySegments = { day: number; short: string; label: string; segments: WeekSegment[] };
+
+function clockOf(minutes: number) {
+  const clamped = Math.min(minutes, 23 * 60 + 59);
+  return `${String(Math.floor(clamped / 60)).padStart(2, "0")}:${String(clamped % 60).padStart(2, "0")}`;
+}
+
+/**
+ * The coach's week as free stretches and taken classes, in time order.
+ *
+ * Free is what the admin team entered minus the classes running on it, worked
+ * out on every read so the time comes back by itself when a batch ends. A class
+ * outside the entered hours is still shown: the coach is teaching then, whatever
+ * the profile says. Classes that overlap become one block naming both batches.
+ */
+export function weekSegments(availability: AvailabilitySlot[], taken: TakenSlot[]): WeekDaySegments[] {
+  return WEEK_DAYS.map((day) => {
+    const blocks: { start: number; end: number; batches: string[] }[] = [];
+    for (const slot of taken
+      .filter((item) => item.dayOfWeek === day.day)
+      .sort((a, b) => minutesOf(a.startTime) - minutesOf(b.startTime))) {
+      const start = minutesOf(slot.startTime);
+      const end = minutesOf(slot.endTime);
+      const last = blocks[blocks.length - 1];
+      if (last && start < last.end) {
+        last.end = Math.max(last.end, end);
+        last.batches = Array.from(new Set([...last.batches, ...slot.batches]));
+      } else {
+        blocks.push({ start, end, batches: [...slot.batches] });
+      }
+    }
+
+    const segments: (WeekSegment & { sort: number })[] = blocks.map((block) => ({
+      kind: "taken",
+      startTime: clockOf(block.start),
+      endTime: clockOf(block.end),
+      batches: block.batches,
+      sort: block.start,
+    }));
+    for (const slot of availability.filter((item) => item.dayOfWeek === day.day)) {
+      let cursor = minutesOf(slot.startTime);
+      const end = minutesOf(slot.endTime);
+      for (const block of blocks) {
+        if (block.end <= cursor || block.start >= end) continue;
+        if (block.start > cursor) segments.push({ kind: "free", startTime: clockOf(cursor), endTime: clockOf(block.start), sort: cursor });
+        cursor = Math.max(cursor, block.end);
+      }
+      if (cursor < end) segments.push({ kind: "free", startTime: clockOf(cursor), endTime: clockOf(end), sort: cursor });
+    }
+
+    return {
+      day: day.day,
+      short: day.short,
+      label: day.label,
+      segments: segments.sort((a, b) => a.sort - b.sort).map(({ sort: _sort, ...segment }) => segment as WeekSegment),
+    };
+  }).filter((day) => day.segments.length > 0);
+}
+
+/** Minutes a week still free, and minutes taken by classes. */
+export function weekMinutes(days: WeekDaySegments[]) {
+  let free = 0;
+  let taken = 0;
+  for (const segment of days.flatMap((day) => day.segments)) {
+    const minutes = Math.max(0, minutesOf(segment.endTime) - minutesOf(segment.startTime));
+    if (segment.kind === "free") free += minutes;
+    else taken += minutes;
+  }
+  return { free, taken };
+}
+
 /** Plain-object copy of what is stored on the User, safe to hand to a client component. */
 export function toCoachProfileView(raw: any): CoachProfileView {
   const profile = raw?.coachProfile || {};

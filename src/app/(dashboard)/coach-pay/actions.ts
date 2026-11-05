@@ -920,7 +920,8 @@ export async function saveCoachProfile(formData: FormData): Promise<CoachProfile
     metadata: { languages, levels, slots: availability.slots.length, minutesPerWeek: weeklyAvailableMinutes(availability.slots) },
   });
   revalidatePath("/coach-pay/profile");
+  revalidatePath("/admin/retention/coach-profiles");
 
-  const who = actorId === coachId ? "Your" : `${updated.name || updated.username || "The coach"}'s`;
+  const who =actorId === coachId ? "Your" : `${updated.name || updated.username || "The coach"}'s`;
   return { ok: true, message: `Saved. ${who} languages, levels and available times are up to date.` };
 }

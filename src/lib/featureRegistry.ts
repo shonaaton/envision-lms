@@ -540,7 +540,7 @@ export const FEATURE_DEFINITIONS: FeatureDefinition[] = [
     key: "retention",
     label: "Retention Center",
     category: "Administration",
-    description: "Monthly calls to every family, students who may be about to leave, renewals, win-back calls, the call log and why families leave or pause.",
+    description: "Monthly calls to every family, students who may be about to leave, renewals, win-back calls, the call log and why families leave or pause. Also opens the contact directory (student, parent, coach and demo phone numbers), coach profiles and batch vacancy in the Retention section.",
     routes: ["/admin/retention"],
     apiPrefixes: ["/api/admin/retention"],
     permissions: [view, { id: "manage", label: "Log Calls and Settle Flags" }],

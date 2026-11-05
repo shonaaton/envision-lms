@@ -4,7 +4,7 @@ import { dbConnect } from "@/lib/db";
 import { Batch } from "@/models/Batch";
 import { Classroom } from "@/models/Classroom";
 import { User } from "@/models/User";
-import { courseTierLabel } from "@/lib/courseTiers";
+import { COURSE_TIERS, courseTierLabel } from "@/lib/courseTiers";
 
 /**
  * Free-slot view of the group batches, for sales calls.
@@ -36,7 +36,22 @@ const DAY_NAMES = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
  * as pending while it is scheduled or rescheduled and has not actually run. A
  * cancelled or missed class is not coming back, so it is not "left".
  */
-const PENDING_STATUSES = new Set(["scheduled", "rescheduled", "ongoing", "in_progress"]);
+export const PENDING_SESSION_STATUSES = ["scheduled", "rescheduled", "ongoing", "in_progress"];
+const PENDING_STATUSES = new Set(PENDING_SESSION_STATUSES);
+
+/**
+ * Where a batch sits on the ladder: "beginner:2", or just "beginner" when the
+ * level name carries no number. `levelName` is free text ("Level 2", "Beginner
+ * Level1"), and a tier named inside it outranks the tier field, which defaults
+ * to beginner.
+ */
+export function ladderLevelKey(tier: string, levelName: string) {
+  const name = String(levelName || "").toLowerCase();
+  const named = COURSE_TIERS.find((key) => name.includes(String(courseTierLabel(key)).toLowerCase()));
+  const base = named || String(tier || "beginner");
+  const number = /(?:level\s*|\bl\s*)([1-3])\b/.exec(name)?.[1];
+  return number ? `${base}:${number}` : base;
+}
 
 export type BatchSlot = { day: number; label: string; startTime: string; durationMinutes: number };
 
@@ -44,6 +59,8 @@ export type BatchVacancyRow = {
   id: string;
   name: string;
   level: string;
+  /** See `ladderLevelKey`. */
+  ladderLevel: string;
   coach: string;
   coachPhone: string;
   capacity: number;
@@ -91,7 +108,11 @@ function slotsOf(classroom: any): BatchSlot[] {
   return slots.sort((a, b) => a.day - b.day || a.startTime.localeCompare(b.startTime));
 }
 
-export async function getBatchVacancy(): Promise<BatchVacancyPayload> {
+/**
+ * `includeSingleStudent` is for the Retention section: a group batch down to one
+ * student (B1, B2) is a place to move a family to. Sales calls leave it out.
+ */
+export async function getBatchVacancy({ includeSingleStudent = false }: { includeSingleStudent?: boolean } = {}): Promise<BatchVacancyPayload> {
   await dbConnect();
 
   const batches = await Batch.find({ isActive: true })
@@ -103,7 +124,8 @@ export async function getBatchVacancy(): Promise<BatchVacancyPayload> {
   // Only group batches. Both filters are the same business rule from two angles:
   // a PIC batch is individual by name, and a batch that never grew past one
   // student is being run as one regardless of what it is called.
-  const groupBatches = (batches as any[]).filter((batch) => !isIndividualBatch(batch.name) && (batch.students || []).length > 1);
+  const minimumStudents = includeSingleStudent ? 1 : 2;
+  const groupBatches = (batches as any[]).filter((batch) => !isIndividualBatch(batch.name) && (batch.students || []).length >= minimumStudents);
   if (!groupBatches.length) {
     return { rows: [], levels: [], courses: [], coaches: [], generatedAt: new Date().toISOString() };
   }
@@ -124,7 +146,7 @@ export async function getBatchVacancy(): Promise<BatchVacancyPayload> {
       // win the per-batch lookup over the batch's currently scheduled series.
       status: { $nin: ["cancelled", "completed"] },
     })
-      .select("title batches coach instructor courseName levelName topicName daysOfWeek startTime durationMinutes generatedSessions sessionPlan classroomType updatedAt")
+      .select("title batches coach instructor courseName level levelName topicName daysOfWeek startTime durationMinutes generatedSessions sessionPlan classroomType updatedAt")
       .populate("coach", "name phone countryCode")
       .populate("instructor", "name phone countryCode")
       .sort({ updatedAt: -1 })
@@ -187,6 +209,7 @@ export async function getBatchVacancy(): Promise<BatchVacancyPayload> {
       id: id(batch._id),
       name: String(batch.name || ""),
       level: courseTierLabel(batch.level || "beginner") || "Beginner",
+      ladderLevel: ladderLevelKey(String(classroom?.level || batch.level || "beginner"), String(classroom?.levelName || "")),
       coach: String(coachDoc?.name || "Unassigned"),
       coachPhone: [coachDoc?.countryCode, coachDoc?.phone].map((part: any) => String(part || "").trim()).filter(Boolean).join(" "),
       capacity,

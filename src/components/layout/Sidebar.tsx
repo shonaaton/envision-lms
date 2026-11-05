@@ -203,8 +203,21 @@ const sections: NavSection[] = [
     items: [
       { href: "/admin/users", label: "Users", icon: Users, featureKey: "userManagement" },
       { href: "/admin/paused-students", label: "Paused Students", icon: PauseCircle, featureKey: "studentPause" },
-      { href: "/admin/retention", label: "Retention Center", icon: HeartHandshake, featureKey: "retention" },
       { href: "/admin/coach-applications", label: "Coach Applications", icon: UserPlus, featureKey: "onboarding" },
+    ],
+  },
+  {
+    // What the person calling families needs, all on the one Retention grant:
+    // Contact Directory and Coach Profiles elsewhere sit behind Sales and Coach
+    // Pay access, and Coach Pay would also show them every coach's earnings.
+    id: "retention",
+    title: "Retention",
+    roles: ["admin", "sub-admin"],
+    items: [
+      { href: "/admin/retention", label: "Retention Center", icon: HeartHandshake, featureKey: "retention" },
+      { href: "/admin/retention/directory", label: "Contact Directory", icon: Contact, featureKey: "retention" },
+      { href: "/admin/retention/coach-profiles", label: "Coach Profiles", icon: Languages, featureKey: "retention" },
+      { href: "/admin/retention/batches", label: "Batch Vacancy", icon: LayoutGrid, featureKey: "retention" },
     ],
   },
   {

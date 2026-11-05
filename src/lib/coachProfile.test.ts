@@ -9,9 +9,66 @@ import {
   normalizeLanguages,
   normalizeLevels,
   toCoachProfileView,
+  weekMinutes,
+  weekSegments,
   weeklyAvailableMinutes,
 } from "@/lib/coachProfile";
 import { curriculumLevels } from "@/lib/demoCurriculum";
+
+describe("weekSegments", () => {
+  const monday = { dayOfWeek: 1, startTime: "16:00", endTime: "20:00" };
+
+  it("cuts a running class out of the free time and names its batch", () => {
+    const days = weekSegments([monday], [{ dayOfWeek: 1, startTime: "17:00", endTime: "18:00", batches: ["PIC-12"] }]);
+    expect(days.map((day) => day.short)).toEqual(["Mon"]);
+    expect(days[0].segments).toEqual([
+      { kind: "free", startTime: "16:00", endTime: "17:00" },
+      { kind: "taken", startTime: "17:00", endTime: "18:00", batches: ["PIC-12"] },
+      { kind: "free", startTime: "18:00", endTime: "20:00" },
+    ]);
+    expect(weekMinutes(days)).toEqual({ free: 180, taken: 60 });
+  });
+
+  it("leaves no free stretch when classes fill the time back to back", () => {
+    const [day] = weekSegments(
+      [{ dayOfWeek: 1, startTime: "17:00", endTime: "19:00" }],
+      [
+        { dayOfWeek: 1, startTime: "18:00", endTime: "19:00", batches: ["B2"] },
+        { dayOfWeek: 1, startTime: "17:00", endTime: "18:00", batches: ["B1"] },
+      ],
+    );
+    expect(day.segments.map((segment) => segment.kind)).toEqual(["taken", "taken"]);
+    expect(day.segments.flatMap((segment) => (segment.kind === "taken" ? segment.batches : []))).toEqual(["B1", "B2"]);
+  });
+
+  it("makes overlapping classes one block naming both batches", () => {
+    const [day] = weekSegments(
+      [],
+      [
+        { dayOfWeek: 2, startTime: "17:00", endTime: "18:00", batches: ["B1"] },
+        { dayOfWeek: 2, startTime: "17:30", endTime: "18:30", batches: ["B2"] },
+      ],
+    );
+    expect(day.segments).toEqual([{ kind: "taken", startTime: "17:00", endTime: "18:30", batches: ["B1", "B2"] }]);
+  });
+
+  it("still shows a class outside the entered hours, on its own day", () => {
+    const days = weekSegments([monday], [{ dayOfWeek: 0, startTime: "09:00", endTime: "10:00", batches: ["B3"] }]);
+    expect(days.map((day) => day.short)).toEqual(["Mon", "Sun"]);
+    expect(days[0].segments).toEqual([{ kind: "free", startTime: "16:00", endTime: "20:00" }]);
+  });
+
+  it("trims a free stretch when a class runs over its edge", () => {
+    const [day] = weekSegments(
+      [{ dayOfWeek: 1, startTime: "17:00", endTime: "19:00" }],
+      [{ dayOfWeek: 1, startTime: "16:30", endTime: "17:30", batches: ["B1"] }],
+    );
+    expect(day.segments).toEqual([
+      { kind: "taken", startTime: "16:30", endTime: "17:30", batches: ["B1"] },
+      { kind: "free", startTime: "17:30", endTime: "19:00" },
+    ]);
+  });
+});
 
 describe("normalizeLanguages", () => {
   it("keeps known spellings, drops blanks and case-insensitive duplicates", () => {

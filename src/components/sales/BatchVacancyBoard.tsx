@@ -3,6 +3,8 @@
 import { useMemo, useState } from "react";
 import { CalendarClock, ChevronRight, Search, UserRound, X } from "lucide-react";
 import type { BatchVacancyPayload, BatchVacancyRow } from "@/lib/batchVacancy";
+import { LEVEL_GROUPS } from "@/lib/coachProfile";
+import { COURSE_TIER_LABELS } from "@/lib/courseTiers";
 
 function slotTone(free: number) {
   if (free <= 0) return "bg-slate-100 text-slate-500";
@@ -130,7 +132,46 @@ function DetailModal({ row, onClose }: { row: BatchVacancyRow; onClose: () => vo
   );
 }
 
-export function BatchVacancyBoard({ data }: { data: BatchVacancyPayload }) {
+/** Every tier and sub-level on the ladder, with how many batches sit on each, even none. */
+function LadderLevelFilter({ rows, level, onChange }: { rows: BatchVacancyRow[]; level: string; onChange: (value: string) => void }) {
+  const count = (key: string) => rows.filter((row) => row.ladderLevel === key || row.ladderLevel.startsWith(`${key}:`)).length;
+  const onLadder = LEVEL_GROUPS.map((group) => group.tier as string);
+  const retired = Array.from(new Set(rows.map((row) => row.ladderLevel.split(":")[0]))).filter((tier) => !onLadder.includes(tier));
+  const pill = (active: boolean) =>
+    `rounded-lg px-2.5 py-1.5 text-xs font-bold transition ${active ? "bg-brand text-white shadow-sm" : "bg-slate-100 text-slate-600 hover:text-brand"}`;
+  return (
+    <div className="grid gap-2 border-b border-slate-100 px-4 py-3">
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="text-[11px] font-bold uppercase tracking-wide text-slate-500">Level</span>
+        <button type="button" onClick={() => onChange("all")} className={pill(level === "all")}>
+          All levels <span className="font-semibold opacity-70">{rows.length}</span>
+        </button>
+      </div>
+      <div className="flex flex-wrap gap-x-4 gap-y-2">
+        {LEVEL_GROUPS.map((group) => (
+          <div key={group.tier} className="flex flex-wrap items-center gap-1">
+            <button type="button" onClick={() => onChange(group.tier)} className={pill(level === group.tier)}>
+              {group.label} <span className="font-semibold opacity-70">{count(group.tier)}</span>
+            </button>
+            {group.levels.map((item) => (
+              <button key={item.key} type="button" aria-label={`${item.label}: ${count(item.key)} batches`} onClick={() => onChange(item.key)} className={pill(level === item.key)}>
+                {item.short} <span className="font-semibold opacity-70">{count(item.key)}</span>
+              </button>
+            ))}
+          </div>
+        ))}
+        {retired.map((tier) => (
+          <button key={tier} type="button" onClick={() => onChange(tier)} className={pill(level === tier)}>
+            {COURSE_TIER_LABELS[tier] || tier} <span className="font-semibold opacity-70">{count(tier)}</span>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+export function BatchVacancyBoard({ data, variant = "sales" }: { data: BatchVacancyPayload; variant?: "sales" | "retention" }) {
+  const isRetention = variant === "retention";
   const [level, setLevel] = useState("all");
   const [course, setCourse] = useState("all");
   const [coach, setCoach] = useState("all");
@@ -141,7 +182,12 @@ export function BatchVacancyBoard({ data }: { data: BatchVacancyPayload }) {
   const rows = useMemo(() => {
     const needle = query.trim().toLowerCase();
     return data.rows.filter((row) => {
-      if (level !== "all" && (row.levelName || row.level) !== level) return false;
+      if (level !== "all") {
+        const matches = isRetention
+          ? row.ladderLevel === level || row.ladderLevel.startsWith(`${level}:`)
+          : (row.levelName || row.level) === level;
+        if (!matches) return false;
+      }
       if (course !== "all" && row.courseName !== course) return false;
       if (coach !== "all" && row.coach !== coach) return false;
       if (onlyFree && row.freeSlots <= 0) return false;
@@ -151,7 +197,7 @@ export function BatchVacancyBoard({ data }: { data: BatchVacancyPayload }) {
         .toLowerCase()
         .includes(needle);
     });
-  }, [data.rows, level, course, coach, onlyFree, query]);
+  }, [data.rows, isRetention, level, course, coach, onlyFree, query]);
 
   const totalFree = rows.reduce((sum, row) => sum + row.freeSlots, 0);
 
@@ -161,26 +207,32 @@ export function BatchVacancyBoard({ data }: { data: BatchVacancyPayload }) {
         <div className="border-b border-slate-100 bg-gradient-to-r from-brand to-brand-400 px-5 py-4 text-white">
           <h1 className="text-lg font-bold">Batch Vacancy</h1>
           <p className="text-xs text-white/80">
-            Group batches only - individual (PIC) classes and single-student batches are excluded.
+            {isRetention
+              ? "Group batches, including those down to one student. Individual (PIC) classes are excluded."
+              : "Group batches only - individual (PIC) classes and single-student batches are excluded."}
           </p>
         </div>
 
         {/* Level pills first: this is the filter used mid-call. */}
-        <div className="flex flex-wrap items-center gap-2 border-b border-slate-100 px-4 py-3">
-          <span className="text-[11px] font-bold uppercase tracking-wide text-slate-500">Level</span>
-          {["all", ...data.levels].map((value) => (
-            <button
-              key={value}
-              type="button"
-              onClick={() => setLevel(value)}
-              className={`rounded-lg px-3 py-1.5 text-xs font-bold transition ${
-                level === value ? "bg-brand text-white shadow-sm" : "bg-slate-100 text-slate-600 hover:text-brand"
-              }`}
-            >
-              {value === "all" ? "All levels" : value}
-            </button>
-          ))}
-        </div>
+        {isRetention ? (
+          <LadderLevelFilter rows={data.rows} level={level} onChange={setLevel} />
+        ) : (
+          <div className="flex flex-wrap items-center gap-2 border-b border-slate-100 px-4 py-3">
+            <span className="text-[11px] font-bold uppercase tracking-wide text-slate-500">Level</span>
+            {["all", ...data.levels].map((value) => (
+              <button
+                key={value}
+                type="button"
+                onClick={() => setLevel(value)}
+                className={`rounded-lg px-3 py-1.5 text-xs font-bold transition ${
+                  level === value ? "bg-brand text-white shadow-sm" : "bg-slate-100 text-slate-600 hover:text-brand"
+                }`}
+              >
+                {value === "all" ? "All levels" : value}
+              </button>
+            ))}
+          </div>
+        )}
 
         <div className="flex flex-wrap items-center gap-3 px-4 py-3">
           <label className="relative flex h-9 min-w-[220px] flex-1 items-center sm:max-w-xs">

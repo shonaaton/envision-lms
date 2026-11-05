@@ -18,6 +18,7 @@ import {
 } from "@/lib/feedback/feedbackCycleDates";
 import { classroomRanInMonth, currentCoachId, liveClassroomForStudent, monthTeachingCoachId, monthTopCoach, reportCoachId } from "@/lib/feedback/feedbackCoach";
 import { QUESTION_SET_VERSION, reportTier } from "@/lib/feedback/feedbackQuestions";
+import { STATS_ROOM_FIELDS, STATS_VERSION, monthStatsFromRegisters } from "@/lib/feedback/feedbackStats";
 import {
   COACH_EDITABLE_STATUSES,
   MIN_CLASSES_FOR_FEEDBACK,
@@ -71,55 +72,33 @@ function toObjectId(value: unknown) {
 }
 
 const ATTENDED = ["present", "late"];
-const NOT_HELD = ["cancelled", "rescheduled", "coach_no_show"];
 
 // ---------------------------------------------------------------------------
 // Month stats (attendance + topics), computed - never typed by the coach
 // ---------------------------------------------------------------------------
 
-async function classroomFamilyIds(classroom: any) {
-  const instances: any[] = await Classroom.find({ parentClassroom: classroom._id, isSessionInstance: true }).select("_id").lean();
-  return [classroom._id, ...instances.map((row) => row._id)];
-}
-
+/**
+ * Counts the student's registers in every classroom that month, not just the
+ * report's: `classroom` only says which room's remaining classes still count.
+ */
 export async function computeMonthStats(classroom: any, studentId: string, month: string) {
-  const { start, end } = monthBounds(month);
-  const classroomIds = await classroomFamilyIds(classroom);
+  const bounds = monthBounds(month);
   const student = toObjectId(studentId);
-  const rows: any[] = await Attendance.aggregate([
-    { $match: { classroom: { $in: classroomIds }, sessionDate: { $gte: start, $lte: end } } },
+  const registers: any[] = await Attendance.aggregate([
+    { $match: { "records.student": student, sessionDate: { $gte: bounds.start, $lte: bounds.end } } },
     { $unwind: "$records" },
     { $match: { "records.student": student } },
     {
       $group: {
-        _id: null,
+        _id: "$classroom",
         attended: { $sum: { $cond: [{ $in: ["$records.status", ATTENDED] }, 1, 0] } },
         held: { $sum: { $cond: [{ $in: ["$records.status", ["excused", "coach_no_show", "coach_no_show_pending", "technical_issue"]] }, 0, 1] } },
       },
     },
   ]);
-  const sessions = (classroom.generatedSessions || []).filter((session: any) => {
-    const at = new Date(session.scheduledFor || 0);
-    if (at < start || at > end) return false;
-    const roster = (session.students || []).map(idOf);
-    return !roster.length || roster.includes(studentId);
-  });
-  const scheduled = sessions.filter((session: any) => !NOT_HELD.includes(String(session.status || ""))).length;
-  const topics = Array.from(
-    new Set(
-      sessions
-        .filter((session: any) => session.status === "completed" && session.topicName)
-        .map((session: any) => String(session.topicName).trim())
-    )
-  ) as string[];
-  const attended = Number(rows[0]?.attended || 0);
-  const held = Number(rows[0]?.held || 0);
-  return {
-    classesAttended: attended,
-    // Registers are the truth once marked; the schedule covers the rest of the month.
-    classesScheduled: Math.max(held, scheduled, attended),
-    topicsCovered: topics.slice(0, 20),
-  };
+  const roomIds = [classroom?._id, ...registers.map((row) => row._id)].filter(Boolean);
+  const rooms: any[] = await Classroom.find({ _id: { $in: roomIds } }).select(STATS_ROOM_FIELDS).lean();
+  return monthStatsFromRegisters({ reportRoomId: classroom?._id, rooms, registers, studentId, bounds });
 }
 
 // ---------------------------------------------------------------------------
@@ -148,8 +127,9 @@ export async function processMonthlyFeedbackCycle(now = new Date(), options: { m
   // belongs to the coach who taught it.
   const duplicates = await withdrawDuplicateReports();
   const repointed = await repointReportsToLiveClassrooms();
+  const statsRefreshed = await refreshOutdatedReportStats();
   const rehomed = await rehomeUnfinishedReports();
-  if (!month) return { month: null, created: 0, retiered: 0, removed: 0, rehomed, duplicates, repointed };
+  if (!month) return { month: null, created: 0, retiered: 0, removed: 0, rehomed, duplicates, repointed, statsRefreshed };
   const cycle = await ensureCycle(month);
   const { start, end } = monthBounds(month);
   const label = monthLabel(month);
@@ -174,7 +154,7 @@ export async function processMonthlyFeedbackCycle(now = new Date(), options: { m
     .sort((a, b) => Number(a.status === "completed") - Number(b.status === "completed"));
   if (!classrooms.length) {
     const removed = await withdrawReportsForNewStudents(month);
-    return { month, created: 0, retiered: 0, removed, rehomed, duplicates, repointed };
+    return { month, created: 0, retiered: 0, removed, rehomed, duplicates, repointed, statsRefreshed };
   }
   const tierOf = await classroomTierResolver(classrooms);
 
@@ -233,6 +213,7 @@ export async function processMonthlyFeedbackCycle(now = new Date(), options: { m
             courseName: String(classroom.courseName || classroom.title || ""),
             levelName: String(classroom.levelName || ""),
             stats,
+            statsVersion: STATS_VERSION,
             status: "pending",
             dueAt: cycle?.dueAt || cycleDueAt(month),
           },
@@ -266,7 +247,29 @@ export async function processMonthlyFeedbackCycle(now = new Date(), options: { m
   }
 
   await FeedbackCycle.updateOne({ _id: cycle?._id }, { $set: { lastSweepAt: new Date() } });
-  return { month, created, retiered, removed, rehomed, duplicates, repointed };
+  return { month, created, retiered, removed, rehomed, duplicates, repointed, statsRefreshed };
+}
+
+/**
+ * Unsent reports whose numbers came from an older way of counting are recomputed
+ * once, whatever the month or status. Sent reports keep what the family received.
+ */
+export async function refreshOutdatedReportStats() {
+  const outdated: any[] = await MonthlyFeedback.find({ status: { $in: WITHDRAWABLE_STATUSES }, statsVersion: { $ne: STATS_VERSION } })
+    .select("_id month student classroom")
+    .lean();
+  let refreshed = 0;
+  for (const row of outdated) {
+    if (!isFeedbackMonth(row.month)) continue;
+    const stats = await computeMonthStats({ _id: row.classroom }, idOf(row.student), row.month);
+    const result = await MonthlyFeedback.updateOne(
+      { _id: row._id, status: { $in: WITHDRAWABLE_STATUSES } },
+      { $set: { stats, statsVersion: STATS_VERSION } },
+      { timestamps: false }
+    );
+    if (result?.modifiedCount) refreshed += 1;
+  }
+  return refreshed;
 }
 
 /**
@@ -310,6 +313,7 @@ export async function repointReportsToLiveClassrooms() {
     if (!doc) continue;
     doc.classroom = room._id;
     doc.stats = await computeMonthStats(room, studentId, row.month);
+    doc.statsVersion = STATS_VERSION;
     doc.courseName = String(room.courseName || room.title || "");
     doc.levelName = String(room.levelName || "");
     // A submitted report keeps the questions its coach answered.

@@ -35,6 +35,8 @@ const MonthlyFeedbackSchema = new Schema(
       classesAttended: { type: Number, default: 0 },
       topicsCovered: [{ type: String }],
     },
+    // How `stats` was counted. See STATS_VERSION in lib/feedback/feedbackStats.
+    statsVersion: { type: Number, default: 0 },
 
     // skill key -> 1..5, including "effort"
     ratings: { type: Map, of: Number, default: {} },

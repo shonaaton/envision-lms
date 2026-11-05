@@ -226,12 +226,20 @@ export function InvoiceCreationForm({
   const router = useRouter();
   const today = localDateKey();
   const startStudent = students.some((item) => item.id === initialStudentId) ? String(initialStudentId) : "";
+  // Only active plans count: an assignment to a retired plan can't be billed.
+  const plansFor = (id: string) => {
+    const assigned = new Set(assignments.filter((item) => item.studentId === id).map((item) => item.planId));
+    return plans.filter((item) => assigned.has(item.id));
+  };
+  const startPlans = startStudent ? plansFor(startStudent) : [];
+  // A student with exactly one plan has nothing to choose, so it starts selected.
+  const startPlan = startPlans.length === 1 ? startPlans[0] : undefined;
   const [studentId, setStudentId] = useState(startStudent);
-  const [source, setSource] = useState<Source>(() => (startStudent && assignments.some((item) => item.studentId === startStudent) ? "plan" : "custom"));
-  const [planId, setPlanId] = useState("");
-  const [amount, setAmount] = useState("");
-  const [taxMode, setTaxMode] = useState<InvoiceTaxMode>("included");
-  const [gstRate, setGstRate] = useState("18");
+  const [source, setSource] = useState<Source>(startPlans.length > 0 ? "plan" : "custom");
+  const [planId, setPlanId] = useState(startPlan?.id || "");
+  const [amount, setAmount] = useState(startPlan ? String(startPlan.amount / 100) : "");
+  const [taxMode, setTaxMode] = useState<InvoiceTaxMode>(startPlan ? startPlan.gstMode || "non_gst" : "included");
+  const [gstRate, setGstRate] = useState(startPlan ? String(startPlan.gstPercentage || 18) : "18");
   const [customTitle, setCustomTitle] = useState<string | null>(null);
   const [invoiceDate, setInvoiceDate] = useState(today);
   const [dueDate, setDueDate] = useState(addDays(today, 7));
@@ -250,10 +258,7 @@ export function InvoiceCreationForm({
   const inFlight = useRef(false);
 
   const student = students.find((item) => item.id === studentId);
-  const studentPlans = useMemo(() => {
-    const assigned = new Set(assignments.filter((item) => item.studentId === studentId).map((item) => item.planId));
-    return plans.filter((plan) => assigned.has(plan.id));
-  }, [assignments, plans, studentId]);
+  const studentPlans = plansFor(studentId);
   const plan = source === "plan" ? studentPlans.find((item) => item.id === planId) : undefined;
 
   const amountPaise = Math.round(Number(amount || 0) * 100);
@@ -288,10 +293,20 @@ export function InvoiceCreationForm({
   function selectStudent(next: StudentOption | undefined) {
     clearFeedback();
     setStudentId(next?.id || "");
-    setPlanId("");
     setCustomTitle(null);
-    const assigned = next ? assignments.filter((item) => item.studentId === next.id).length : 0;
-    setSource(assigned > 0 ? "plan" : "custom");
+    const nextPlans = next ? plansFor(next.id) : [];
+    setSource(nextPlans.length > 0 ? "plan" : "custom");
+    if (nextPlans.length === 1) {
+      choosePlan(nextPlans[0]);
+      return;
+    }
+    // The previous student's plan price must not carry over to this student.
+    if (planId) {
+      setAmount("");
+      setTaxMode("included");
+      setGstRate("18");
+    }
+    setPlanId("");
   }
 
   function choosePlan(next: PlanOption) {
@@ -304,10 +319,16 @@ export function InvoiceCreationForm({
   }
 
   function chooseSource(next: Source) {
+    // Clicking the tile that is already on must not clear the selected plan.
+    if (next === source) return;
     clearFeedback();
     setSource(next);
-    setPlanId("");
     setCustomTitle(null);
+    if (next === "plan" && studentPlans.length === 1) {
+      choosePlan(studentPlans[0]);
+      return;
+    }
+    setPlanId("");
     if (next === "custom") setAmount("");
   }
 

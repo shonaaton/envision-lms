@@ -117,7 +117,7 @@ describe("repointReportsToLiveClassrooms", () => {
       return chain([newRoom]);
     });
     (Course.find as any).mockReturnValue(chain([]));
-    (Attendance.aggregate as any).mockResolvedValue([{ attended: 2, held: 2 }]);
+    (Attendance.aggregate as any).mockResolvedValue([{ _id: NEW_ROOM, attended: 2, held: 2 }]);
   });
 
   it("moves the report to the running classroom and corrects its numbers", async () => {

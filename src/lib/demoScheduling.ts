@@ -192,8 +192,9 @@ export async function bookDemoForAccount(input: ScheduleInput & { studentId: str
   const meetingUrlError = parseMeetingUrlInput(input.meetingUrl).error;
   if (meetingUrlError) return { ok: false, error: meetingUrlError };
   await dbConnect();
-  const student: any = await User.findOne({ _id: studentId, role: "student" }).select("name accountStatus parentName city country studentLevel").lean();
+  const student: any = await User.findOne({ _id: studentId, role: "student" }).select("name accountStatus demoLeadDisposition parentName city country studentLevel").lean();
   if (!student || student.accountStatus !== "demo") return { ok: false, error: "This account is no longer a demo account." };
+  if (student.demoLeadDisposition) return { ok: false, error: "Restore or reopen this lead in Demo Center before assigning a demo." };
   const openDemo = await Booking.exists({ student: studentId, bookingType: "demo", archivedAt: null, status: { $in: ["pending", "confirmed"] } });
   if (openDemo) return { ok: false, error: `${student.name || "This student"} already has an open demo. Assign it from its card in the Demo Center.` };
   const end = new Date(start.getTime() + durationMinutes * 60000);

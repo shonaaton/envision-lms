@@ -82,6 +82,10 @@ const UserSchema = new Schema(
       kingHunt: { type: Number, default: 0 },
       analysisBoard: { type: Number, default: 0 },
     },
+    demoLeadDisposition: { type: String, enum: ["closed", "archived"] },
+    demoLeadDispositionAt: Date,
+    demoLeadDispositionBy: { type: Schema.Types.ObjectId, ref: "User" },
+    demoLeadDispositionReason: String,
     demoExpiresAt: { type: Date, index: true },
     demoExtensionCount: { type: Number, default: 0 },
     conversionSetup: {

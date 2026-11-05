@@ -381,6 +381,7 @@ async function unbookedDemoAccounts(input: { createdAfter: Date; createdBefore?:
   const accounts: any[] = await User.find({
     role: "student",
     accountStatus: "demo",
+    demoLeadDisposition: { $nin: ["closed", "archived"] },
     isActive: { $ne: false },
     createdAt: { $gte: input.createdAfter, ...(input.createdBefore ? { $lte: input.createdBefore } : {}) },
   })

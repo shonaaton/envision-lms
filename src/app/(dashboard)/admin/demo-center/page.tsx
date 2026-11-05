@@ -11,7 +11,7 @@ import { notifyDemoConverted, notifyDemoMissed } from "@/lib/demoWorkflow";
 import { canExportDemoAssessments } from "@/lib/demoAssessmentExport";
 import { crmStagesForStudents, type StudentCrmStage } from "@/lib/crm/leadStage";
 import { reconcileDemoStagesFromCrm } from "@/lib/crm/reconcile";
-import { raiseDemoAssessmentTask, resolveConversionCallTasks } from "@/lib/tasks/taskTriggers";
+import { cancelLeadTasks, raiseDemoAssessmentTask, resolveConversionCallTasks } from "@/lib/tasks/taskTriggers";
 import { pendingDuplicateReviews, reviewDuplicateFlag } from "@/lib/duplicateAccounts";
 import { duplicateReasonSummary } from "@/lib/identityMatch";
 import { recordActivity } from "@/lib/activity";
@@ -478,6 +478,39 @@ async function markDemoDelivered(formData: FormData) {
   );
 }
 
+async function manageSignupLead(form: FormData) {
+  "use server";
+  const studentId = String(form.get("student") || "");
+  const action = String(form.get("leadAction") || "");
+  const previous = action === "restore" ? "archived" : action === "reopen" ? "closed" : null;
+  const from = previous === "archived" ? "history" : previous === "closed" ? "closed" : "accounts";
+  if (!/^[a-f\d]{24}$/i.test(studentId) || !["close", "archive", "restore", "reopen"].includes(action)) {
+    return demoCenterOutcome(from, "Choose a valid signed-up lead.");
+  }
+  // Bind the ownership check to the account being changed, regardless of other posted fields.
+  const scope = new FormData();
+  scope.set("student", studentId);
+  scope.set("tab", from);
+  const session = await requireDemoManager("edit", scope);
+  const actor = String(session.user.id);
+  const reason = String(form.get("reason") || "").trim();
+  if (!previous && (!reason || reason.length > 300)) return demoCenterOutcome(from, "Enter a reason of up to 300 characters.");
+  await dbConnect();
+  if (await Booking.exists({ student: studentId, bookingType: "demo", archivedAt: null, status: { $in: ["pending", "confirmed"] } })) return demoCenterOutcome(from, "This lead has an open demo booking. Manage it from the booking card.");
+  const archived = action === "archive";
+  const update = previous
+    ? { $unset: { demoLeadDisposition: 1, demoLeadDispositionAt: 1, demoLeadDispositionBy: 1, demoLeadDispositionReason: 1 } }
+    : { $set: { demoLeadDisposition: archived ? "archived" : "closed", demoLeadDispositionAt: new Date(), demoLeadDispositionBy: actor, demoLeadDispositionReason: reason } };
+  const changed = await User.updateOne({ _id: studentId, role: "student", accountStatus: "demo", demoLeadDisposition: previous }, update);
+  if (!changed.modifiedCount) return demoCenterOutcome(from, "This lead has changed. Refresh the list.");
+  if (!previous) await cancelLeadTasks(studentId, [], reason);
+  const label = previous ? "Restored signed-up lead" : archived ? "Moved signed-up lead to History" : "Closed signed-up lead";
+  await recordActivity({ actor, targetUser: studentId, type: `demo.signup.${action}`, label, entityType: "User", entityId: studentId, metadata: { reason } });
+  revalidatePath("/admin/demo-center");
+  revalidatePath("/dashboard");
+  return demoCenterOutcome(previous ? "accounts" : archived ? "history" : "closed", "", label + ".");
+}
+
 async function closeDemo(formData: FormData) {
   "use server";
   const session = await requireDemoManager("edit", formData);
@@ -761,6 +794,7 @@ const ASSESSMENTS_PAGE_SIZE = 50;
 
 export default async function DemoCenterPage({ searchParams }: { searchParams?: { tab?: string; error?: string; ok?: string; page?: string } }) {
   const session = await requireDemoManager("view");
+  const canManageSignups = await canAccessFeature("demoCenter", session.user as any, "edit");
   const canConvertDemo = await canAccessFeature("demoCenter", session.user as any, "convert");
   await dbConnect();
   const activeTab = tabs.some((tab) => tab.id === searchParams?.tab) ? searchParams?.tab as DemoTab : "requested";
@@ -839,9 +873,11 @@ export default async function DemoCenterPage({ searchParams }: { searchParams?: 
   // Signed-up demo accounts with no open demo request. Those Kraya has written
   // off (Dead, No Response, Lost...) leave the Signed Up (No Demo) tab for Demo
   // Closed; moving the lead back to a demo stage in Kraya brings it back.
-  const unrequestedAccounts = demoStudents.filter(
-    (student: any) => !bookings.some((booking: any) => String(booking.student?._id || booking.student) === String(student._id) && !booking.archivedAt && ["pending", "confirmed"].includes(String(booking.status || "")))
-  );
+  const bookedIds = new Set((await Booking.distinct("student", { bookingType: "demo", archivedAt: null, status: { $in: ["pending", "confirmed"] }, student: { $in: demoStudents.map((s: any) => s._id) } })).map(String));
+  const signups = demoStudents.filter((s: any) => !bookedIds.has(String(s._id)));
+  const archivedSignups = signups.filter((s: any) => s.demoLeadDisposition === "archived");
+  const closedSignups = signups.filter((s: any) => s.demoLeadDisposition === "closed");
+  const unrequestedAccounts = signups.filter((s: any) => !s.demoLeadDisposition);
   const accountCrmStages = await crmStagesForStudents(unrequestedAccounts).catch(() => new Map<string, StudentCrmStage>());
   const accountsWithoutRequest = unrequestedAccounts.filter((student: any) => !accountCrmStages.get(String(student._id))?.closed);
   const crmClosedAccounts = unrequestedAccounts.filter((student: any) => accountCrmStages.get(String(student._id))?.closed);
@@ -856,7 +892,7 @@ export default async function DemoCenterPage({ searchParams }: { searchParams?: 
         ? duplicateFlags.length
         : tab.id === "accounts"
           ? accountsWithoutRequest.length
-          : bookings.filter((booking: any) => classifyDemo(booking) === tab.id).length + (tab.id === "converted" ? convertedWithoutBooking.length : 0) + (tab.id === "closed" ? crmClosedAccounts.length : 0),
+          : bookings.filter((booking: any) => classifyDemo(booking) === tab.id).length + (tab.id === "converted" ? convertedWithoutBooking.length : 0) + (tab.id === "closed" ? crmClosedAccounts.length + closedSignups.length : tab.id === "history" ? archivedSignups.length : 0),
   ]));
   const feedbackByBooking = new Map(cardFeedback.map((item: any) => [String(item.booking?._id || item.booking), item]));
   // A converted student with no booking left can still have an assessment - the
@@ -1004,6 +1040,7 @@ export default async function DemoCenterPage({ searchParams }: { searchParams?: 
                     <Field label="Salesperson" value={ownerLabel(leadOwners.get(String(student._id))?.name || "", leadOwners.get(String(student._id))?.source)} />
                   </dl>
                   <div className="mt-3 flex flex-wrap gap-2">
+                    {canManageSignups && <SignupLeadActions id={String(student._id)} name={student.name || student.username} />}
                     <PopupTrigger id={assignDemoModalId} className="btn-primary">
                       <CheckCircle2 size={15} /> Assign Demo
                     </PopupTrigger>
@@ -1065,10 +1102,12 @@ export default async function DemoCenterPage({ searchParams }: { searchParams?: 
               );
             })}
           </div>
-          {!accountsWithoutRequest.length ? <Empty text="Every signed-up demo account has a demo request." /> : null}
+          {!accountsWithoutRequest.length ? <Empty text="No open sign-up leads without a demo request." /> : null}
         </section>
       ) : activeTab === "history" ? (
         <section className="grid gap-3">
+          {(errorNotice || successNotice) && <p role="status" className="rounded-lg border bg-white p-3 text-sm">{errorNotice || successNotice}</p>}
+          {archivedSignups.map((student: any) => <ManagedSignupCard key={String(student._id)} student={student} canEdit={canManageSignups} />)}
           {archivedBookings.map((booking: any) => (
             <HistoryCard
               key={booking._id.toString()}
@@ -1078,7 +1117,7 @@ export default async function DemoCenterPage({ searchParams }: { searchParams?: 
               canDeleteAccount={booking.student?.accountStatus === "demo" && bookingsPerStudent.get(String(booking.student?._id)) === 1}
             />
           ))}
-          {!archivedBookings.length ? <Empty text="Nothing in History yet. Deleting a demo request moves it here." /> : null}
+          {!archivedBookings.length && !archivedSignups.length ? <Empty text="Nothing in History yet. Deleting a demo request moves it here." /> : null}
         </section>
       ) : activeTab !== "assessments" ? (
         <section className="grid gap-3">
@@ -1104,6 +1143,7 @@ export default async function DemoCenterPage({ searchParams }: { searchParams?: 
                 />
               ))
             : null}
+          {activeTab === "closed" && closedSignups.map((student: any) => <ManagedSignupCard key={String(student._id)} student={student} canEdit={canManageSignups} />)}
           {activeTab === "closed" && crmClosedAccounts.length ? (
             <>
               <h2 className="mt-2 text-sm font-semibold text-slate-900">Demo accounts closed in CRM</h2>
@@ -1120,7 +1160,7 @@ export default async function DemoCenterPage({ searchParams }: { searchParams?: 
               </div>
             </>
           ) : null}
-          {!visibleBookings.length && !(activeTab === "converted" && convertedWithoutBooking.length) && !(activeTab === "closed" && crmClosedAccounts.length) ? <Empty text={`No demos in ${tabs.find((tab) => tab.id === activeTab)?.label || "this tab"}.`} /> : null}
+          {!visibleBookings.length && !(activeTab === "converted" && convertedWithoutBooking.length) && !(activeTab === "closed" && (crmClosedAccounts.length || closedSignups.length)) ? <Empty text={`No demos in ${tabs.find((tab) => tab.id === activeTab)?.label || "this tab"}.`} /> : null}
         </section>
       ) : (
         <section className="grid gap-3">
@@ -1167,7 +1207,37 @@ export default async function DemoCenterPage({ searchParams }: { searchParams?: 
   );
 }
 
-/** A demo account with no booking whose lead Kraya has closed. Read-only: Kraya owns the stage. */
+function SignupLeadActions({ id, name }: { id: string; name: string }) {
+  return <>{(["close", "archive"] as const).map(action => {
+    const archive = action === "archive";
+    const title = archive ? "Delete lead" : "Close lead";
+    const popup = `signup-${action}-${id}`;
+    return <div key={action}>
+      <PopupTrigger id={popup} className="btn-outline bg-white text-rose-700">{title}</PopupTrigger>
+      <PopupShell id={popup} title={title + " · " + name} subtitle={archive ? "Move this lead to History. You can restore it there." : "Move this lead to Demo Closed. You can reopen it there."}>
+        <form action={manageSignupLead} className="grid gap-3">
+          <input type="hidden" name="student" value={id} /><input type="hidden" name="leadAction" value={action} />
+          <label>Reason<input required maxLength={300} name="reason" className="input mt-1" /></label>
+          <button className="btn-primary">{title}</button>
+        </form>
+      </PopupShell>
+    </div>;
+  })}</>;
+}
+
+function ManagedSignupCard({ student, canEdit }: { student: any; canEdit: boolean }) {
+  const archived = student.demoLeadDisposition === "archived";
+  return <article className="rounded-lg border bg-white p-4">
+    <b>{student.name || student.username}</b><p className="text-sm">{student.email}</p>
+    <p className="my-2 text-sm">{archived ? "Deleted" : "Closed"} on {formatAcademyDateTime(student.demoLeadDispositionAt)} · {student.demoLeadDispositionReason}</p>
+    {canEdit && <form action={manageSignupLead}>
+      <input type="hidden" name="student" value={String(student._id)} />
+      <input type="hidden" name="leadAction" value={archived ? "restore" : "reopen"} />
+      <button className="btn-outline">{archived ? "Restore lead" : "Reopen lead"}</button>
+    </form>}
+  </article>;
+}
+
 function CrmClosedAccountCard({ student, crm, salesOwnerName }: { student: any; crm: StudentCrmStage; salesOwnerName: string }) {
   return (
     <div className="rounded-lg border border-slate-200/80 bg-white p-4">

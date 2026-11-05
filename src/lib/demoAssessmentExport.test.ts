@@ -231,6 +231,8 @@ describe("demoLeadReportSheets", () => {
 describe("demoLeadStage with a CRM stage", () => {
   it("names a demo account Kraya closed, matching its place under Demo Closed", () => {
     const account = { _id: "s", accountStatus: "demo" };
+    expect(demoLeadStage({}, { ...account, demoLeadDisposition: "closed" }, Date.now(), "Fresh Lead")).toBe("Demo Closed");
+    expect(demoLeadStage({}, { ...account, demoLeadDisposition: "archived" }, Date.now(), "Dead")).toBe("History - sign-up lead deleted");
     expect(demoLeadStage({}, account, Date.now(), "Dead")).toBe("Demo account - closed in CRM");
     expect(demoLeadStage({}, account, Date.now(), "No Response")).toBe("Demo account - closed in CRM");
     expect(demoLeadStage({}, account, Date.now(), "Fresh Lead")).toBe("Demo account - no demo booked");

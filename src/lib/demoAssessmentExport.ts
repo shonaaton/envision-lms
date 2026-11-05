@@ -112,6 +112,8 @@ export function demoLeadStage(booking: any, student: any, now = Date.now(), crmS
   if (!student?._id) return "Demo deleted";
   if (student.conversionSetup?.convertedAt || student.accountStatus !== "demo") return "Converted (no demo booking)";
   // The Demo Center lists these under Demo Closed rather than Signed Up (No Demo).
+  if (student.demoLeadDisposition === "archived") return "History - sign-up lead deleted";
+  if (student.demoLeadDisposition === "closed") return "Demo Closed";
   if (crmStage && classifyCrmStage(crmStage) === "closed") return "Demo account - closed in CRM";
   return "Demo account - no demo booked";
 }
@@ -259,7 +261,7 @@ async function loadDemoLeads() {
     role: "student",
     $or: [{ accountStatus: "demo" }, { "conversionSetup.convertedAt": { $exists: true } }],
   })
-    .select("name email phone countryCode parentName city country accountStatus conversionSetup.convertedAt createdAt")
+    .select("name email phone countryCode parentName city country accountStatus demoLeadDisposition conversionSetup.convertedAt createdAt")
     .sort({ createdAt: -1 })
     .lean();
   for (const student of unbooked) {

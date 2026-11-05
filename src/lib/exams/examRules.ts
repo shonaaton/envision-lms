@@ -148,7 +148,7 @@ export type SubmitReason = (typeof SUBMIT_REASONS)[number];
 
 export const SUBMIT_REASON_LABELS: Record<SubmitReason, string> = {
   completed: "Submitted by the student",
-  time_up: "Auto-submitted: 90 minutes ran out",
+  time_up: "Auto-submitted: exam time ran out",
   tab_switch: "Auto-submitted: opened another tab or app after the warning",
   app_closed: "Auto-submitted: closed or left the exam",
   disconnected: "Auto-submitted: app closed or connection lost (no signal for 3 minutes)",

@@ -128,6 +128,8 @@ export type StaffRow = {
   classroom: { id: string; title: string } | null;
   assignedAt: string;
   availableUntil: string;
+  endsAt: string | null;
+  extensions: { id: string; kind: string; previous: string; deadline: string; at: string; notification: string; detail: string }[];
   status: string;
   startedAt: string | null;
   submittedAt: string | null;
@@ -189,6 +191,11 @@ export function ExamResultsTable({ rows, actions }: { rows: StaffRow[]; actions?
           <div className="mt-3 grid gap-3 rounded-lg bg-slate-50 p-3 text-sm sm:grid-cols-2">
             <div className="space-y-1">
               <div><b>Started:</b> {istDateTime(row.startedAt)}</div>
+              {row.status === "in_progress" && <div><b>Finish time:</b> {istDateTime(row.endsAt)}</div>}
+              {row.extensions?.map(event => <div key={event.id} className="text-xs">
+                <b>{event.kind === "sitting" ? "Finish time" : "Start deadline"} extended</b> from {istDateTime(event.previous)} to {istDateTime(event.deadline)}.
+                {" "}{event.notification === "sent" ? "Notifications sent." : event.detail || "Notifications pending."}
+              </div>)}
               <div><b>Submitted:</b> {istDateTime(row.submittedAt)}</div>
               {row.score && (
                 <div>

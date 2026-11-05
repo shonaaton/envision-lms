@@ -272,7 +272,8 @@ function Sitting({ exam, setExam, reload }: { exam: Exam; setExam: (exam: Exam) 
   const [warning, setWarning] = useState(false);
   const [confirmFinish, setConfirmFinish] = useState(false);
   const [finishing, setFinishing] = useState(false);
-  const left = useCountdown(exam.endsAt, exam.serverNow);
+  const [timer, setTimer] = useState({ endsAt: exam.endsAt, serverNow: exam.serverNow });
+  const left = useCountdown(timer.endsAt, timer.serverNow);
   const endedRef = useRef(false);
 
   const finished = useCallback(async () => {
@@ -350,24 +351,22 @@ function Sitting({ exam, setExam, reload }: { exam: Exam; setExam: (exam: Exam) 
   }, [actions, leftTheExam]);
 
   // Still here: without this the sweep treats the sitting as closed after 3 minutes.
-  useEffect(() => {
-    const timer = window.setInterval(() => {
-      actions.call({ action: "heartbeat" }, true)
-        .then((data) => {
-          if (data.status !== "in_progress") void finished();
-        })
-        .catch(() => undefined);
-    }, HEARTBEAT_INTERVAL_MS);
-    return () => window.clearInterval(timer);
+  const checkTimer = useCallback(async () => {
+    const data = await actions.call({ action: "heartbeat" }, true);
+    if (data.status !== "in_progress") return void finished();
+    if (data.endsAt && data.serverNow) {
+      setTimer(previous => Date.parse(data.endsAt) > Date.parse(previous.endsAt || "") ? { endsAt: data.endsAt, serverNow: data.serverNow } : previous);
+    }
   }, [actions, finished]);
 
   useEffect(() => {
-    if (left > 0 || !exam.endsAt || endedRef.current) return;
-    actions
-      .call({ action: "submit" })
-      .catch(() => undefined)
-      .finally(() => void finished());
-  }, [left, exam.endsAt, actions, finished]);
+    const interval = window.setInterval(() => void checkTimer().catch(() => undefined), HEARTBEAT_INTERVAL_MS);
+    return () => window.clearInterval(interval);
+  }, [checkTimer]);
+
+  useEffect(() => {
+    if (left === 0 && !endedRef.current) void checkTimer().catch(() => undefined);
+  }, [left, checkTimer]);
 
   /** Moves on from a finished question after `delayMs`, unless the student already went elsewhere. */
   function advanceFrom(questionId: string, delayMs: number) {
@@ -422,6 +421,7 @@ function Sitting({ exam, setExam, reload }: { exam: Exam; setExam: (exam: Exam) 
             </div>
           </div>
           <div className={cn("ml-auto flex items-center gap-1.5 rounded-lg px-3 py-1.5 font-mono text-lg font-black", lowTime ? "bg-red-50 text-red-700" : "bg-brand/10 text-brand")}>
+            {timer.endsAt && timer.endsAt !== exam.endsAt && <span role="status" className="font-sans text-xs">Time extended</span>}
             <Clock size={16} /> {clock(left)}
           </div>
           <button type="button" className="btn btn-primary" onClick={() => setConfirmFinish(true)}>

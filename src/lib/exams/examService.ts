@@ -23,6 +23,7 @@ import {
   notifyExamReport,
   notifyExamResult,
   notifyExamStaff,
+  notifyExamTimeExtended,
   notifyExamsClosedUnattempted,
 } from "@/lib/exams/examNotifications";
 import {
@@ -54,6 +55,7 @@ import { Classroom } from "@/models/Classroom";
 import { Course } from "@/models/Course";
 import { ExamAssignment, ExamClassroomRun, ExamPaper } from "@/models/Exam";
 import { User } from "@/models/User";
+import { examTimeExtension } from "@/lib/exams/examTimeExtensions";
 
 /**
  * Exam Center: papers, assignments, the sitting itself, the sweep and the
@@ -396,6 +398,95 @@ export async function cancelExam(id: string, actorId: string) {
   return { ok: true };
 }
 
+export async function extendExamTime(input: { id: string; actorId: string; requestId: unknown; kind: unknown; newDeadline: unknown; expectedDeadline: unknown; reason?: unknown; now?: Date }) {
+  if (typeof input.requestId !== "string" || !/^[a-zA-Z0-9-]{16,80}$/.test(input.requestId)) throw new ExamError("A valid extension request ID is required.");
+  await dbConnect();
+  const doc: any = await ExamAssignment.findById(input.id).lean();
+  if (!doc) throw new ExamError("Exam not found.", 404);
+  const existing = (doc.timeExtensions || []).find((event: any) => event.requestId === input.requestId);
+  if (existing) return { ok: true, notificationStatus: existing.notification?.status || "pending" };
+  const now = input.now || new Date();
+  let change: ReturnType<typeof examTimeExtension>;
+  try { change = examTimeExtension({ ...input, assignment: doc, now }); }
+  catch (error) { throw new ExamError((error as Error).message, 409); }
+  if (typeof input.expectedDeadline !== "string" || new Date(input.expectedDeadline).getTime() !== change.previousDeadline.getTime()) {
+    throw new ExamError("The exam time changed. Refresh and try again.", 409);
+  }
+  const field = change.kind === "window" ? "availableUntil" : "endsAt";
+  const set: Record<string, unknown> = { [field]: change.newDeadline };
+  if (change.kind === "window") {
+    set.status = "assigned";
+    set.openKey = `${idOf(doc.student)}:${doc.tier}:${doc.levelNumber}`;
+    // A new deadline gets a new reminder schedule and its own reminder identity.
+    const reminders = examReminderTimes(change.newDeadline);
+    set.reminders = {
+      ...reminders,
+      // The extension notice itself covers reminders whose time has already passed.
+      ...(reminders.threeDayAt <= now ? { threeDaySentAt: now } : {}),
+      ...(reminders.lastDayAt <= now ? { lastDaySentAt: now } : {}),
+    };
+  }
+  let updated: any;
+  try {
+    updated = await ExamAssignment.findOneAndUpdate(
+      { _id: doc._id, status: doc.status, [field]: change.previousDeadline, "timeExtensions.requestId": { $ne: input.requestId } },
+      { $set: set, $push: { timeExtensions: { ...change, requestId: input.requestId, extendedAt: now, extendedBy: input.actorId, notification: { status: "pending", nextAttemptAt: now, attempts: 0 } } } },
+      { new: true }
+    ).lean();
+  } catch (error: any) {
+    if (error?.code === 11000) throw new ExamError("This student already has another exam open for this level. Extend that exam instead.", 409);
+    throw error;
+  }
+  if (!updated) {
+    const retried: any = await ExamAssignment.findById(input.id).select("timeExtensions").lean();
+    const event = (retried?.timeExtensions || []).find((item: any) => item.requestId === input.requestId);
+    if (event) return { ok: true, notificationStatus: event.notification?.status || "pending" };
+    throw new ExamError("The exam changed while extending it. Refresh and try again.", 409);
+  }
+  const notificationStatus = await sendExtensionNotice(input.id, input.requestId).catch((error) => {
+    console.error("[exams] extension notice queued for retry", error);
+    return "pending";
+  });
+  return { ok: true, notificationStatus };
+}
+
+/** Lease the individual outbox event so the request and sweep cannot send it together. */
+export async function sendExtensionNotice(id: string, requestId: string, now = new Date()) {
+  const leaseUntil = new Date(now.getTime() + 5 * 60_000);
+  const due = { requestId, "notification.status": "pending", "notification.nextAttemptAt": { $lte: now }, $or: [{ "notification.leaseUntil": null }, { "notification.leaseUntil": { $lte: now } }] };
+  const claimed: any = await ExamAssignment.findOneAndUpdate(
+    { _id: id, timeExtensions: { $elemMatch: due } },
+    { $set: { "timeExtensions.$.notification.leaseUntil": leaseUntil }, $inc: { "timeExtensions.$.notification.attempts": 1 } },
+    { new: true }
+  ).lean();
+  if (!claimed) return "pending";
+  const event = claimed.timeExtensions.find((item: any) => item.requestId === requestId);
+  let result: Record<string, unknown>;
+  const currentDeadline = event.kind === "window" ? claimed.availableUntil : claimed.endsAt;
+  const relevant = claimed.status === (event.kind === "window" ? "assigned" : "in_progress") &&
+    currentDeadline && new Date(currentDeadline).getTime() === new Date(event.newDeadline).getTime() && new Date(currentDeadline) > now;
+  try {
+    result = relevant ? await notifyExamTimeExtended(claimed, event) : { status: "closed", lastError: "Remaining notices stopped because the exam time no longer applies." };
+  }
+  catch (error) { result = { status: "pending", lastError: (error as Error).message }; }
+  const fields = Object.fromEntries(Object.entries(result).filter(([, value]) => value !== undefined).map(([key, value]) => [`timeExtensions.$.notification.${key}`, value]));
+  await ExamAssignment.updateOne(
+    { _id: id, timeExtensions: { $elemMatch: { requestId, "notification.leaseUntil": leaseUntil } } },
+    { $set: { ...fields, "timeExtensions.$.notification.nextAttemptAt": new Date(now.getTime() + 15 * 60_000) }, $unset: { "timeExtensions.$.notification.leaseUntil": 1 } }
+  );
+  return String(result.status);
+}
+
+async function sendDueExtensionNotices(now: Date) {
+  const docs: any[] = await ExamAssignment.find({ timeExtensions: { $elemMatch: { "notification.status": "pending", "notification.nextAttemptAt": { $lte: now } } } }).select("timeExtensions").limit(100).lean();
+  let sent = 0;
+  for (const doc of docs) for (const event of doc.timeExtensions || []) {
+    if (event.notification?.status !== "pending" || new Date(event.notification.nextAttemptAt) > now) continue;
+    if (await sendExtensionNotice(idOf(doc), event.requestId) === "sent") sent += 1;
+  }
+  return sent;
+}
+
 /* ------------------------------------------------------------- the sitting */
 
 function progressFor(doc: any, questionId: string) {
@@ -688,7 +779,7 @@ export async function submitByStudent(id: string, studentId: string) {
 export async function submitExam(id: string, reason: SubmitReason, now = new Date()) {
   await dbConnect();
   const doc: any = await ExamAssignment.findOneAndUpdate(
-    { _id: id, status: "in_progress" },
+    { _id: id, status: "in_progress", ...(reason === "time_up" ? { endsAt: { $lte: now } } : {}) },
     { $set: { status: "submitted", submittedAt: now, submitReason: reason }, $unset: { openKey: 1 }, $inc: { __v: 1 } },
     { new: true }
   ).lean();
@@ -896,7 +987,7 @@ async function sendDueReminders(now: Date) {
           : null;
     if (!kind || !claim) continue;
     const field = kind === "last_day" ? "reminders.lastDaySentAt" : "reminders.threeDaySentAt";
-    const won = await ExamAssignment.updateOne({ _id: assignment._id, status: "assigned", [field]: null }, claim);
+    const won = await ExamAssignment.updateOne({ _id: assignment._id, status: "assigned", availableUntil: assignment.availableUntil, [field]: null }, claim);
     if (!won.modifiedCount) continue;
     await notifyExamReminder(assignment, kind).catch((error) => console.error("[exams] reminder failed", error));
     if (kind === "last_day") lastDay.push(assignment);
@@ -916,10 +1007,12 @@ async function sendDueReminders(now: Date) {
 export async function processExamSweep(now = new Date()) {
   await dbConnect();
   const closing: any[] = await ExamAssignment.find({ status: "assigned", availableUntil: { $lte: now } }).select("_id student tier levelNumber").limit(500).lean();
-  const expired = closing.length
-    ? await ExamAssignment.updateMany({ _id: { $in: closing.map((doc) => doc._id) }, status: "assigned" }, { $set: { status: "expired" }, $unset: { openKey: 1 } })
-    : { modifiedCount: 0 };
-  await notifyExamsClosedUnattempted(closing).catch((error) => console.error("[exams] closed-unattempted notice failed", error));
+  const expired = [];
+  for (const doc of closing) {
+    const result = await ExamAssignment.updateOne({ _id: doc._id, status: "assigned", availableUntil: { $lte: now } }, { $set: { status: "expired" }, $unset: { openKey: 1 } });
+    if (result.modifiedCount) expired.push(doc);
+  }
+  await notifyExamsClosedUnattempted(expired).catch((error) => console.error("[exams] closed-unattempted notice failed", error));
 
   const overdue: any[] = await ExamAssignment.find({ status: "in_progress", endsAt: { $lte: now } }).select("_id").limit(200).lean();
   for (const doc of overdue) await submitExam(idOf(doc), "time_up", now);
@@ -940,7 +1033,8 @@ export async function processExamSweep(now = new Date()) {
   let certificates = 0;
   for (const doc of queued) if (await sendCertificate(idOf(doc), now)) certificates += 1;
 
-  return { expired: expired.modifiedCount, timedOut: overdue.length, disconnected: silent.length, reminders, autoAssigned: auto.assigned, certificates };
+  const extensionNotices = await sendDueExtensionNotices(now);
+  return { expired: expired.length, timedOut: overdue.length, disconnected: silent.length, reminders, autoAssigned: auto.assigned, certificates, extensionNotices };
 }
 
 /* ------------------------------------------------------------- staff views */
@@ -959,6 +1053,11 @@ function staffRow(doc: any) {
     assignedAt: doc.assignedAt,
     availableUntil: doc.availableUntil,
     status: doc.status,
+    endsAt: doc.endsAt || null,
+    extensions: (doc.timeExtensions || []).map((event: any) => ({
+      id: event.requestId, kind: event.kind, at: event.extendedAt, deadline: event.newDeadline, previous: event.previousDeadline,
+      notification: event.notification?.status || "pending", detail: event.notification?.lastError || "",
+    })),
     startedAt: doc.startedAt || null,
     submittedAt: doc.submittedAt || null,
     submitReason: doc.submitReason || null,

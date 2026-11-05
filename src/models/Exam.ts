@@ -105,6 +105,25 @@ const ExamAssignmentSchema = new Schema(
     startedAt: Date,
     endsAt: { type: Date, index: true },
     lastHeartbeatAt: Date,
+    timeExtensions: [new Schema({
+      requestId: { type: String, required: true },
+      kind: { type: String, enum: ["window", "sitting"], required: true },
+      previousDeadline: { type: Date, required: true },
+      newDeadline: { type: Date, required: true },
+      reason: String,
+      extendedAt: { type: Date, required: true },
+      extendedBy: { type: Schema.Types.ObjectId, ref: "User", required: true },
+      notification: {
+        status: { type: String, enum: ["pending", "sent", "closed"], default: "pending" },
+        nextAttemptAt: Date,
+        leaseUntil: Date,
+        attempts: { type: Number, default: 0 },
+        sentEmails: [String],
+        whatsappSentAt: Date,
+        inAppSentAt: Date,
+        lastError: String,
+      },
+    }, { _id: false })],
     violations: [new Schema({ type: { type: String, required: true }, at: { type: Date, required: true } }, { _id: false })],
     submittedAt: Date,
     submitReason: { type: String, enum: ["completed", "time_up", "tab_switch", "app_closed", "disconnected"] },
@@ -167,6 +186,7 @@ ExamAssignmentSchema.index({ autoKey: 1 }, { unique: true, sparse: true });
 ExamAssignmentSchema.index({ status: 1, availableUntil: 1 });
 ExamAssignmentSchema.index({ status: 1, lastHeartbeatAt: 1 });
 ExamAssignmentSchema.index({ "certificate.status": 1, "certificate.nextAttemptAt": 1 });
+ExamAssignmentSchema.index({ "timeExtensions.notification.status": 1, "timeExtensions.notification.nextAttemptAt": 1 });
 ExamAssignmentSchema.index({ tier: 1, levelNumber: 1, createdAt: -1 });
 
 /**

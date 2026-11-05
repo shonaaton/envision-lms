@@ -3,7 +3,8 @@ import { sendAutomationEmail } from "@/lib/emailAutomation";
 import { messageFamily } from "@/lib/familyMessaging";
 import { whatsappParam } from "@/lib/leave/leaveNotifications";
 import { studentCoachGroups } from "@/lib/studentDiscontinuedNotifications";
-import { whatsappRecipientName } from "@/lib/whatsappAutomationEvents";
+import { sendWhatsAppAutomationTemplate, whatsappRecipientName } from "@/lib/whatsappAutomationEvents";
+import { resolveAudienceEmails } from "@/lib/studentContact";
 import { coreStaffFilter } from "@/lib/staffAudience";
 import { topicBreakdown, topicReportLines } from "@/lib/exams/examReport";
 import { EXAM_DURATION_MINUTES, SUBMIT_REASON_LABELS, examLevelLabel, type ReminderKind, type SubmitReason } from "@/lib/exams/examRules";
@@ -29,6 +30,7 @@ import { User } from "@/models/User";
  */
 export const EXAM_ASSIGNED_TEMPLATE = "exam_available";
 export const EXAM_REMINDER_TEMPLATE = "exam_reminder";
+export const EXAM_TIME_EXTENDED_TEMPLATE = "exam_time_extended";
 
 const STUDENT_FIELDS = "_id name email role phone countryCode parentName parentEmail isActive";
 
@@ -51,6 +53,69 @@ async function inApp(user: unknown, dedupKey: string, title: string, message: st
 async function loadStudent(assignment: any) {
   if (assignment.student?.name !== undefined) return assignment.student;
   return User.findById(assignment.student).select(STUDENT_FIELDS).lean();
+}
+
+/** The persisted extension event is also the outbox; retries skip channels already accepted. */
+export async function notifyExamTimeExtended(assignment: any, extension: any) {
+  const student: any = await loadStudent(assignment);
+  if (!student) throw new Error("Student account not found for the extension notice.");
+  const level = examLevelLabel(assignment.tier, assignment.levelNumber);
+  const timeType = extension.kind === "sitting" ? "finish time" : "deadline to start";
+  const deadline = examDeadlineLabel(new Date(extension.newDeadline));
+  const previous = examDeadlineLabel(new Date(extension.previousDeadline));
+  const title = `Exam time extended: ${level}`;
+  const body = `The time for your ${level} exam has been extended. Your new ${timeType} is ${deadline} (previously ${previous}).`;
+  const detail = extension.kind === "sitting"
+    ? "Your running exam timer has been updated. Continue in the exam without leaving the page."
+    : `Open the Exam Center to start your exam before the new deadline. Once started, you have ${EXAM_DURATION_MINUTES} minutes.`;
+  const key = `exam:${assignment._id}:extended:${extension.requestId}`;
+  const metadata = { kind: "exam_time_extended", examId: String(assignment._id), studentId: String(student._id), href: examHref(assignment), actionLabel: "Open Exam Center", notificationDedupKey: key };
+  const state = extension.notification || {};
+  const sentEmails: string[] = [...(state.sentEmails || [])];
+  let inAppSentAt = state.inAppSentAt, whatsappSentAt = state.whatsappSentAt;
+  const errors: string[] = [];
+  if (!inAppSentAt) {
+    try {
+      await inApp(student._id, key, title, `${body}\n\n${detail}`, metadata);
+      inAppSentAt = new Date();
+    } catch { errors.push("In-app notification pending"); }
+  }
+  const message = (name: string, text: string) => [
+    `Hello ${name || "there"},`, "", text, "", detail,
+    ...(extension.reason ? ["", `Reason: ${extension.reason}`] : []), "", "Team Envision Chess Academy",
+  ].join("\n");
+  const emails = resolveAudienceEmails(
+    student.email ? { to: String(student.email), message: message(student.name, body) } : null,
+    student.parentEmail ? { to: String(student.parentEmail), message: message(student.parentName, `${student.name || "Your child"}'s ${level} exam time has been extended. The new ${timeType} is ${deadline} (previously ${previous}).`) } : null,
+  ).filter((email) => !/\.invalid$/i.test(email.to.trim()));
+  if (!emails.length) errors.push("Student/family email address missing");
+  await Promise.all(emails.map(async (email) => {
+    const address = email.to.trim().toLowerCase();
+    if (sentEmails.includes(address)) return;
+    // A failed email dispatch is claimed by the shared email deduper as well.
+    // Each leased retry gets its own key, while accepted recipients are skipped above.
+    const result = await sendAutomationEmail({ ...email, subject: title, metadata: { ...metadata, notificationDedupKey: `${key}:attempt:${state.attempts || 1}` } }).catch(() => null);
+    if (result?.delivered) sentEmails.push(address);
+    else errors.push("Email delivery pending");
+  }));
+  if (!whatsappSentAt) {
+    if (!String(student.phone || "").replace(/\D/g, "")) errors.push("Student/family WhatsApp number missing");
+    else {
+      const result = await sendWhatsAppAutomationTemplate({
+        user: student,
+        templateName: EXAM_TIME_EXTENDED_TEMPLATE,
+        bodyParameters: [whatsappRecipientName(student), level, timeType, deadline].map((value) => whatsappParam(value)),
+        metadata,
+      }).catch(() => null);
+      if (result?.delivered) whatsappSentAt = new Date();
+      else errors.push("WhatsApp delivery pending; check template approval and automation settings");
+    }
+  }
+  return {
+    sentEmails, whatsappSentAt, inAppSentAt,
+    status: errors.length ? "pending" : "sent",
+    lastError: Array.from(new Set(errors)).join("; "),
+  };
 }
 
 export async function notifyExamAssigned(assignment: any) {
@@ -93,7 +158,7 @@ export async function notifyExamReminder(assignment: any, kind: ReminderKind) {
   const level = examLevelLabel(assignment.tier, assignment.levelNumber);
   const deadline = examDeadlineLabel(assignment.availableUntil);
   const timeLeft = kind === "last_day" ? "today is the last day" : "3 days are left";
-  const dedupKey = `exam:${assignment._id}:reminder:${kind}`;
+  const dedupKey = `exam:${assignment._id}:reminder:${kind}:${new Date(assignment.availableUntil).getTime()}`;
   const metadata = { kind: "exam_reminder", examId: String(assignment._id), href: examHref(assignment), reminder: kind };
   const title = kind === "last_day" ? `Last day for your ${level} exam` : `Reminder: ${level} exam`;
   const body = `Your ${level} exam is still waiting: ${timeLeft}. It closes at ${deadline}. Once started you have ${EXAM_DURATION_MINUTES} minutes and cannot leave the exam.`;
@@ -253,11 +318,10 @@ export async function notifyCoachesExamsNotStarted(assignments: any[]) {
     const list = byCoach.get(String(coach._id)) || [];
     if (!list.length) continue;
     const nameOf = (assignment: any) => studentName.get(String(assignment.student?._id || assignment.student)) || "A student";
-    const rows = list.map((assignment) => `- ${nameOf(assignment)}: ${examLevelLabel(assignment.tier, assignment.levelNumber)}`);
-    const deadline = examDeadlineLabel(list[0].availableUntil);
+    const rows = list.map((assignment) => `- ${nameOf(assignment)}: ${examLevelLabel(assignment.tier, assignment.levelNumber)}, closes at ${examDeadlineLabel(assignment.availableUntil)}`);
     const title = list.length === 1 ? `${nameOf(list[0])} has not started their exam` : `${list.length} students have not started their exam`;
     const message = [
-      `The exam closes tonight (${deadline}) and these students have not started it yet:`,
+      "These students have exams closing today and have not started yet:",
       ...rows,
       "",
       "Their families were reminded this morning. A word from you in class or on the group may help.",

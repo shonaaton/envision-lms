@@ -2387,6 +2387,19 @@ export const WHATSAPP_TEMPLATE_DEFINITIONS = [
     ]
   },
   {
+    "name": "exam_time_extended",
+    "language": "en",
+    "category": "UTILITY",
+    "sourceAutomation": "examNotifications.notifyExamTimeExtended",
+    "body": "Hello {{1}}, the time for your {{2}} exam has been extended.\n\nUpdated {{3}}: {{4}}.\n\nOpen the Exam Center in your Envision Chess Academy portal to view the updated exam time.\n\nTeam Envision Chess Academy",
+    "variables": [
+      { "position": 1, "key": "recipient_name", "sample": "Aarav" },
+      { "position": 2, "key": "exam_level", "sample": "Beginner Level 2" },
+      { "position": 3, "key": "time_type", "sample": "deadline to start" },
+      { "position": 4, "key": "new_deadline", "sample": "12 Nov 2026, 11:59 pm IST" }
+    ]
+  },
+  {
     "name": "exam_reminder",
     "language": "en",
     "sourceAutomation": "examNotifications.notifyExamReminder",

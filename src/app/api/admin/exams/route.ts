@@ -5,6 +5,7 @@ import {
   assignExam,
   assignTargets,
   cancelExam,
+  extendExamTime,
   editPaperQuestion,
   examBankCounts,
   generatePaper,
@@ -49,7 +50,7 @@ export async function GET(req: Request) {
 }
 
 const EDIT_ACTIONS = new Set(["generate_paper", "replace_question", "edit_question", "publish"]);
-const ASSIGN_ACTIONS = new Set(["assign", "cancel", "resend_certificate"]);
+const ASSIGN_ACTIONS = new Set(["assign", "cancel", "resend_certificate", "extend_time"]);
 
 export async function POST(req: Request) {
   let body: any;
@@ -83,6 +84,8 @@ export async function POST(req: Request) {
       }
       case "cancel":
         return NextResponse.json(await cancelExam(String(body.id || ""), actor.id));
+      case "extend_time":
+        return NextResponse.json(await extendExamTime({ id: String(body.id || ""), actorId: actor.id, requestId: body.requestId, kind: body.kind, expectedDeadline: body.expectedDeadline, newDeadline: body.newDeadline, reason: body.reason }));
       case "resend_certificate":
         return NextResponse.json(await resendCertificate(String(body.id || "")));
     }

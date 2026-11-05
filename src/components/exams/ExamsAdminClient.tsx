@@ -6,7 +6,7 @@ import { CheckCircle2, ClipboardCheck, Eye, Loader2, Pencil, RefreshCw, Send, Sh
 import { toast } from "sonner";
 import { MCQ_COUNT, POSITION_COUNT } from "@/lib/exams/examRules";
 import { cn } from "@/lib/utils";
-import { ExamResultsTable, FenDiagram, type StaffRow } from "./examUi";
+import { ExamResultsTable, FenDiagram, istDateTime, type StaffRow } from "./examUi";
 
 type PaperSummary = { tier: string; levelNumber: number; levelLabel: string; status: "none" | "draft" | "published"; version: number; publishedAt: string | null; updatedAt: string | null };
 type BankCount = { tier: string; levelNumber: number; templates: number; mcqs: number; positions: number; mcqsFromPositions: number };
@@ -469,6 +469,7 @@ function AssignmentsTab({ papers, initialStatus }: { papers: PaperSummary[]; ini
           rows={shown}
           actions={(row) => (
             <>
+              {["assigned", "expired", "in_progress"].includes(row.status) && <ExtendTime row={row} onSaved={load} />}
               {row.status === "assigned" && (
                 <button
                   type="button"
@@ -501,6 +502,37 @@ function AssignmentsTab({ papers, initialStatus }: { papers: PaperSummary[]; ini
       )}
     </section>
   );
+}
+
+function ExtendTime({ row, onSaved }: { row: StaffRow; onSaved: () => Promise<void> }) {
+  const [requestId, setRequestId] = useState("");
+  const [value, setValue] = useState("");
+  const [saving, setSaving] = useState(false);
+  const running = row.status === "in_progress";
+  const previous = running ? row.endsAt : row.availableUntil;
+  if (!previous) return null;
+  const current = Date.parse(previous);
+  const next = running ? current + Number(value) * 60_000 : Date.parse(value + ":00+05:30");
+  const valid = Number.isFinite(next) && next > Math.max(Date.now(), current) && (!running || Number.isInteger(Number(value)));
+  if (!requestId) return <button type="button" className="btn btn-outline" onClick={() => { setValue(running ? "15" : ""); setRequestId(crypto.randomUUID()); }}>Extend time</button>;
+  return <form className="w-full space-y-2 rounded-lg border bg-white p-3" onSubmit={async event => {
+    event.preventDefault();
+    if (!valid || saving) return;
+    setSaving(true);
+    try {
+      const result = await postAction({ action: "extend_time", id: row.id, kind: running ? "sitting" : "window", requestId, expectedDeadline: previous, newDeadline: new Date(next).toISOString() });
+      toast.success(result.notificationStatus === "sent" ? "Time extended. Student notifications sent." : "Time extended. Student notifications queued.");
+      await onSaved();
+    } catch (error: any) { toast.error(error.message); } finally { setSaving(false); }
+  }}>
+    <label className="block font-bold">{running ? "Extra minutes" : "New deadline to start (IST)"}
+      <input required className="input mt-1" type={running ? "number" : "datetime-local"} min={running ? 1 : undefined} value={value} onChange={event => setValue(event.target.value)} />
+    </label>
+    <p className="text-xs">Current {running ? "finish time" : "start deadline"}: {istDateTime(previous)}. {valid && <>New time: {istDateTime(new Date(next))}.</>}</p>
+    <p className="text-xs">The student will be notified by email and WhatsApp.</p>
+    <button className="btn btn-primary" disabled={saving || !valid}>{saving ? "Saving…" : "Extend and notify"}</button>{" "}
+    <button type="button" className="btn btn-outline" disabled={saving} onClick={() => setRequestId("")}>Cancel</button>
+  </form>;
 }
 
 function AssignDialog({ papers, onClose, onAssigned }: { papers: PaperSummary[]; onClose: () => void; onAssigned: () => void }) {

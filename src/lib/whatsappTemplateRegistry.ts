@@ -18,9 +18,26 @@ export type WhatsAppTemplateDefinition = {
    * Anything that promotes the academy rather than servicing an existing
    * booking must be MARKETING. Submitting one of those as UTILITY gets it
    * rejected, or approved and later re-categorised by Meta.
+   *
+   * AUTHENTICATION is for verification codes only. Meta writes that body itself
+   * and refuses free text, so its submission goes through
+   * `whatsappOtpTemplateComponents` and `body` here only mirrors Meta's wording.
    */
-  category?: "UTILITY" | "MARKETING";
+  category?: "UTILITY" | "MARKETING" | "AUTHENTICATION";
 };
+
+export const WHATSAPP_OTP_TEMPLATE_NAME = "whatsapp_verification_code";
+/** Printed in the template's footer, so changing it means a new template version on Meta. */
+export const WHATSAPP_OTP_VALIDITY_MINUTES = 10;
+
+/** The components Meta requires for a copy-code authentication template. */
+export function whatsappOtpTemplateComponents() {
+  return [
+    { type: "BODY", add_security_recommendation: true },
+    { type: "FOOTER", code_expiration_minutes: WHATSAPP_OTP_VALIDITY_MINUTES },
+    { type: "BUTTONS", buttons: [{ type: "OTP", otp_type: "COPY_CODE", text: "Copy code" }] },
+  ] as Array<Record<string, any>>;
+}
 
 export const WHATSAPP_TEMPLATE_DEFINITIONS = [
   {
@@ -2458,6 +2475,16 @@ export const WHATSAPP_TEMPLATE_DEFINITIONS = [
     "variables": [
       { "position": 1, "key": "parent_name", "sample": "Mrs Sen" },
       { "position": 2, "key": "student_names", "sample": "Aarav" }
+    ]
+  },
+  {
+    "name": WHATSAPP_OTP_TEMPLATE_NAME,
+    "language": "en",
+    "category": "AUTHENTICATION",
+    "sourceAutomation": "whatsappOtp.issueWhatsAppOtp",
+    "body": "*{{1}}* is your verification code. For your security, do not share this code.",
+    "variables": [
+      { "position": 1, "key": "code", "sample": "482913" }
     ]
   }
 ] as const satisfies readonly WhatsAppTemplateDefinition[];

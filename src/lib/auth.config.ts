@@ -67,6 +67,9 @@ export const authConfig = {
         // parent who is not signed in. The page checks the link's signature.
         nextUrl.pathname.startsWith("/pay/upi/") ||
         nextUrl.pathname.startsWith("/api/register") ||
+        // The campaign page's free demo form and its WhatsApp code check.
+        nextUrl.pathname.startsWith("/book-free-demo-class") ||
+        nextUrl.pathname.startsWith("/api/demo-request") ||
         nextUrl.pathname.startsWith("/api/password") ||
         nextUrl.pathname.startsWith("/api/fees/invoices") ||
         nextUrl.pathname.startsWith("/tournament-join") ||

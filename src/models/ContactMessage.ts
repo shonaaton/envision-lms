@@ -15,7 +15,8 @@ import { CONTACT_STATUSES } from "@/lib/contactEnquiries";
 const ContactMessageSchema = new Schema(
   {
     name: { type: String, required: true, trim: true, index: true },
-    email: { type: String, required: true, lowercase: true, trim: true, index: true },
+    /** Required by the contact form's validator. The free demo form does not ask for one. */
+    email: { type: String, lowercase: true, trim: true, index: true },
     address: { type: String, trim: true },
     countryCode: { type: String, trim: true },
     phone: { type: String, required: true, trim: true, index: true },
@@ -28,6 +29,49 @@ const ContactMessageSchema = new Schema(
     handledAt: Date,
     /** The page the form was submitted from, for attribution. */
     sourcePath: { type: String, trim: true },
+
+    /** Absent on older rows, which are all contact-form messages. See src/lib/demoRequest.ts. */
+    kind: { type: String, enum: ["contact", "demo_request"], default: "contact", index: true },
+    ageGroup: { type: String, trim: true },
+    childLevel: { type: String, trim: true },
+    preferredTime: { type: String, trim: true },
+    /** Set once the family has entered the code sent to this WhatsApp number. */
+    whatsappVerifiedAt: Date,
+    /** Set when the code could not be sent, so sales knows why it is unverified. */
+    otpFailedAt: Date,
+    /** When sales was told about this request. Claimed once - see src/lib/demoRequestLead.ts. */
+    announcedAt: Date,
+    /**
+     * The demo time the family asked for on the thank-you page: an IST day
+     * (YYYY-MM-DD) and hour (HH:mm) from src/lib/demoRequestSlots.ts. A
+     * preference for sales to confirm, not a booking.
+     */
+    demoSlotDate: { type: String, trim: true },
+    demoSlotTime: { type: String, trim: true },
+    demoSlotAt: Date,
+
+    /**
+     * The Demo Leads CRM (/sales/leads), demo requests only. The owner is set by
+     * rotation when the form is first saved - see src/lib/demoLeadCrm.ts - and
+     * a salesperson sees only the leads they own.
+     */
+    salesOwner: { type: Schema.Types.ObjectId, ref: "User", index: true },
+    salesOwnerName: { type: String, trim: true },
+    salesAssignedAt: Date,
+    /** One of DEMO_LEAD_STAGES. Absent on requests older than the CRM, which read as "new". */
+    leadStage: { type: String, trim: true, index: true },
+    leadStageAt: Date,
+    /** Notes and stage moves, oldest first. */
+    leadLog: [
+      {
+        _id: false,
+        kind: { type: String, enum: ["note", "stage", "owner"], default: "note" },
+        text: { type: String, trim: true },
+        by: { type: Schema.Types.ObjectId, ref: "User" },
+        byName: { type: String, trim: true },
+        at: { type: Date, default: Date.now },
+      },
+    ],
   },
   { timestamps: true }
 );
@@ -35,6 +79,11 @@ const ContactMessageSchema = new Schema(
 /** The inbox's default view: newest first, optionally narrowed by status or centre. */
 ContactMessageSchema.index({ status: 1, createdAt: -1 });
 ContactMessageSchema.index({ interest: 1, createdAt: -1 });
+ContactMessageSchema.index({ kind: 1, salesOwner: 1, createdAt: -1 });
+
+/** One counter per rotation: who the next form lead goes to. Claimed with $inc so two leads at once never share a turn. */
+const DemoLeadRotationSchema = new Schema({ key: { type: String, required: true, unique: true }, seq: { type: Number, default: 0 } });
+export const DemoLeadRotation = models.DemoLeadRotation || model("DemoLeadRotation", DemoLeadRotationSchema);
 
 export type ContactMessageDoc = InferSchemaType<typeof ContactMessageSchema> & { _id: any };
 

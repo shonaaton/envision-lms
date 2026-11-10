@@ -2,6 +2,7 @@ import { z } from "zod";
 import { COURSE_TIER_ENUM, COURSE_TIER_ENUM_WITH_MIXED_AND_BLANK } from "@/lib/courseTiers";
 import { phoneNumberProblem } from "@/lib/phoneCountryCodes";
 import { CONTACT_INTEREST_VALUES } from "@/lib/contactEnquiries";
+import { DEMO_AGE_GROUP_VALUES, DEMO_CHILD_LEVEL_VALUES } from "@/lib/demoRequest";
 
 const optionalText = (max: number) => z.preprocess((value) => (value == null || value === "" ? undefined : value), z.string().max(max).optional());
 
@@ -312,6 +313,23 @@ export const orderSchema = z.object({
  * came from a bot. The phone check is the same one registration uses, because a
  * WhatsApp number that cannot be dialled makes the whole submission worthless.
  */
+export const demoRequestSchema = z.object({
+  parentName: z.string().trim().min(2, "Please enter your full name.").max(80),
+  countryCode: z.string().trim().min(1).max(8),
+  phone: z.string().trim().min(6, "Please enter a valid WhatsApp number.").max(40),
+  ageGroup: z.enum(DEMO_AGE_GROUP_VALUES, { errorMap: () => ({ message: "Please choose your child's age group." }) }),
+  childLevel: z.enum(DEMO_CHILD_LEVEL_VALUES, { errorMap: () => ({ message: "Please choose your child's level." }) }),
+  interest: z.enum(CONTACT_INTEREST_VALUES as [string, ...string[]], {
+    errorMap: () => ({ message: "Please choose a class preference." }),
+  }),
+  preferredTime: z.string().trim().min(2, "Please tell us a convenient time to connect.").max(80),
+  sourcePath: optionalText(200),
+  website: optionalText(200),
+}).superRefine((value, context) => {
+  const problem = phoneNumberProblem(value.phone, value.countryCode);
+  if (problem) context.addIssue({ code: z.ZodIssueCode.custom, path: ["phone"], message: problem });
+});
+
 export const contactMessageSchema = z.object({
   name: z.string().trim().min(2, "Please enter your name.").max(80),
   email: z.string().trim().email("Please enter a valid email address."),

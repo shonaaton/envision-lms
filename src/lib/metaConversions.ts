@@ -9,7 +9,7 @@ type MetaConversionUserData = {
 };
 
 type SendMetaConversionEventInput = {
-  eventName: "CompleteRegistration" | "Schedule";
+  eventName: "CompleteRegistration" | "Schedule" | "Lead";
   eventId: string;
   request: Request;
   userData?: MetaConversionUserData;

@@ -1,0 +1,375 @@
+/*
+ * /book-free-demo-class/form. Every selector sits under .dform: Next keeps a
+ * route's global CSS loaded after a client-side navigation.
+ */
+.dform {
+  --purple: #2b0b4b;
+  --purple2: #42116b;
+  --yellow: #ffe66b;
+  --cream: #fffbea;
+  --ink: #21152d;
+  --muted: #71677b;
+  --line: #e7dfc4;
+  --danger: #b3261e;
+  min-height: 100vh;
+  background: var(--cream);
+  color: var(--ink);
+  font-family: "DM Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  -webkit-tap-highlight-color: transparent;
+}
+.dform *,
+.dform *::before,
+.dform *::after {
+  box-sizing: border-box;
+}
+
+.dform .dform-top {
+  display: flex;
+  justify-content: center;
+  padding: 12px 16px;
+  background: var(--purple);
+}
+.dform .dform-top a {
+  display: block;
+}
+.dform .dform-top img {
+  display: block;
+  width: auto;
+  height: 46px;
+}
+
+/* A rank of the board along the header: the page's one flourish. */
+.dform .dform-rank {
+  height: 12px;
+  background: repeating-linear-gradient(90deg, var(--yellow) 0 12px, var(--purple2) 12px 24px);
+}
+
+.dform .dform-main {
+  width: min(560px, 100%);
+  margin: 0 auto;
+  padding: 20px 16px 48px;
+}
+
+.dform .dform-card {
+  padding: 24px 20px 26px;
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  background: #fff;
+  box-shadow: 0 18px 55px rgba(43, 11, 75, 0.1);
+  animation: dform-rise 0.45s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+}
+@keyframes dform-rise {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+}
+
+.dform .dform-head {
+  margin-bottom: 22px;
+}
+.dform h1 {
+  margin: 0;
+  color: var(--purple);
+  font-family: Manrope, system-ui, sans-serif;
+  font-size: clamp(1.55rem, 6.4vw, 2rem);
+  font-weight: 800;
+  letter-spacing: -0.035em;
+  line-height: 1.14;
+}
+.dform .dform-head p {
+  margin: 8px 0 0;
+  color: var(--muted);
+}
+.dform .dform-head strong {
+  color: var(--ink);
+  white-space: nowrap;
+}
+
+.dform .dform-fields {
+  display: grid;
+  gap: 20px;
+}
+.dform .dform-field {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.dform .dform-field > label,
+.dform .dform-field > legend {
+  display: block;
+  margin-bottom: 7px;
+  padding: 0;
+  color: var(--purple);
+  font-size: 0.94rem;
+  font-weight: 700;
+}
+.dform .dform-field > label > span,
+.dform .dform-field > legend > span {
+  color: var(--danger);
+}
+.dform .dform-field > small {
+  display: block;
+  margin-top: 6px;
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+/* 16px text everywhere: iOS zooms the page into anything smaller on focus. */
+.dform .dform-input,
+.dform .dform-dial {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  min-height: 50px;
+  padding: 0 14px;
+  border: 1.5px solid var(--line);
+  border-radius: 12px;
+  background: #fff;
+  color: var(--muted);
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.dform .dform-input:focus-within,
+.dform .dform-dial:focus-within {
+  border-color: var(--purple2);
+  box-shadow: 0 0 0 3px rgba(66, 17, 107, 0.14);
+}
+.dform .dform-input svg,
+.dform .dform-dial svg {
+  flex: none;
+}
+.dform .dform-input input,
+.dform .dform-input select {
+  flex: 1;
+  min-width: 0;
+  height: 47px;
+  padding: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  font-size: 16px;
+}
+.dform .dform-input input::placeholder {
+  color: #a79fb0;
+}
+.dform .dform-select select {
+  appearance: none;
+  -webkit-appearance: none;
+  cursor: pointer;
+}
+.dform .dform-select > svg:last-child {
+  pointer-events: none;
+}
+
+.dform .dform-phone {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 8px;
+}
+.dform .dform-dial {
+  gap: 6px;
+  padding: 0 10px 0 12px;
+  color: var(--ink);
+  font-size: 16px;
+  font-weight: 700;
+}
+.dform .dform-dial select {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  opacity: 0;
+  font-size: 16px;
+  cursor: pointer;
+}
+
+.dform .dform-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.dform .dform-chip {
+  position: relative;
+  cursor: pointer;
+}
+/* Kept in the layout, not display:none, so the browser's required prompt has somewhere to point. */
+.dform .dform-chip input {
+  position: absolute;
+  inset: 0;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+.dform .dform-chip span {
+  display: block;
+  padding: 10px 15px;
+  border: 1.5px solid var(--line);
+  border-radius: 10px;
+  background: #fff;
+  color: var(--ink);
+  font-size: 0.95rem;
+  font-weight: 600;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+.dform .dform-chip input:checked + span {
+  border-color: var(--purple);
+  background: var(--purple);
+  color: var(--yellow);
+}
+.dform .dform-chip input:focus-visible + span {
+  outline: 3px solid rgba(66, 17, 107, 0.3);
+  outline-offset: 2px;
+}
+
+.dform .dform-trap {
+  position: absolute;
+  left: -9999px;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+}
+
+.dform .dform-error {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: #fdecea;
+  color: var(--danger);
+  font-size: 0.92rem;
+  font-weight: 600;
+}
+
+.dform .dform-submit {
+  display: grid;
+  justify-items: start;
+  gap: 12px;
+}
+.dform .dform-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 13px 26px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--yellow);
+  color: var(--purple);
+  font: inherit;
+  font-size: 1.05rem;
+  font-weight: 800;
+  box-shadow: 0 10px 26px rgba(255, 214, 51, 0.32);
+  cursor: pointer;
+  transition: transform 0.15s, background 0.15s, opacity 0.15s;
+}
+.dform .dform-btn:hover:not(:disabled) {
+  background: #ffdc39;
+  transform: translateY(-1px);
+}
+.dform .dform-btn:active:not(:disabled) {
+  transform: scale(0.97);
+}
+.dform .dform-btn:disabled {
+  opacity: 0.55;
+  cursor: default;
+  box-shadow: none;
+}
+.dform .dform-btn:focus-visible {
+  outline: 3px solid var(--purple2);
+  outline-offset: 2px;
+}
+.dform .dform-spin {
+  animation: dform-spin 0.8s linear infinite;
+}
+@keyframes dform-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.dform .dform-legal {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+.dform .dform-legal a {
+  color: var(--purple2);
+  text-decoration: underline;
+}
+
+/* The code step */
+.dform .dform-code {
+  display: grid;
+  justify-items: start;
+  gap: 12px;
+}
+.dform .dform-code label {
+  color: var(--purple);
+  font-size: 0.94rem;
+  font-weight: 700;
+}
+.dform .dform-code-input {
+  width: 100%;
+  height: 60px;
+  padding: 0 12px;
+  border: 1.5px solid var(--line);
+  border-radius: 12px;
+  outline: 0;
+  background: #fff;
+  color: var(--purple);
+  font-family: Manrope, system-ui, sans-serif;
+  font-size: 1.7rem;
+  font-weight: 800;
+  letter-spacing: 0.42em;
+  text-align: center;
+  text-indent: 0.42em;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.dform .dform-code-input:focus {
+  border-color: var(--purple2);
+  box-shadow: 0 0 0 3px rgba(66, 17, 107, 0.14);
+}
+.dform .dform-code-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 18px;
+}
+.dform .dform-link {
+  padding: 4px 0;
+  border: 0;
+  background: none;
+  color: var(--purple2);
+  font: inherit;
+  font-size: 0.95rem;
+  font-weight: 700;
+  text-decoration: underline;
+  cursor: pointer;
+}
+.dform button.dform-link:disabled {
+  color: var(--muted);
+  text-decoration: none;
+  cursor: default;
+}
+
+@media (min-width: 640px) {
+  .dform .dform-main {
+    padding-top: 36px;
+  }
+  .dform .dform-card {
+    padding: 34px 36px 36px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dform .dform-card {
+    animation: none;
+  }
+  .dform .dform-btn {
+    transition: none;
+  }
+}

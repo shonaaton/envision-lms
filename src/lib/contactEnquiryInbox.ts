@@ -7,6 +7,8 @@ import {
   CONTACT_INTEREST_VALUES,
   type ContactStatus,
 } from "@/lib/contactEnquiries";
+import { DEMO_REQUEST_KIND } from "@/lib/demoRequest";
+import { demoSlotLabel } from "@/lib/demoRequestSlots";
 import { ContactMessage } from "@/models/ContactMessage";
 
 /**
@@ -33,6 +35,14 @@ export type EnquiryRow = {
   phone: string;
   interest: string;
   message: string;
+  kind: string;
+  ageGroup: string;
+  childLevel: string;
+  preferredTime: string;
+  /** The demo slot asked for on the thank-you page, ready to show. "" when none was chosen. */
+  demoSlot: string;
+  whatsappVerified: boolean;
+  otpFailed: boolean;
   status: ContactStatus;
   handledByName: string;
   handledAt: string | null;
@@ -74,7 +84,10 @@ function searchRegex(query: string) {
 export async function getEnquiryPage(filters: EnquiryFilters): Promise<EnquiryPage> {
   await dbConnect();
 
-  const where: Record<string, unknown> = {};
+  // Free demo form requests live in the Demo Leads CRM (/sales/leads), where each
+  // salesperson sees only their own. Listing them here would show everyone's.
+  const notDemoRequest = { kind: { $ne: DEMO_REQUEST_KIND } };
+  const where: Record<string, unknown> = { ...notDemoRequest };
   if (filters.status !== "all") where.status = filters.status;
   if (filters.interest !== "all") where.interest = filters.interest;
   if (filters.query) {
@@ -89,7 +102,7 @@ export async function getEnquiryPage(filters: EnquiryFilters): Promise<EnquiryPa
       .skip((filters.page - 1) * CONTACT_PAGE_SIZE)
       .limit(CONTACT_PAGE_SIZE)
       .lean(),
-    ContactMessage.aggregate([{ $group: { _id: "$status", count: { $sum: 1 } } }]),
+    ContactMessage.aggregate([{ $match: notDemoRequest }, { $group: { _id: "$status", count: { $sum: 1 } } }]),
   ]);
 
   const statusCounts = { all: 0, new: 0, contacted: 0, closed: 0 } as Record<ContactStatus | "all", number>;
@@ -108,6 +121,13 @@ export async function getEnquiryPage(filters: EnquiryFilters): Promise<EnquiryPa
       phone: String(doc.phone || ""),
       interest: String(doc.interest || ""),
       message: String(doc.message || ""),
+      kind: String(doc.kind || "contact"),
+      ageGroup: String(doc.ageGroup || ""),
+      childLevel: String(doc.childLevel || ""),
+      preferredTime: String(doc.preferredTime || ""),
+      demoSlot: demoSlotLabel(doc.demoSlotDate, doc.demoSlotTime),
+      whatsappVerified: Boolean(doc.whatsappVerifiedAt),
+      otpFailed: Boolean(doc.otpFailedAt),
       status: (doc.status || "new") as ContactStatus,
       handledByName: String(doc.handledByName || ""),
       handledAt: doc.handledAt ? new Date(doc.handledAt).toISOString() : null,

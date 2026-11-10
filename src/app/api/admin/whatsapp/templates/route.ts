@@ -1,7 +1,13 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { dbConnect } from "@/lib/db";
-import { resolveWhatsAppMetaTemplateName, WHATSAPP_TEMPLATE_DEFINITIONS, type WhatsAppTemplateDefinition } from "@/lib/whatsappTemplateRegistry";
+import {
+  resolveWhatsAppMetaTemplateName,
+  whatsappOtpTemplateComponents,
+  WHATSAPP_OTP_VALIDITY_MINUTES,
+  WHATSAPP_TEMPLATE_DEFINITIONS,
+  type WhatsAppTemplateDefinition,
+} from "@/lib/whatsappTemplateRegistry";
 import { WhatsAppAutomationSetting } from "@/models/WhatsAppAutomationSetting";
 import { defaultTemplateEnabled } from "@/lib/whatsappAutomationSettings";
 
@@ -194,6 +200,16 @@ async function buildMetaAudit(input: { accessToken: string; businessAccountId: s
 }
 
 function templateCreatePayload(template: WhatsAppTemplateDefinition) {
+  if (template.category === "AUTHENTICATION") {
+    return {
+      name: template.name,
+      language: normalizeTemplateLanguage(template.language),
+      category: template.category,
+      // Not worth delivering once the code inside has expired.
+      message_send_ttl_seconds: WHATSAPP_OTP_VALIDITY_MINUTES * 60,
+      components: whatsappOtpTemplateComponents(),
+    };
+  }
   const bodyComponent: any = {
     type: "BODY",
     text: template.body,

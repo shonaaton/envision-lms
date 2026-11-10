@@ -201,6 +201,7 @@ export function trackConversion(conversionType: string) {
   send({ type: "conversion", conversionType, ...base(window.location.pathname), pageIndex: openPage?.index || 0 });
   const conversionEvents: Record<string, { event: string; parameters: Record<string, string> }> = {
     contact_form_submit: { event: "generate_lead", parameters: { lead_type: "contact_form" } },
+    demo_request: { event: "generate_lead", parameters: { lead_type: "demo_request" } },
     demo_registration: { event: "sign_up", parameters: { method: "demo_registration" } },
     demo_booking: { event: "generate_lead", parameters: { lead_type: "demo_booking" } },
   };

@@ -779,8 +779,8 @@ export const FEATURE_DEFINITIONS: FeatureDefinition[] = [
     key: "salesCrm",
     label: "Lead CRM",
     category: "Sales",
-    description: "Leads mirrored from the CRM with stages, notes, attributes, and call history. Stage changes sync back.",
-    routes: ["/sales/crm"],
+    description: "Retired screen (2026-11-10): /sales/crm now opens the Demo Leads CRM. The CRM mirror and its API still run behind it.",
+    routes: [],
     apiPrefixes: ["/api/sales/crm"],
     permissions: [view, { id: "stage", label: "Change Lead Stage" }, { id: "note", label: "Log Calls & Notes" }],
     defaultStatus: "enabled",
@@ -790,8 +790,8 @@ export const FEATURE_DEFINITIONS: FeatureDefinition[] = [
     key: "contactEnquiries",
     label: "Contact Enquiries",
     category: "Sales",
-    description: "Submissions from the public contact form: name, email, address, WhatsApp number and whether they want online classes or a Kolkata centre.",
-    routes: ["/sales/enquiries"],
+    description: "Submissions from the public contact form, and the Demo Leads CRM: free demo form leads shared out between the salespeople, each seeing only their own.",
+    routes: ["/sales/enquiries", "/sales/leads"],
     apiPrefixes: ["/api/sales/enquiries"],
     // `manage` covers moving an enquiry between new, contacted and closed. It is
     // not critical: marking a message as answered is ordinary daily work, and

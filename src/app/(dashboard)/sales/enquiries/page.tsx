@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
-import { ChevronLeft, ChevronRight, Inbox, Mail, MapPin, MessageCircle, Phone, Search } from "lucide-react";
+import { CalendarClock, ChevronLeft, ChevronRight, Crown, Inbox, Mail, MapPin, MessageCircle, Phone, Search, UserRound } from "lucide-react";
 import { NoCopyShell, SalesDataNotice } from "@/components/sales/NoCopyShell";
 import {
   CONTACT_STATUSES,
@@ -13,6 +13,7 @@ import {
   type ContactStatus,
 } from "@/lib/contactEnquiries";
 import { enquiryHref, getEnquiryPage, parseEnquiryFilters } from "@/lib/contactEnquiryInbox";
+import { DEMO_REQUEST_KIND, demoAgeGroupLabel, demoChildLevelLabel } from "@/lib/demoRequest";
 import { logSalesAction, logSalesView, requireSalesViewer } from "@/lib/salesAudit";
 import { ContactMessage } from "@/models/ContactMessage";
 import { dbConnect } from "@/lib/db";
@@ -78,7 +79,7 @@ export default async function ContactEnquiriesPage({
           </div>
           <h1 className="mt-2 text-3xl font-black text-brand">Contact Enquiries</h1>
           <p className="mt-1 text-sm text-slate-600">
-            Everything submitted through the public contact form, newest first. {data.statusCounts.new} waiting for a first reply.
+            Everything submitted through the public contact form, newest first. Free demo form leads are in the Demo Leads CRM. {data.statusCounts.new} waiting for a first reply.
           </p>
         </header>
 
@@ -143,6 +144,7 @@ export default async function ContactEnquiriesPage({
         <section className="space-y-3">
           {data.rows.map((row) => {
             const wa = whatsappDigits(row.countryCode, row.phone);
+            const isDemoRequest = row.kind === DEMO_REQUEST_KIND;
             return (
               <article key={row.id} className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
                 <div className="flex flex-wrap items-start justify-between gap-3">
@@ -155,6 +157,20 @@ export default async function ContactEnquiriesPage({
                       <span className="rounded-full bg-brand-50 px-2.5 py-0.5 text-[11px] font-black uppercase tracking-[0.1em] text-brand">
                         {contactInterestLabel(row.interest)}
                       </span>
+                      {isDemoRequest ? (
+                        <>
+                          <span className="rounded-full bg-accent/40 px-2.5 py-0.5 text-[11px] font-black uppercase tracking-[0.1em] text-brand-900">
+                            Free demo form
+                          </span>
+                          <span
+                            className={`rounded-full px-2.5 py-0.5 text-[11px] font-black uppercase tracking-[0.1em] ${
+                              row.whatsappVerified ? "bg-emerald-100 text-emerald-800" : "bg-rose-100 text-rose-800"
+                            }`}
+                          >
+                            {row.whatsappVerified ? "WhatsApp verified" : row.otpFailed ? "Code could not be sent" : "WhatsApp not verified"}
+                          </span>
+                        </>
+                      ) : null}
                     </div>
                     <p className="mt-1 text-xs font-semibold text-slate-500">
                       {new Date(row.createdAt).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" })}
@@ -176,9 +192,11 @@ export default async function ContactEnquiriesPage({
                 </div>
 
                 <dl className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                  <Detail icon={Mail} label="Email">
-                    <a href={`mailto:${row.email}`} className="break-all font-bold text-brand hover:underline">{row.email}</a>
-                  </Detail>
+                  {row.email ? (
+                    <Detail icon={Mail} label="Email">
+                      <a href={`mailto:${row.email}`} className="break-all font-bold text-brand hover:underline">{row.email}</a>
+                    </Detail>
+                  ) : null}
                   <Detail icon={Phone} label="WhatsApp">
                     <a href={`tel:${wa ? `+${wa}` : row.phone}`} className="font-bold text-brand hover:underline">
                       {contactDisplayPhone(row.countryCode, row.phone)}
@@ -194,9 +212,26 @@ export default async function ContactEnquiriesPage({
                       </a>
                     ) : null}
                   </Detail>
-                  <Detail icon={MapPin} label="Address">
-                    <span className="text-slate-700">{row.address || "Not provided"}</span>
-                  </Detail>
+                  {isDemoRequest ? (
+                    <>
+                      <Detail icon={UserRound} label="Child's age">
+                        <span className="text-slate-700">{demoAgeGroupLabel(row.ageGroup)}</span>
+                      </Detail>
+                      <Detail icon={Crown} label="Child's level">
+                        <span className="text-slate-700">{demoChildLevelLabel(row.childLevel)}</span>
+                      </Detail>
+                      <Detail icon={CalendarClock} label="Convenient time to call">
+                        <span className="text-slate-700">{row.preferredTime || "Not given"}</span>
+                      </Detail>
+                      <Detail icon={CalendarClock} label="Demo slot asked for">
+                        <span className={row.demoSlot ? "font-bold text-slate-900" : "text-slate-500"}>{row.demoSlot || "Not chosen yet"}</span>
+                      </Detail>
+                    </>
+                  ) : (
+                    <Detail icon={MapPin} label="Address">
+                      <span className="text-slate-700">{row.address || "Not provided"}</span>
+                    </Detail>
+                  )}
                 </dl>
 
                 {row.message ? (

@@ -31,7 +31,7 @@ import "./landing.css";
  */
 
 const PATH = "/book-free-demo-class";
-const demoHref = "/register";
+const demoHref = "/book-free-demo-class/form";
 
 export const metadata = publicMetadata({
   path: PATH,

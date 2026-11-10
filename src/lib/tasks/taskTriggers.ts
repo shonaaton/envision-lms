@@ -1,6 +1,9 @@
 import "server-only";
 
 import { formatAcademyDateTime } from "@/lib/academyTime";
+import { contactInterestLabel } from "@/lib/contactEnquiries";
+import { demoAgeGroupLabel, demoChildLevelLabel } from "@/lib/demoRequest";
+import { demoSlotLabel } from "@/lib/demoRequestSlots";
 import {
   cancelAutoTask,
   ensureAutoTask,
@@ -224,6 +227,63 @@ export function raiseContactEnquiryTask(message: any) {
     actionHref: "/sales/enquiries",
     metadata: { contactMessageId: idOf(message) },
   });
+}
+
+function demoRequestDetails(lead: any) {
+  return [
+    `WhatsApp: ${[lead?.countryCode, lead?.phone].filter(Boolean).join(" ")} (${lead?.whatsappVerifiedAt ? "verified" : "not verified"})`,
+    `Child's age: ${demoAgeGroupLabel(lead?.ageGroup)}`,
+    `Child's level: ${demoChildLevelLabel(lead?.childLevel)}`,
+    `Class preference: ${contactInterestLabel(lead?.interest)}`,
+    `Convenient time to call: ${lead?.preferredTime || "Not given"}`,
+    `Demo slot asked for: ${demoSlotLabel(lead?.demoSlotDate, lead?.demoSlotTime) || "Not chosen yet"}`,
+  ].join("\n");
+}
+
+export function raiseDemoRequestTask(lead: any) {
+  return raise({
+    kind: "contact_enquiry",
+    referenceType: "ContactEnquiry",
+    referenceId: idOf(lead),
+    title: `Call ${nameOf(lead, "a parent")} about their free demo request`,
+    details: demoRequestDetails(lead),
+    // The lead's owner in the Demo Leads CRM. A lead nobody could be given goes to the sales pool.
+    assignedTo: lead?.salesOwner || undefined,
+    pool: "sales",
+    priority: "high",
+    actionHref: "/sales/leads",
+    metadata: { contactMessageId: idOf(lead) },
+  });
+}
+
+/** The lead changed hands in the Demo Leads CRM: its open call task follows. */
+export async function reassignDemoRequestTask(leadId: unknown, ownerId: unknown) {
+  try {
+    await reassignAutoTasks("ContactEnquiry", [leadId], ownerId, "Lead owner change");
+  } catch (error) {
+    console.error("[tasks] could not reassign the demo request task", error);
+  }
+}
+
+/** The lead moved past "new", so somebody has spoken to the family. */
+export function resolveDemoLeadCallTask(leadId: unknown, by?: unknown) {
+  return settle("ContactEnquiry", leadId, by, "Lead moved on in the Demo Leads CRM.");
+}
+
+/**
+ * The family picks a demo slot on the thank-you page, after the task above has
+ * usually been raised, so the open task is rewritten to carry it.
+ */
+export async function refreshDemoRequestTask(lead: any) {
+  try {
+    await dbConnect();
+    await InternalTask.updateOne(
+      { referenceType: "ContactEnquiry", referenceId: lead?._id, status: { $in: OPEN_TASK_STATUSES } },
+      { $set: { details: demoRequestDetails(lead) } },
+    );
+  } catch (error) {
+    console.error("[tasks] could not add the demo slot to the task", error);
+  }
 }
 
 // ---------------------------------------------------------------------------

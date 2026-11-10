@@ -71,7 +71,7 @@ async function salesRoleIds() {
 }
 
 /** Staff accounts a lead can belong to: admins, sub-admins and anyone on a named role. */
-async function ownerCandidates(): Promise<LeadOwnerCandidate[]> {
+export async function ownerCandidates(): Promise<LeadOwnerCandidate[]> {
   const [users, salesIds]: [any[], string[]] = await Promise.all([
     User.find({
       isActive: { $ne: false },

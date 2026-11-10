@@ -34,6 +34,10 @@ export function trackMetaCompleteRegistration(metaEventId?: unknown, userId?: un
   trackMetaEvent("CompleteRegistration", eventID);
 }
 
+export function trackMetaLead(metaEventId?: unknown) {
+  trackMetaEvent("Lead", typeof metaEventId === "string" && metaEventId ? metaEventId : undefined);
+}
+
 export function trackMetaSchedule(metaEventId?: unknown, bookingId?: unknown) {
   const eventID = typeof metaEventId === "string" && metaEventId
     ? metaEventId

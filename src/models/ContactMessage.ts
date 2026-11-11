@@ -55,6 +55,16 @@ const ContactMessageSchema = new Schema(
      * rotation when the form is first saved - see src/lib/demoLeadCrm.ts - and
      * a salesperson sees only the leads they own.
      */
+    /**
+     * Conversions API bookkeeping for the campaign pixel - see
+     * src/lib/demoLeadMetaEvents.ts. The two cookies are the pixel's own, kept
+     * so a stage set later by sales can still be matched to the ad click. The
+     * dates are claims: each event is reported once per lead.
+     */
+    metaFbp: { type: String, trim: true },
+    metaFbc: { type: String, trim: true },
+    metaScheduleAt: Date,
+    metaConvertedAt: Date,
     salesOwner: { type: Schema.Types.ObjectId, ref: "User", index: true },
     salesOwnerName: { type: String, trim: true },
     salesAssignedAt: Date,

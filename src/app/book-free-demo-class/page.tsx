@@ -10,6 +10,7 @@ import { curriculumLevels } from "@/lib/demoCurriculum";
 import { LEGAL_LINKS } from "@/lib/publicLinks";
 import { faqSchema, publicMetadata } from "@/lib/seo";
 import { studentRatingsByHonour } from "@/lib/studentRatings";
+import DemoFormModal from "./DemoFormModal";
 import CurriculumJourney, { type JourneyStage } from "./CurriculumJourney";
 import LandingMotion from "./LandingMotion";
 import ScreenTimePlanner from "./ScreenTimePlanner";
@@ -327,6 +328,7 @@ function PlanCard({ plan, kind }: { plan: (typeof plans)["group"]; kind: "group"
 
 export default function BookFreeDemoClassPage() {
   return (
+    <>
     <div className="bfd" id="top">
       <link rel="preconnect" href="https://fonts.googleapis.com" />
       <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="" />
@@ -630,5 +632,8 @@ export default function BookFreeDemoClassPage() {
 
       <LandingMotion />
     </div>
+    {/* Outside .bfd, so the landing page's own styles cannot reach into the form. */}
+    <DemoFormModal formHref={demoHref} />
+    </>
   );
 }

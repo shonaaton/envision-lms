@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { CalendarDays, Check, ChevronDown, Loader2 } from "lucide-react";
 import { DEMO_THANKS_STORAGE_KEY } from "@/lib/demoRequest";
+import { trackMetaSchedule } from "@/lib/metaPixel";
 import { demoSlotDays, demoSlotLabel, demoSlotTimes } from "@/lib/demoRequestSlots";
 
 type Handoff = { id: string; firstName: string; verified: boolean; slot?: { date: string; time: string } };
@@ -68,6 +69,8 @@ export default function DemoSlotPicker() {
       }
       const slot = { date, time };
       setSaved(slot);
+      // Once per request: the server reports the booking once too, with the same id.
+      if (!handoff.slot) trackMetaSchedule(payload?.metaEventId);
       try {
         window.sessionStorage.setItem(DEMO_THANKS_STORAGE_KEY, JSON.stringify({ ...handoff, slot }));
       } catch {

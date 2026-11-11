@@ -1,8 +1,10 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { usePathname } from "next/navigation";
 import Script from "next/script";
 import { CONSENT_EVENT, type ConsentState, readConsent } from "@/lib/cookieConsent";
+import { metaPixelIdForPath } from "@/lib/metaPixel";
 
 /**
  * Loads the Meta Pixel, but only once marketing consent exists.
@@ -13,9 +15,16 @@ import { CONSENT_EVENT, type ConsentState, readConsent } from "@/lib/cookieConse
  *
  * There is deliberately no `<noscript>` pixel: that fires on render with no way
  * to ask first, which is the thing this component exists to prevent.
+ *
+ * It starts the one pixel that owns the page the visitor is on: the campaign
+ * pixel on the free demo campaign pages, `pixelId` everywhere else. If they
+ * later cross to the other part of the site, `lib/metaPixel` starts that pixel
+ * and keeps each event on its own side.
  */
 export default function MetaPixel({ pixelId }: { pixelId: string }) {
   const [allowed, setAllowed] = useState(false);
+  // Read once, when the script is written: next/script runs an id only once.
+  const startId = metaPixelIdForPath(usePathname(), pixelId);
 
   useEffect(() => {
     const apply = (state: ConsentState | null) => setAllowed(state?.marketing === true);
@@ -38,7 +47,8 @@ export default function MetaPixel({ pixelId }: { pixelId: string }) {
         t.src=v;s=b.getElementsByTagName(e)[0];
         s.parentNode.insertBefore(t,s)}(window, document,'script',
         'https://connect.facebook.net/en_US/fbevents.js');
-        fbq('init', '${pixelId}');
+        fbq('init', '${startId}');
+        window.__metaPixelsReady = { '${startId}': true };
         fbq('track', 'PageView');
       `}
     </Script>

@@ -70,7 +70,8 @@
 .dform .dform-head {
   margin-bottom: 22px;
 }
-.dform h1 {
+.dform h1,
+.dform .dform-title {
   margin: 0;
   color: var(--purple);
   font-family: Manrope, system-ui, sans-serif;
@@ -354,6 +355,151 @@
   color: var(--muted);
   text-decoration: none;
   cursor: default;
+}
+
+/*
+ * The same form as a pop-up on /book-free-demo-class (DemoFormModal.tsx).
+ * Phone: a sheet that rises from the bottom edge and scrolls inside itself.
+ * Tablet and desktop: a centred card, wide enough to pair the fields up so the
+ * whole form fits without scrolling on most screens.
+ */
+html.dform-modal-open {
+  overflow: hidden;
+}
+dialog.dform-modal {
+  position: fixed;
+  inset: auto 0 0;
+  width: 100%;
+  max-width: none;
+  max-height: none;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  overflow: visible;
+}
+dialog.dform-modal::backdrop {
+  background: rgba(33, 21, 45, 0.62);
+}
+.dform.dform-modal-box {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  max-height: 92vh;
+  max-height: 92dvh;
+  border-radius: 22px 22px 0 0;
+  background: #fff;
+  box-shadow: 0 -12px 48px rgba(43, 11, 75, 0.28);
+  overflow: hidden;
+}
+dialog.dform-modal[open] .dform-modal-box {
+  animation: dform-sheet 0.32s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+}
+@keyframes dform-sheet {
+  from {
+    transform: translateY(28px);
+    opacity: 0;
+  }
+}
+.dform .dform-modal-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+}
+/* The sheet is the card here, so the form's own card goes flat. */
+.dform .dform-modal-body .dform-card {
+  padding: 20px 18px calc(22px + env(safe-area-inset-bottom));
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  animation: none;
+}
+.dform .dform-modal-body .dform-head {
+  margin-bottom: 18px;
+  padding-right: 44px;
+}
+.dform .dform-modal-body .dform-fields {
+  gap: 16px;
+}
+.dform .dform-modal-close {
+  position: absolute;
+  top: 22px;
+  right: 12px;
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: #f3edf8;
+  color: var(--purple);
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.dform .dform-modal-close:hover {
+  background: #e7dcf1;
+}
+.dform .dform-modal-close:focus-visible {
+  outline: 3px solid var(--purple2);
+  outline-offset: 2px;
+}
+.dform .dform-modal-loading {
+  display: grid;
+  justify-items: center;
+  gap: 10px;
+  padding: 72px 20px;
+  color: var(--muted);
+  font-weight: 600;
+}
+
+@media (min-width: 600px) {
+  dialog.dform-modal {
+    inset: 0;
+    width: min(760px, calc(100% - 48px));
+    height: fit-content;
+    margin: auto;
+  }
+  .dform.dform-modal-box {
+    max-height: calc(100vh - 48px);
+    max-height: calc(100dvh - 48px);
+    border-radius: 22px;
+    box-shadow: 0 24px 70px rgba(43, 11, 75, 0.35);
+  }
+  @keyframes dform-sheet {
+    from {
+      transform: translateY(14px) scale(0.98);
+      opacity: 0;
+    }
+  }
+  .dform .dform-modal-body .dform-card {
+    padding: 26px 30px 28px;
+  }
+  .dform .dform-modal-body .dform-fields {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 18px 22px;
+    align-items: start;
+  }
+  .dform .dform-modal-body .dform-fields > .dform-error,
+  .dform .dform-modal-body .dform-fields > .dform-submit {
+    grid-column: 1 / -1;
+  }
+  /* The code step is one short column, not a wide empty card. */
+  .dform .dform-modal-body .dform-code,
+  .dform .dform-modal-body .dform-code-actions {
+    max-width: 420px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  dialog.dform-modal[open] .dform-modal-box {
+    animation: none;
+  }
 }
 
 @media (min-width: 640px) {

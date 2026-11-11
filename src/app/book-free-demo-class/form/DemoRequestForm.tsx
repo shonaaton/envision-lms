@@ -43,7 +43,10 @@ async function post(url: string, body: unknown) {
  * as an error is what the server said. The details stay in state through the
  * code step, so "Change number" never makes a parent retype them.
  */
-export default function DemoRequestForm() {
+export default function DemoRequestForm({ embedded = false, titleId }: { embedded?: boolean; titleId?: string } = {}) {
+  // In the landing page's pop-up the page already has its h1, and the pop-up scrolls instead of the window.
+  const Title = embedded ? "h2" : "h1";
+  const card = useRef<HTMLElement>(null);
   const [form, setForm] = useState(initialForm);
   const [step, setStep] = useState<Step>("details");
   const [busy, setBusy] = useState(false);
@@ -65,9 +68,10 @@ export default function DemoRequestForm() {
   }, [step, resendIn]);
 
   useEffect(() => {
-    window.scrollTo({ top: 0 });
+    if (embedded) card.current?.closest(".dform-modal-body")?.scrollTo({ top: 0 });
+    else window.scrollTo({ top: 0 });
     if (step === "code") codeInput.current?.focus();
-  }, [step]);
+  }, [step, embedded]);
 
   function update<K extends keyof typeof form>(key: K, value: (typeof form)[K]) {
     setForm((current) => ({ ...current, [key]: value }));
@@ -166,9 +170,9 @@ export default function DemoRequestForm() {
 
   if (step === "code") {
     return (
-      <section className="dform-card">
+      <section className="dform-card" ref={card}>
         <div className="dform-head">
-          <h1>Check your WhatsApp</h1>
+          <Title id={titleId} className="dform-title">Check your WhatsApp</Title>
           <p>
             We sent a {CODE_LENGTH}-digit code to <strong>{sentTo}</strong>. Enter it here to confirm your number.
           </p>
@@ -226,9 +230,9 @@ export default function DemoRequestForm() {
   }
 
   return (
-    <section className="dform-card">
+    <section className="dform-card" ref={card}>
       <div className="dform-head">
-        <h1>Please share your details</h1>
+        <Title id={titleId} className="dform-title">Please share your details</Title>
         <p>Let&apos;s get your child started on their chess journey!</p>
       </div>
       <form className="dform-fields" onSubmit={submitDetails}>

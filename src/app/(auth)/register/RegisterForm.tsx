@@ -30,7 +30,6 @@ import {
   UsersRound,
 } from "lucide-react";
 import { ACADEMY_LOGO_URL } from "@/lib/branding";
-import { trackMetaCompleteRegistration } from "@/lib/metaPixel";
 import { trackConversion } from "@/lib/siteAnalytics";
 import { LEGAL_LINKS } from "@/lib/publicLinks";
 
@@ -247,7 +246,6 @@ export default function RegisterForm() {
       return;
     }
 
-    trackMetaCompleteRegistration(result.metaEventId, result.id);
     trackConversion("demo_registration");
     await signIn("credentials", { redirect: false, email: payload.email, password: payload.password });
     setLoading(false);

@@ -7,7 +7,6 @@ import Link from "next/link";
 import { CalendarDays, CheckCircle2, Clock3, LockKeyhole, PlayCircle, Sparkles, UserRound } from "lucide-react";
 import { nextOccurrenceForWeeklySlot } from "@/lib/bookingAvailability";
 import { bookingFeatureNameForAccount, bookingFeatureNameForType, isDemoBookingAccount } from "@/lib/bookingLabels";
-import { trackMetaSchedule } from "@/lib/metaPixel";
 import { trackConversion } from "@/lib/siteAnalytics";
 import { inactiveStudentMessage } from "@/lib/studentStatus";
 import { DemoTimePicker, type DemoTimeValue } from "@/components/demo/DemoTimePicker";
@@ -121,7 +120,6 @@ export default function BookingPage() {
       const payload = await res.json().catch(() => ({}));
       setLoading(false);
       if (!res.ok) return toast.error(payload.error || "Could not request this demo time.");
-      trackMetaSchedule(payload.metaEventId, payload._id);
       trackConversion("demo_booking");
       const requestedFor = describeInZone(zonedDateTime(demoTime.date, demoTime.time, demoTime.timezone), demoTime.timezone);
       toast.success(activeDemoBooking ? `Demo time changed to ${requestedFor}` : `Demo requested for ${requestedFor}`);

@@ -2,29 +2,23 @@
 
 import { useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
-import Script from "next/script";
 import { CONSENT_EVENT, type ConsentState, readConsent } from "@/lib/cookieConsent";
-import { metaPixelIdForPath } from "@/lib/metaPixel";
+import { isCampaignPixelPath, trackMetaPageView } from "@/lib/metaPixel";
 
 /**
- * Loads the Meta Pixel, but only once marketing consent exists.
+ * Sends the Meta page view for a free demo campaign page, and does nothing on
+ * any other page: `lib/metaPixel` loads Meta's script only there, and only
+ * once marketing consent exists.
  *
- * Until then `window.fbq` is simply undefined, and every helper in
- * `lib/metaPixel` already returns early when it is - so the rest of the app
- * needs no consent checks of its own.
+ * It listens for the consent decision so that a visitor who accepts on the
+ * landing page is counted on that page, not only from the next one.
  *
  * There is deliberately no `<noscript>` pixel: that fires on render with no way
- * to ask first, which is the thing this component exists to prevent.
- *
- * It starts the one pixel that owns the page the visitor is on: the campaign
- * pixel on the free demo campaign pages, `pixelId` everywhere else. If they
- * later cross to the other part of the site, `lib/metaPixel` starts that pixel
- * and keeps each event on its own side.
+ * to ask first, which is the thing the consent check exists to prevent.
  */
-export default function MetaPixel({ pixelId }: { pixelId: string }) {
+export default function MetaPixel() {
+  const pathname = usePathname();
   const [allowed, setAllowed] = useState(false);
-  // Read once, when the script is written: next/script runs an id only once.
-  const startId = metaPixelIdForPath(usePathname(), pixelId);
 
   useEffect(() => {
     const apply = (state: ConsentState | null) => setAllowed(state?.marketing === true);
@@ -34,23 +28,9 @@ export default function MetaPixel({ pixelId }: { pixelId: string }) {
     return () => window.removeEventListener(CONSENT_EVENT, onDecision);
   }, []);
 
-  if (!allowed || !pixelId) return null;
+  useEffect(() => {
+    if (allowed && isCampaignPixelPath(pathname)) trackMetaPageView();
+  }, [allowed, pathname]);
 
-  return (
-    <Script id="meta-pixel" strategy="afterInteractive">
-      {`
-        !function(f,b,e,v,n,t,s)
-        {if(f.fbq)return;n=f.fbq=function(){n.callMethod?
-        n.callMethod.apply(n,arguments):n.queue.push(arguments)};
-        if(!f._fbq)f._fbq=n;n.push=n;n.loaded=!0;n.version='2.0';
-        n.queue=[];t=b.createElement(e);t.async=!0;
-        t.src=v;s=b.getElementsByTagName(e)[0];
-        s.parentNode.insertBefore(t,s)}(window, document,'script',
-        'https://connect.facebook.net/en_US/fbevents.js');
-        fbq('init', '${startId}');
-        window.__metaPixelsReady = { '${startId}': true };
-        fbq('track', 'PageView');
-      `}
-    </Script>
-  );
+  return null;
 }

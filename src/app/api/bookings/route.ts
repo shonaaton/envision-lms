@@ -16,7 +16,6 @@ import { bookingFeatureNameForType, bookingFeatureNameLowerForType } from "@/lib
 import { inactiveStudentMessage } from "@/lib/studentAccess";
 import { canAccessFeature } from "@/lib/featureAccess";
 import { demoManagementUsers, demoRequestTaskOwner, ensureDemoRequestTask, normalizeDemoRequestedTime, notifyDemoRequestCreated } from "@/lib/demoWorkflow";
-import { sendMetaConversionEvent } from "@/lib/metaConversions";
 import { cancelDemoClassrooms } from "@/lib/demoClassroom";
 import { ensureDemoHomework } from "@/lib/demoHomework";
 import { attributeDemoToLeadOwner, notifyLeadOwnerOfDemo } from "@/lib/demoLeadOwner";
@@ -219,10 +218,7 @@ export async function POST(req: Request) {
           !activeDemoFilter.demoStatus.$nin.includes(String(existingForKey.demoStatus || ""));
         if (isOpen && new Date(existingForKey.startAt).getTime() === requested.start.getTime()) {
           // A double tap on the same request.
-          return NextResponse.json({
-            ...(existingForKey.toObject ? existingForKey.toObject() : existingForKey),
-            metaEventId: `demo_booking_${existingForKey._id.toString()}`,
-          });
+          return NextResponse.json(existingForKey.toObject ? existingForKey.toObject() : existingForKey);
         }
         if (!isOpen) {
           // A cancelled request at this time must not block asking for it again.
@@ -290,10 +286,7 @@ export async function POST(req: Request) {
           metadata: { bookingType: "demo", timezone: requested.timezone, localTime: requested.localLabel, istTime: requested.istLabel, rescheduleCount: existingActive.rescheduleCount },
         });
         await notifyLeadOwnerOfDemo({ bookingId: existingActive._id.toString(), event: "rescheduled" }).catch((error) => console.error("Demo lead owner reschedule notice failed", error));
-        return NextResponse.json({
-          ...(existingActive.toObject ? existingActive.toObject() : existingActive),
-          metaEventId: `demo_booking_${existingActive._id.toString()}`,
-        });
+        return NextResponse.json(existingActive.toObject ? existingActive.toObject() : existingActive);
       }
       const created = await Booking.findOneAndUpdate(
         { idempotencyKey },
@@ -349,17 +342,7 @@ export async function POST(req: Request) {
         entityId: created._id.toString(),
         metadata: { bookingType: "demo", demoStatus: "REQUESTED", timezone: requested.timezone, localTime: requested.localLabel, istTime: requested.istLabel },
       });
-      const metaEventId = `demo_booking_${created._id.toString()}`;
-      await sendMetaConversionEvent({
-        eventName: "Schedule",
-        eventId: metaEventId,
-        request: req,
-        userData: { email: student.email, phone: student.phone, name: student.name },
-      }).catch((error) => console.error("Meta Schedule CAPI failed", error));
-      return NextResponse.json({
-        ...(created.toObject ? created.toObject() : created),
-        metaEventId,
-      });
+      return NextResponse.json(created.toObject ? created.toObject() : created);
     }
 
     if (!body.instructor) return NextResponse.json({ error: "Please choose a coach." }, { status: 400 });

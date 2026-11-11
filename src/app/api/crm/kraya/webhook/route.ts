@@ -7,7 +7,6 @@ import { closeDemoFromCrm, convertStudentFromCrm, reopenDemoFromCrm } from "@/li
 import { applyKrayaPayload } from "@/lib/crm/mirror";
 import { restoreLeadOwnerAttribute } from "@/lib/crm/ownerRestore";
 import { attributeLeadDemosFromCrm } from "@/lib/demoLeadOwner";
-import { syncLeadStageToMeta } from "@/lib/metaCrmEvents";
 import { CrmLead } from "@/models/CrmLead";
 
 export const dynamic = "force-dynamic";
@@ -70,12 +69,6 @@ export async function POST(req: Request) {
       // Kraya drops the "<Name> Lead" attribute once a lead leaves the salesperson's
       // stage. The mirror kept it, so write it back.
       await restoreLeadOwnerAttribute({ crmLeadId: mirrored.leadId, payload });
-    }
-
-    // Every real stage move goes to Meta as a Conversion Leads event. Keyed on the
-    // mirror's `stageChanged`, so a note or phone edit sends nothing.
-    if (mirrored?.stageChanged && stageName) {
-      await syncLeadStageToMeta({ crmLeadId: mirrored.leadId, stage: stageName });
     }
 
     if (!stageName) {

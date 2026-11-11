@@ -4,7 +4,7 @@ import { Fragment, type CSSProperties, type ReactNode } from "react";
 import CoachesSection from "@/components/marketing/CoachesSection";
 import GoogleReviewsWidget from "@/components/marketing/GoogleReviewsWidget";
 import { StudentRatingsStrip } from "@/components/marketing/StudentRatingsMarquee";
-import { ACADEMY_LOGO_URL } from "@/lib/branding";
+import { academyLogoUrl } from "@/lib/branding";
 import { coursePages, courseSessionTotal } from "@/lib/coursePages";
 import { curriculumLevels } from "@/lib/demoCurriculum";
 import { LEGAL_LINKS } from "@/lib/publicLinks";
@@ -342,7 +342,7 @@ export default function BookFreeDemoClassPage() {
       <header className="bfd-top" data-topbar>
         <div className="wrap bfd-nav">
           <Link href="/" className="bfd-logo" aria-label="Envision Chess Academy home">
-            <Image src={ACADEMY_LOGO_URL} alt="Envision Chess Academy" width={190} height={64} priority unoptimized />
+            <Image src={academyLogoUrl()} alt="Envision Chess Academy" width={190} height={64} priority unoptimized />
           </Link>
           <nav className="navlinks" aria-label="Page sections">
             <a href="#approach">Our approach</a>

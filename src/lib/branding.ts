@@ -1,4 +1,13 @@
 export const ACADEMY_LOGO_URL = "https://res.cloudinary.com/dlafr6yu3/image/upload/v1781225175/text_logo_yellow_2_jkykvz.png";
+
+/**
+ * The logo resized by Cloudinary for a web page header. The master file above
+ * is 8000x2000 pixels: about 64 MB once a phone decodes it, for a logo shown
+ * 140-190px wide. `width` is in image pixels, so pass about 3x the CSS width.
+ */
+export function academyLogoUrl(width = 600) {
+  return ACADEMY_LOGO_URL.replace("/image/upload/", `/image/upload/f_auto,q_auto,w_${Math.round(width)}/`);
+}
 export const ACADEMY_SIGNATURE_URL = "https://res.cloudinary.com/dlafr6yu3/image/upload/v1785307810/sayantan_signature_3_jq2ayo.jpg";
 export const ACADEMY_FAVICON_URL = "/favicon.png";
 

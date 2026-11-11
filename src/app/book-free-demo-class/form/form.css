@@ -359,7 +359,7 @@
 
 /*
  * The same form as a pop-up on /book-free-demo-class (DemoFormModal.tsx).
- * Phone: a sheet that rises from the bottom edge and scrolls inside itself.
+ * Phone: a card with a 12px gap on every side that scrolls inside itself.
  * Tablet and desktop: a centred card, wide enough to pair the fields up so the
  * whole form fits without scrolling on most screens.
  */
@@ -368,8 +368,8 @@ html.dform-modal-open {
 }
 dialog.dform-modal {
   position: fixed;
-  inset: auto 0 0;
-  width: 100%;
+  inset: auto 12px calc(12px + env(safe-area-inset-bottom));
+  width: auto;
   max-width: none;
   max-height: none;
   margin: 0;
@@ -387,11 +387,11 @@ dialog.dform-modal::backdrop {
   display: flex;
   flex-direction: column;
   min-height: 0;
-  max-height: 92vh;
-  max-height: 92dvh;
-  border-radius: 22px 22px 0 0;
+  max-height: calc(100vh - 24px);
+  max-height: calc(100dvh - 24px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+  border-radius: 20px;
   background: #fff;
-  box-shadow: 0 -12px 48px rgba(43, 11, 75, 0.28);
+  box-shadow: 0 18px 48px rgba(43, 11, 75, 0.32);
   overflow: hidden;
 }
 dialog.dform-modal[open] .dform-modal-box {
@@ -412,7 +412,7 @@ dialog.dform-modal[open] .dform-modal-box {
 }
 /* The sheet is the card here, so the form's own card goes flat. */
 .dform .dform-modal-body .dform-card {
-  padding: 20px 18px calc(22px + env(safe-area-inset-bottom));
+  padding: 20px 16px 22px;
   border: 0;
   border-radius: 0;
   box-shadow: none;

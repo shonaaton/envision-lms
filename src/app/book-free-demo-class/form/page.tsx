@@ -1,6 +1,6 @@
 import Image from "next/image";
 import Link from "next/link";
-import { ACADEMY_LOGO_URL } from "@/lib/branding";
+import { academyLogoUrl } from "@/lib/branding";
 import { publicMetadata } from "@/lib/seo";
 import DemoRequestForm from "./DemoRequestForm";
 import "./form.css";
@@ -30,7 +30,7 @@ export default function DemoFormPage() {
       />
       <header className="dform-top">
         <Link href="/book-free-demo-class" aria-label="Back to the free demo page">
-          <Image src={ACADEMY_LOGO_URL} alt="Envision Chess Academy" width={190} height={64} priority unoptimized />
+          <Image src={academyLogoUrl()} alt="Envision Chess Academy" width={190} height={64} priority unoptimized />
         </Link>
       </header>
       <div className="dform-rank" aria-hidden="true" />

@@ -2,7 +2,6 @@
 
 import { Suspense } from "react";
 import { usePathname } from "next/navigation";
-import MetaPageViewTracker from "@/components/MetaPageViewTracker";
 import CookieConsent from "@/components/marketing/CookieConsent";
 import MetaPixel from "@/components/marketing/MetaPixel";
 import SiteAnalyticsTracker from "@/components/marketing/SiteAnalyticsTracker";
@@ -23,24 +22,22 @@ import { isPortalPath } from "@/lib/portalPaths";
  * and behavioural monitoring of children, and unlike most processing under that
  * Act, parental consent does not cure it. So the portal gets nothing at all.
  *
- * `/booking` is inside the portal and fires a `Schedule` pixel event on a demo
- * booking. Losing that browser event costs no attribution: `api/bookings` sends
- * the same conversion server-side through the Conversions API with the same
- * `eventId`, which is the half of the pair Meta keeps when it deduplicates.
+ * The Meta pixel is narrower still: it runs on the free demo campaign pages
+ * only (see `lib/metaPixel`), so on every other public page this is Google
+ * Analytics and the site's own page counter.
  *
  * The consent banner is gated too. Nothing on these pages tracks anyone, so
  * there is no choice to put to the reader; the footer's cookie settings link
  * still reopens the panel on every public page.
  */
-export default function PublicPageTracking({ pixelId, googleAnalyticsId }: { pixelId: string; googleAnalyticsId: string }) {
+export default function PublicPageTracking({ googleAnalyticsId }: { googleAnalyticsId: string }) {
   const pathname = usePathname();
   if (isPortalPath(pathname)) return null;
 
   return (
     <>
-      <MetaPixel pixelId={pixelId} />
+      <MetaPixel />
       <Suspense fallback={null}>
-        <MetaPageViewTracker />
         <SiteAnalyticsTracker />
         <GoogleAnalytics measurementId={googleAnalyticsId} />
       </Suspense>

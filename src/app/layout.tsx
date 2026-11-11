@@ -33,7 +33,6 @@ export const metadata: Metadata = {
   twitter: { card: "summary_large_image" },
 };
 
-const metaPixelId = process.env.NEXT_PUBLIC_META_PIXEL_ID || "924225047079586";
 const googleAnalyticsId = process.env.NEXT_PUBLIC_GA_MEASUREMENT_ID || "";
 
 // Handwriting face, used only for the landing hero's aside. Exposed as a CSS
@@ -53,7 +52,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="en" className={caveat.variable}>
       <body>
         <Providers>{children}</Providers>
-        <PublicPageTracking pixelId={metaPixelId} googleAnalyticsId={googleAnalyticsId} />
+        <PublicPageTracking googleAnalyticsId={googleAnalyticsId} />
         <WhatsAppButton />
         <Toaster
           richColors

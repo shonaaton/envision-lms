@@ -5,7 +5,6 @@ import { useRouter } from "next/navigation";
 import { ChevronDown, Clock3, GraduationCap, Loader2, MessageCircle, UserRound } from "lucide-react";
 import { contactInterests, ONLINE_INTEREST } from "@/lib/contactEnquiries";
 import { DEMO_AGE_GROUPS, DEMO_CHILD_LEVELS, DEMO_THANKS_PATH, DEMO_THANKS_STORAGE_KEY } from "@/lib/demoRequest";
-import { trackMetaLead } from "@/lib/metaPixel";
 import { DIAL_CODES, dialCodeEntry } from "@/lib/phoneCountryCodes";
 import { LEGAL_LINKS } from "@/lib/publicLinks";
 import { trackConversion } from "@/lib/siteAnalytics";
@@ -80,10 +79,12 @@ export default function DemoRequestForm({ embedded = false, titleId }: { embedde
   /**
    * The request id rides in sessionStorage, not the URL: it is what lets the
    * thank-you page save a slot against this request, and a URL gets shared.
+   *
+   * No Meta event is fired here: the thank-you page sends the one form-submit
+   * event when the family lands on it.
    */
-  function finish(id: unknown, metaEventId: unknown, verified: boolean) {
+  function finish(id: unknown, verified: boolean) {
     trackConversion("demo_request");
-    trackMetaLead(metaEventId);
     try {
       const firstName = form.parentName.trim().split(/\s+/)[0] || "";
       window.sessionStorage.setItem(DEMO_THANKS_STORAGE_KEY, JSON.stringify({ id: id ? String(id) : "", firstName, verified }));
@@ -105,7 +106,7 @@ export default function DemoRequestForm({ embedded = false, titleId }: { embedde
         return;
       }
       if (!payload.otpSent) {
-        finish(payload.id, payload.metaEventId, false);
+        finish(payload.id, false);
         return;
       }
       setLeadId(payload.id);
@@ -132,7 +133,7 @@ export default function DemoRequestForm({ embedded = false, titleId }: { embedde
         codeInput.current?.focus();
         return;
       }
-      finish(leadId, payload.metaEventId, true);
+      finish(leadId, true);
     } catch {
       setError("Could not reach us. Please check your connection and try again.");
     } finally {
@@ -151,11 +152,11 @@ export default function DemoRequestForm({ embedded = false, titleId }: { embedde
         return;
       }
       if (payload.verified) {
-        finish(leadId, payload.metaEventId, true);
+        finish(leadId, true);
         return;
       }
       if (!payload.otpSent) {
-        finish(leadId, payload.metaEventId, false);
+        finish(leadId, false);
         return;
       }
       setCode("");

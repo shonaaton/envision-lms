@@ -1,8 +1,6 @@
 import { isValidObjectId } from "mongoose";
 import { NextResponse } from "next/server";
 import { dbConnect } from "@/lib/db";
-import { reportDemoBooked } from "@/lib/demoLeadCrm";
-import { browserFromRequest, demoSlotEventId } from "@/lib/demoLeadMetaEvents";
 import { DEMO_REQUEST_KIND } from "@/lib/demoRequest";
 import { demoSlotLabel, demoSlotStart, isOpenDemoSlot } from "@/lib/demoRequestSlots";
 import { consumeRateLimit, getClientIp, jsonRateLimitHeaders } from "@/lib/requestSecurity";
@@ -46,9 +44,7 @@ export async function POST(req: Request) {
     if (!lead) return NextResponse.json({ error: "Please submit the form again." }, { status: 404 });
 
     await refreshDemoRequestTask(lead);
-    await reportDemoBooked(id, browserFromRequest(req, getClientIp(req.headers)));
-    // The browser pixel sends its own Schedule with this id; Meta keeps one of the pair.
-    return NextResponse.json({ ok: true, date, time, label: demoSlotLabel(date, time), metaEventId: demoSlotEventId(id) });
+    return NextResponse.json({ ok: true, date, time, label: demoSlotLabel(date, time) });
   } catch (error) {
     console.error("[demo-request] slot not saved", error);
     return NextResponse.json({ error: "Could not save your slot. Please try again." }, { status: 500 });

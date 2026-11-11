@@ -2,6 +2,12 @@ import crypto from "crypto";
 import { whatsappDigits } from "@/lib/contactEnquiries";
 
 /**
+ * NOT WIRED IN (2026-11-11). The user asked for one conversion only for now:
+ * the Lead event the thank-you page's browser pixel sends. Nothing calls this
+ * module; it is kept, with its tests, for when server events are wanted again.
+ * Re-wiring also means restoring the lead fields it reads and claims
+ * (metaFbp, metaFbc, metaScheduleAt, metaConvertedAt).
+ *
  * Conversions API events for the free demo campaign, sent to the campaign
  * pixel (the one the landing and thank-you pages load, see lib/metaPixel).
  *

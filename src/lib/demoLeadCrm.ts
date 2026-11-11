@@ -3,13 +3,6 @@ import "server-only";
 import { Types } from "mongoose";
 import { dbConnect } from "@/lib/db";
 import { ownerCandidates } from "@/lib/demoLeadOwner";
-import {
-  campaignCapiReady,
-  demoConvertedEventId,
-  demoSlotEventId,
-  sendDemoLeadMetaEvent,
-  type DemoLeadEventBrowser,
-} from "@/lib/demoLeadMetaEvents";
 import { demoLeadOwnerForTurn, demoLeadRotationNames, resolveDemoLeadRotation } from "@/lib/demoLeadRotation";
 import { DEMO_LEAD_STAGE_VALUES, DEMO_REQUEST_KIND, demoLeadStage, demoLeadStageLabel, type DemoLeadStage } from "@/lib/demoRequest";
 import { demoSlotLabel } from "@/lib/demoRequestSlots";
@@ -232,37 +225,7 @@ export async function setDemoLeadStage(viewer: DemoLeadViewer, leadId: string, s
   );
   if (!result.modifiedCount) return false;
   if (stage !== "new") await resolveDemoLeadCallTask(leadId, viewer.id);
-  if (stage === "demo_taken") await reportDemoBooked(leadId);
-  if (stage === "converted") await reportDemoConverted(leadId);
   return true;
-}
-
-/**
- * Tells Meta a demo was booked, once per lead. Called when the family picks a
- * slot on the thank-you page (`browser` is theirs) and when sales moves the
- * lead to "Demo taken" - whichever comes first, since a demo arranged on a
- * call never passes through the thank-you page.
- */
-export async function reportDemoBooked(leadId: string, browser?: DemoLeadEventBrowser) {
-  if (!campaignCapiReady()) return;
-  await dbConnect();
-  const lead: any = await ContactMessage.findOneAndUpdate(
-    { _id: leadId, kind: DEMO_REQUEST_KIND, metaScheduleAt: null },
-    { $set: { metaScheduleAt: new Date() } },
-    { new: true },
-  ).lean();
-  if (lead) await sendDemoLeadMetaEvent({ lead, eventName: "Schedule", eventId: demoSlotEventId(leadId), browser });
-}
-
-/** Tells Meta the lead became a student, once per lead, however often the stage is set again. */
-async function reportDemoConverted(leadId: string) {
-  if (!campaignCapiReady()) return;
-  const lead: any = await ContactMessage.findOneAndUpdate(
-    { _id: leadId, kind: DEMO_REQUEST_KIND, metaConvertedAt: null },
-    { $set: { metaConvertedAt: new Date() } },
-    { new: true },
-  ).lean();
-  if (lead) await sendDemoLeadMetaEvent({ lead, eventName: "CompleteRegistration", eventId: demoConvertedEventId(leadId) });
 }
 
 export async function addDemoLeadNote(viewer: DemoLeadViewer, leadId: string, text: string) {

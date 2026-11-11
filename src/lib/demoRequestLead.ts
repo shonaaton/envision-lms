@@ -1,9 +1,7 @@
 import { pushLeadStage } from "@/lib/crm/client";
 import { crmPhoneNumber, phoneKey } from "@/lib/crm/identity";
 import { contactInterestLabel } from "@/lib/contactEnquiries";
-import { demoAgeGroupLabel, demoChildLevelLabel, demoRequestEventId } from "@/lib/demoRequest";
-import { browserFromRequest, sendDemoLeadMetaEvent } from "@/lib/demoLeadMetaEvents";
-import { getClientIp } from "@/lib/requestSecurity";
+import { demoAgeGroupLabel, demoChildLevelLabel } from "@/lib/demoRequest";
 import { raiseDemoRequestTask } from "@/lib/tasks/taskTriggers";
 import { ContactMessage } from "@/models/ContactMessage";
 import { CrmLeadRecord } from "@/models/CrmLeadRecord";
@@ -25,13 +23,8 @@ export async function announceDemoRequest(leadId: string, request: Request) {
 
   await raiseDemoRequestTask(lead);
 
-  // To the campaign pixel, with the id the browser pixel used for its own Lead, so Meta counts one.
-  await sendDemoLeadMetaEvent({
-    lead,
-    eventName: "Lead",
-    eventId: demoRequestEventId(String(lead._id)),
-    browser: browserFromRequest(request, getClientIp(request.headers)),
-  });
+  // Nothing is sent to Meta from the server (2026-11-11): the thank-you page's
+  // browser pixel sends the one form-submit event counted for this form.
 
   // A number the CRM already knows may be further along, even a current student's
   // parent asking about a sibling, and this push would move it back to the start.

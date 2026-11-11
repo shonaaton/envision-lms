@@ -2,7 +2,6 @@ import { NextResponse } from "next/server";
 import { ZodError } from "zod";
 import { dbConnect } from "@/lib/db";
 import { assignDemoLeadOwner } from "@/lib/demoLeadCrm";
-import { metaBrowserIds } from "@/lib/demoLeadMetaEvents";
 import { DEMO_REQUEST_KIND, demoRequestEventId } from "@/lib/demoRequest";
 import { announceDemoRequest } from "@/lib/demoRequestLead";
 import { consumeRateLimit, getClientIp, jsonRateLimitHeaders } from "@/lib/requestSecurity";
@@ -35,7 +34,6 @@ export async function POST(req: Request) {
 
     await dbConnect();
     const phone = data.phone.replace(/\D/g, "").replace(/^0+/, "");
-    const browserIds = metaBrowserIds(req);
     const fields = {
       kind: DEMO_REQUEST_KIND,
       name: data.parentName,
@@ -46,9 +44,6 @@ export async function POST(req: Request) {
       interest: data.interest,
       preferredTime: data.preferredTime,
       sourcePath: data.sourcePath,
-      // Only when present, so a resubmission from a browser without them keeps the first pair.
-      ...(browserIds.fbp ? { metaFbp: browserIds.fbp } : {}),
-      ...(browserIds.fbc ? { metaFbc: browserIds.fbc } : {}),
     };
     // Going back to fix a detail updates the same row. A verified request is left
     // alone, so a second child on one number stays a second request.

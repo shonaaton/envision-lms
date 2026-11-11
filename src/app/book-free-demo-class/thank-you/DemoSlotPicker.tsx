@@ -3,17 +3,23 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { CalendarDays, Check, ChevronDown, Loader2 } from "lucide-react";
-import { DEMO_THANKS_STORAGE_KEY } from "@/lib/demoRequest";
-import { trackMetaSchedule } from "@/lib/metaPixel";
+import { DEMO_THANKS_STORAGE_KEY, demoRequestEventId } from "@/lib/demoRequest";
+import { trackMetaLead } from "@/lib/metaPixel";
 import { demoSlotDays, demoSlotLabel, demoSlotTimes } from "@/lib/demoRequestSlots";
 
-type Handoff = { id: string; firstName: string; verified: boolean; slot?: { date: string; time: string } };
+type Handoff = { id: string; firstName: string; verified: boolean; slot?: { date: string; time: string }; tracked?: boolean };
 
 function readHandoff(): Handoff | null {
   try {
     const stored = JSON.parse(window.sessionStorage.getItem(DEMO_THANKS_STORAGE_KEY) || "null");
     if (!stored || typeof stored !== "object") return null;
-    return { id: String(stored.id || ""), firstName: String(stored.firstName || ""), verified: Boolean(stored.verified), slot: stored.slot };
+    return {
+      id: String(stored.id || ""),
+      firstName: String(stored.firstName || ""),
+      verified: Boolean(stored.verified),
+      slot: stored.slot,
+      tracked: Boolean(stored.tracked),
+    };
   } catch {
     return null;
   }
@@ -38,7 +44,20 @@ export default function DemoSlotPicker() {
   const [error, setError] = useState("");
 
   useEffect(() => {
-    const stored = readHandoff();
+    let stored = readHandoff();
+    // The one conversion Meta counts for the form: a Lead ("form submit") event,
+    // sent when a family lands here from the form. The mark in sessionStorage
+    // keeps a refresh, or coming back to this tab, from counting them twice,
+    // and a visit with no request behind it (a bookmark) sends nothing.
+    if (stored?.id && !stored.tracked) {
+      stored = { ...stored, tracked: true };
+      try {
+        window.sessionStorage.setItem(DEMO_THANKS_STORAGE_KEY, JSON.stringify(stored));
+      } catch {
+        // Without storage a refresh sends it again; Meta drops the repeat by its event id.
+      }
+      trackMetaLead(demoRequestEventId(stored.id));
+    }
     setHandoff(stored);
     setDays(demoSlotDays());
     if (stored?.slot?.date && stored.slot.time) {
@@ -69,8 +88,6 @@ export default function DemoSlotPicker() {
       }
       const slot = { date, time };
       setSaved(slot);
-      // Once per request: the server reports the booking once too, with the same id.
-      if (!handoff.slot) trackMetaSchedule(payload?.metaEventId);
       try {
         window.sessionStorage.setItem(DEMO_THANKS_STORAGE_KEY, JSON.stringify({ ...handoff, slot }));
       } catch {

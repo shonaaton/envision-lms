@@ -16,8 +16,10 @@ type FbqWindow = Window & {
  * `fbq('track')`, which goes to every started pixel. Each event is sent with
  * `trackSingle` to the pixel that owns the page it happened on.
  *
- * The Conversions API (lib/metaConversions) still posts to the site-wide pixel:
- * it is the only one with an access token.
+ * The campaign pages send page views plus one Lead event, from the thank-you
+ * page, when a family arrives there from the form. Nothing else, and nothing
+ * from the server: the Conversions API (lib/metaConversions) posts to the
+ * site-wide pixel only.
  */
 const SITE_PIXEL_ID = process.env.NEXT_PUBLIC_META_PIXEL_ID || "924225047079586";
 export const CAMPAIGN_PIXEL_ID = process.env.NEXT_PUBLIC_META_CAMPAIGN_PIXEL_ID || "1084805421260422";

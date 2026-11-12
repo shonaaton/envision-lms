@@ -13,6 +13,8 @@ import {
   callLogText,
   checkReminderTime,
   isDemoLeadCallOutcome,
+  missedCallReminderTime,
+  parseMissedCallReminderChoice,
 } from "@/lib/demoLeadCalls";
 import { formatAcademyDateTime } from "@/lib/academyTime";
 import {
@@ -308,8 +310,12 @@ export async function addDemoLeadNote(viewer: DemoLeadViewer, leadId: string, te
  * with optional remarks. Any reminder that already fired for this lead is
  * settled, and a picked-up call settles the first "call this parent" task too,
  * since someone has now spoken to the family. A missed call leaves it open.
+ *
+ * A missed call also sets a call-back for the caller (`remindChoice`, two hours
+ * by default, see missedCallReminderTime), unless they chose "Don't remind me"
+ * or already have a reminder waiting on this lead, which is their own plan.
  */
-export async function logDemoLeadCall(viewer: DemoLeadViewer, leadId: string, outcome: string, remarks: string) {
+export async function logDemoLeadCall(viewer: DemoLeadViewer, leadId: string, outcome: string, remarks: string, remindChoice?: unknown) {
   const match = ownLead(viewer, leadId);
   if (!match || !isDemoLeadCallOutcome(outcome)) return false;
   await dbConnect();
@@ -321,6 +327,36 @@ export async function logDemoLeadCall(viewer: DemoLeadViewer, leadId: string, ou
   await DemoLeadReminder.updateMany({ lead: leadId, status: "sent" }, { $set: { status: "done", doneAt: now } });
   await resolveDemoLeadReminderTasks(leadId, viewer.id);
   if (outcome === "picked_up") await resolveDemoLeadCallTask(leadId, viewer.id);
+
+  if (outcome === "missed") {
+    const at = missedCallReminderTime(parseMissedCallReminderChoice(remindChoice), now);
+    const waiting = at ? await DemoLeadReminder.exists({ lead: leadId, assignedTo: viewer.id, status: "scheduled" }) : true;
+    if (at && !waiting) {
+      const note = `Missed call at ${formatAcademyDateTime(now, { day: undefined, month: undefined, year: undefined, timeZoneName: "short" })}, try again`;
+      await createDemoLeadReminder(viewer, match, at, note, "Reminder set automatically after a missed call");
+    }
+  }
+  return true;
+}
+
+/** Saves a reminder for the viewer on a lead they may touch, and notes it in the lead's history. */
+async function createDemoLeadReminder(viewer: DemoLeadViewer, match: Record<string, unknown>, at: Date, note: string, heading: string) {
+  const lead: any = await ContactMessage.findOne(match).select("name").lean();
+  if (!lead) return false;
+  await DemoLeadReminder.create({
+    lead: lead._id,
+    leadName: lead.name || "",
+    assignedTo: viewer.id,
+    assignedToName: viewer.name,
+    createdBy: viewer.id,
+    createdByName: viewer.name,
+    dueAt: at,
+    note,
+  });
+  const label = formatAcademyDateTime(at, { timeZoneName: "short" });
+  await ContactMessage.updateOne(match, {
+    $push: { leadLog: { kind: "reminder", text: `${heading} for ${label}${note ? `: ${note}` : ""}`, by: viewer.id, byName: viewer.name, at: new Date() } },
+  });
   return true;
 }
 
@@ -338,22 +374,7 @@ export async function setDemoLeadReminder(viewer: DemoLeadViewer, leadId: string
   const open = await DemoLeadReminder.countDocuments({ lead: lead._id, assignedTo: viewer.id, status: "scheduled" });
   if (open >= REMINDERS_PER_LEAD_MAX) return { ok: false, error: `You already have ${REMINDERS_PER_LEAD_MAX} reminders on this lead. Remove one first.` };
 
-  const note = noteText.trim().slice(0, REMINDER_NOTE_MAX);
-  const now = new Date();
-  await DemoLeadReminder.create({
-    lead: lead._id,
-    leadName: lead.name || "",
-    assignedTo: viewer.id,
-    assignedToName: viewer.name,
-    createdBy: viewer.id,
-    createdByName: viewer.name,
-    dueAt: time.at,
-    note,
-  });
-  const label = formatAcademyDateTime(time.at, { timeZoneName: "short" });
-  await ContactMessage.updateOne(match, {
-    $push: { leadLog: { kind: "reminder", text: `Reminder set for ${label}${note ? `: ${note}` : ""}`, by: viewer.id, byName: viewer.name, at: now } },
-  });
+  await createDemoLeadReminder(viewer, match, time.at, noteText.trim().slice(0, REMINDER_NOTE_MAX), "Reminder set");
   return { ok: true };
 }
 

@@ -1,6 +1,48 @@
 import { describe, expect, it } from "vitest";
 import { academyDateKey, academyDateTime, formatAcademyDateTime } from "@/lib/academyTime";
-import { REMINDER_MAX_DAYS, callLogText, checkReminderTime, demoLeadCallOutcomeLabel, isDemoLeadCallOutcome, reminderPresets } from "@/lib/demoLeadCalls";
+import {
+  REMINDER_MAX_DAYS,
+  callLogText,
+  checkReminderTime,
+  demoLeadCallOutcomeLabel,
+  isDemoLeadCallOutcome,
+  missedCallReminderTime,
+  parseMissedCallReminderChoice,
+  reminderPresets,
+} from "@/lib/demoLeadCalls";
+
+describe("missed call reminders", () => {
+  const ist = (date: Date | null) => (date ? formatAcademyDateTime(date, { year: undefined, hour12: false }) : null);
+
+  it("defaults to two hours and accepts only the listed choices", () => {
+    expect(parseMissedCallReminderChoice(undefined)).toBe("2h");
+    expect(parseMissedCallReminderChoice("bogus")).toBe("2h");
+    expect(parseMissedCallReminderChoice("none")).toBe("none");
+  });
+
+  it("reminds an hour or two later during calling hours", () => {
+    const now = new Date("2026-11-12T06:30:00.000Z"); // 12:00 IST
+    expect(ist(missedCallReminderTime("2h", now))).toMatch(/12 Nov.*14:00/);
+    expect(ist(missedCallReminderTime("1h", now))).toMatch(/12 Nov.*13:00/);
+    expect(missedCallReminderTime("none", now)).toBeNull();
+  });
+
+  it("moves a late-evening call-back to 11 AM the next day", () => {
+    const now = new Date("2026-11-12T13:30:00.000Z"); // 19:00 IST, +2h = 21:00
+    expect(ist(missedCallReminderTime("2h", now))).toMatch(/13 Nov.*11:00/);
+    const nearMidnight = new Date("2026-11-12T18:00:00.000Z"); // 23:30 IST, +1h is already 13 Nov 00:30
+    expect(ist(missedCallReminderTime("1h", nearMidnight))).toMatch(/13 Nov.*11:00/);
+  });
+
+  it("moves an early-morning call-back to 11 AM the same day", () => {
+    const now = new Date("2026-11-12T01:30:00.000Z"); // 07:00 IST, +1h = 08:00
+    expect(ist(missedCallReminderTime("1h", now))).toMatch(/12 Nov.*11:00/);
+  });
+
+  it("tomorrow means 11 AM IST the next day", () => {
+    expect(ist(missedCallReminderTime("tomorrow", new Date("2026-11-12T17:00:00.000Z")))).toMatch(/13 Nov.*11:00/);
+  });
+});
 
 describe("demo lead call outcomes", () => {
   it("accepts only picked up and missed", () => {

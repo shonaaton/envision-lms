@@ -3,6 +3,7 @@
 import { Fragment, useEffect, useRef, useState } from "react";
 import { useFormState, useFormStatus } from "react-dom";
 import { AlarmClock, MessageCircle, Phone, PhoneMissed, PhoneOutgoing, Trash2, X } from "lucide-react";
+import { DEFAULT_MISSED_CALL_REMINDER, MISSED_CALL_REMINDER_CHOICES } from "@/lib/demoLeadCalls";
 import type { LeadSourceSummary } from "@/lib/leadSource";
 
 /**
@@ -268,8 +269,22 @@ function CallLogForm({ row, logCall }: Pick<Shared, "logCall"> & { row: DemoLead
             if (outcome.current) outcome.current.value = value;
           }}
         />
-        <span className="text-[11px] text-slate-500">The date and time are recorded automatically.</span>
+        <label className="flex items-center gap-1.5 text-[11px] font-semibold text-slate-600">
+          If missed, remind me
+          <select
+            name="remindAfterMissed"
+            defaultValue={DEFAULT_MISSED_CALL_REMINDER}
+            className="h-8 rounded-md border border-slate-200 bg-white px-1.5 text-xs font-bold text-slate-900 outline-none focus:border-brand"
+          >
+            {MISSED_CALL_REMINDER_CHOICES.map((choice) => (
+              <option key={choice.value} value={choice.value}>{choice.label}</option>
+            ))}
+          </select>
+        </label>
       </div>
+      <p className="mt-1.5 text-[11px] text-slate-500">
+        The date and time are recorded automatically. A missed call sets a call-back for you (moved to 11 AM if it would fall outside 9 AM to 8 PM), unless you already have one on this lead.
+      </p>
     </form>
   );
 }

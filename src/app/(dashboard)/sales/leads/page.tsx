@@ -68,7 +68,7 @@ async function logCall(formData: FormData) {
   if (!viewer?.canManage) throw new Error("Forbidden");
   const lead = String(formData.get("lead") || "");
   const outcome = String(formData.get("outcome") || "");
-  if (await logDemoLeadCall(viewer.lead, lead, outcome, String(formData.get("remarks") || ""))) {
+  if (await logDemoLeadCall(viewer.lead, lead, outcome, String(formData.get("remarks") || ""), formData.get("remindAfterMissed"))) {
     logSalesAction(viewer.sales, `${viewer.sales.name} logged a ${demoLeadCallOutcomeLabel(outcome).toLowerCase()} call on a demo lead`, { lead, outcome });
   }
   revalidatePath("/sales/leads");

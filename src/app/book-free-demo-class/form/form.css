@@ -359,7 +359,9 @@
 
 /*
  * The same form as a pop-up on /book-free-demo-class (DemoFormModal.tsx).
- * Phone: a card with a 12px gap on every side that scrolls inside itself.
+ * Phone: a compact card floating in the middle of the screen, with the page
+ * visible around it (20px each side, at least 48px above and below). The
+ * fields are tightened so most of the form shows; the rest scrolls inside.
  * Tablet and desktop: a centred card, wide enough to pair the fields up so the
  * whole form fits without scrolling on most screens.
  */
@@ -368,11 +370,12 @@ html.dform-modal-open {
 }
 dialog.dform-modal {
   position: fixed;
-  inset: auto 12px calc(12px + env(safe-area-inset-bottom));
-  width: auto;
-  max-width: none;
+  inset: 0;
+  width: calc(100% - 40px);
+  height: fit-content;
+  max-width: 460px;
   max-height: none;
-  margin: 0;
+  margin: auto;
   padding: 0;
   border: 0;
   background: transparent;
@@ -387,8 +390,8 @@ dialog.dform-modal::backdrop {
   display: flex;
   flex-direction: column;
   min-height: 0;
-  max-height: calc(100vh - 24px);
-  max-height: calc(100dvh - 24px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+  max-height: calc(100vh - 96px);
+  max-height: calc(100dvh - 96px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
   border-radius: 20px;
   background: #fff;
   box-shadow: 0 18px 48px rgba(43, 11, 75, 0.32);
@@ -399,7 +402,7 @@ dialog.dform-modal[open] .dform-modal-box {
 }
 @keyframes dform-sheet {
   from {
-    transform: translateY(28px);
+    transform: translateY(16px) scale(0.98);
     opacity: 0;
   }
 }
@@ -410,20 +413,62 @@ dialog.dform-modal[open] .dform-modal-box {
   overscroll-behavior: contain;
   -webkit-overflow-scrolling: touch;
 }
-/* The sheet is the card here, so the form's own card goes flat. */
+/* The pop-up is the card here, so the form's own card goes flat. */
 .dform .dform-modal-body .dform-card {
-  padding: 20px 16px 22px;
+  padding: 18px 16px 18px;
   border: 0;
   border-radius: 0;
   box-shadow: none;
   animation: none;
 }
 .dform .dform-modal-body .dform-head {
-  margin-bottom: 18px;
-  padding-right: 44px;
+  margin-bottom: 14px;
+  padding-right: 40px;
 }
 .dform .dform-modal-body .dform-fields {
-  gap: 16px;
+  gap: 13px;
+}
+/* Phone only: the same fields, tighter, so less of the form hides below the fold. */
+@media (max-width: 599px) {
+  .dform .dform-modal-body .dform-title {
+    font-size: 1.35rem;
+  }
+  .dform .dform-modal-body .dform-head p {
+    margin-top: 4px;
+    font-size: 0.9rem;
+  }
+  .dform .dform-modal-body .dform-field > label,
+  .dform .dform-modal-body .dform-field > legend {
+    margin-bottom: 5px;
+    font-size: 0.88rem;
+  }
+  .dform .dform-modal-body .dform-input,
+  .dform .dform-modal-body .dform-dial {
+    min-height: 44px;
+  }
+  .dform .dform-modal-body .dform-input input,
+  .dform .dform-modal-body .dform-input select {
+    height: 41px;
+  }
+  .dform .dform-modal-body .dform-chips {
+    gap: 6px;
+  }
+  .dform .dform-modal-body .dform-chip span {
+    padding: 8px 12px;
+    font-size: 0.9rem;
+  }
+  .dform .dform-modal-body .dform-field > small {
+    margin-top: 4px;
+  }
+  .dform .dform-modal-body .dform-btn {
+    padding: 11px 22px;
+    font-size: 1rem;
+  }
+  .dform .dform-modal-close {
+    top: 16px;
+    width: 36px;
+    height: 36px;
+  }
 }
 .dform .dform-modal-close {
   position: absolute;
@@ -462,6 +507,7 @@ dialog.dform-modal[open] .dform-modal-box {
   dialog.dform-modal {
     inset: 0;
     width: min(760px, calc(100% - 48px));
+    max-width: none;
     height: fit-content;
     margin: auto;
   }

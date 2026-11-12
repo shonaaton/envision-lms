@@ -32,6 +32,7 @@ import {
 import { buildArenaPairings, freeSinceMs, mostRecentOpponents, pairingHistory, resolveColors } from "@/lib/tournament/pairing";
 import { pairSwissRound, swissHistoriesFromGames, type SwissPlayer } from "@/lib/tournament/swiss";
 import { FIRST_MOVE_GRACE_MS, noShowOutcome } from "@/lib/tournament/firstMove";
+import { presentPlayerKeys } from "@/lib/tournament/presence";
 import {
   emitGameEnded,
   emitGameMove,
@@ -749,8 +750,10 @@ export async function syncArenaPairings(tournamentId: string) {
     const recent = mostRecentOpponents(games as any);
     const now = Date.now();
 
+    // Only players in the room are paired; see lib/tournament/presence.ts.
+    const present = presentPlayerKeys(id, now);
     const waiting = (tournament.standings || [])
-      .filter((entry: any) => !busy.has(entry.playerKey) && isAvailableForPairing(states.get(entry.playerKey)))
+      .filter((entry: any) => !busy.has(entry.playerKey) && present.has(entry.playerKey) && isAvailableForPairing(states.get(entry.playerKey)))
       .map((entry: any) => {
         const state = states.get(entry.playerKey);
         const since = freeSinceMs({

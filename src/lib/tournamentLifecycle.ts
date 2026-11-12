@@ -19,6 +19,7 @@ import {
 import { notifyTournamentUsers } from "@/lib/tournamentNotifications";
 import { sendTournamentReminder } from "@/lib/tournamentReminders";
 import { dueTournamentReminder } from "@/lib/tournament/reminderSchedule";
+import { forgetTournamentPresence } from "@/lib/tournament/presence";
 import { emitRoundCompleted, emitTournamentEnded, emitTournamentStatus, flushStandings } from "@/lib/tournamentSocketServer";
 
 /**
@@ -106,6 +107,7 @@ async function finalizeArena(tournament: any) {
   tournament.endedAt = tournament.endedAt || new Date(tournament.arenaEndsAt);
   await freezeTournamentResults(tournament);
   await tournament.save();
+  forgetTournamentPresence(String(tournament._id));
   // Push any coalesced leaderboard before announcing the end, so the final
   // table a client holds is the final table.
   publishStandings(tournament);

@@ -1,3 +1,4 @@
+import { playerSeen } from "@/lib/tournament/presence";
 import { NextResponse } from "next/server";
 import mongoose from "mongoose";
 import { auth } from "@/lib/auth";
@@ -94,6 +95,9 @@ export async function GET(request: Request, { params }: { params: { id: string }
         (tournament.access?.users || []).map((id: any) => String(id)).includes(String(userId)) ||
         (tournament.participants || []).some((player: any) => objectId(player) === String(userId))));
   if (!allowed) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  // The play room polls this while open: a sign of life for Arena pairing
+  // when the socket cannot connect.
+  playerSeen(params.id, myPlayerKey);
 
   const playerGames = {
     tournament: params.id,

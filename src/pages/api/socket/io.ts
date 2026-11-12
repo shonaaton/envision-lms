@@ -9,6 +9,7 @@ import { getTournamentGuestSessionFromCookieHeader } from "@/lib/tournamentGuest
 import { TournamentGame } from "@/models/TournamentGame";
 import { registerTournamentSocketServer, tournamentGameRoomName, tournamentRoomName } from "@/lib/tournamentSocketServer";
 import { pruneExpiredEntries } from "@/lib/requestSecurity";
+import { playerSocketClosed, playerSocketOpened } from "@/lib/tournament/presence";
 
 type SocketServerWithIO = NextApiResponse["socket"] & {
   server: {
@@ -77,23 +78,30 @@ async function resolveSocketSession(headers: Record<string, string | string[] | 
   } satisfies SocketSession;
 }
 
-async function canJoinTournamentRoom(tournamentId: string, headers: Record<string, string | string[] | undefined>) {
-  if (!tournamentId) return false;
+/**
+ * Whether this connection may join the tournament room, and which players it
+ * speaks for (an LMS session, a guest seat, or both in one browser). `null`
+ * means refused; an empty list is a spectator.
+ */
+async function admitToTournamentRoom(tournamentId: string, headers: Record<string, string | string[] | undefined>): Promise<string[] | null> {
+  if (!tournamentId) return null;
   const ip = socketIpAddress(headers);
-  if (!consumeSocketAttempt(ip)) return false;
+  if (!consumeSocketAttempt(ip)) return null;
 
   await dbConnect();
   const tournament: any = await Tournament.findById(tournamentId).select("participants access externalInvite externalParticipants").lean();
-  if (!tournament) return false;
+  if (!tournament) return null;
 
   const session = await resolveSocketSession(headers);
   const userId = session?.id || "";
   const role = session?.role || "";
 
+  const playerKeys: string[] = [];
+  let memberAllowed = false;
   if (userId) {
     if (role === "student") {
       const student: any = await User.findById(userId).select("role isActive").lean();
-      if (!student || student.role !== "student" || student.isActive === false) return false;
+      if (!student || student.role !== "student" || student.isActive === false) return null;
     }
     if (
       role === "admin" ||
@@ -103,17 +111,25 @@ async function canJoinTournamentRoom(tournamentId: string, headers: Record<strin
       (tournament.access?.users || []).map((id: any) => String(id)).includes(userId) ||
       (tournament.participants || []).some((player: any) => String(player) === userId)
     ) {
-      return true;
+      memberAllowed = true;
+      // Recorded even before they register: someone who opens the event and
+      // then registers is already in the room. A spectator's key is never in
+      // the standings, so it pairs nobody.
+      playerKeys.push(`user:${userId}`);
     }
   }
 
   const guestToken = String(tournament.externalInvite?.token || "");
-  if (!guestToken) return false;
-  const guestSession = getTournamentGuestSessionFromCookieHeader(String(headers.cookie || ""), guestToken);
-  if (!guestSession?.username) return false;
-  return (tournament.externalParticipants || []).some(
-    (player: any) => String(player.username || "").toLowerCase() === guestSession.username.toLowerCase()
+  const guestSession = guestToken ? getTournamentGuestSessionFromCookieHeader(String(headers.cookie || ""), guestToken) : null;
+  const guestSeated = Boolean(
+    guestSession?.username &&
+      (tournament.externalParticipants || []).some(
+        (player: any) => String(player.username || "").toLowerCase() === guestSession.username.toLowerCase()
+      )
   );
+  if (guestSeated) playerKeys.push(`external:${guestSession!.username.trim().toLowerCase()}`);
+  if (!memberAllowed && !guestSeated) return null;
+  return playerKeys;
 }
 
 function socketCorsOrigins() {
@@ -178,9 +194,10 @@ export default function handler(_: NextApiRequest, res: NextApiResponse) {
       try {
         const tournamentId = String(client.handshake.auth?.tournamentId || client.handshake.query?.tournamentId || "").trim();
         if (!tournamentId) return next(new Error("missing_tournament"));
-        const allowed = await canJoinTournamentRoom(tournamentId, client.handshake.headers as any);
-        if (!allowed) return next(new Error("forbidden"));
+        const playerKeys = await admitToTournamentRoom(tournamentId, client.handshake.headers as any);
+        if (!playerKeys) return next(new Error("forbidden"));
         client.data.tournamentId = tournamentId;
+        client.data.playerKeys = playerKeys;
         return next();
       } catch {
         return next(new Error("forbidden"));
@@ -195,6 +212,13 @@ export default function handler(_: NextApiRequest, res: NextApiResponse) {
       }
       client.join(tournamentRoomName(tournamentId));
       client.emit("tournament:ready", { tournamentId });
+
+      // Presence: an Arena only pairs players who are in the room.
+      const playerKeys: string[] = Array.isArray(client.data.playerKeys) ? client.data.playerKeys : [];
+      for (const key of playerKeys) playerSocketOpened(tournamentId, key);
+      client.on("disconnect", () => {
+        for (const key of playerKeys) playerSocketClosed(tournamentId, key);
+      });
 
       // Board subscriptions. The handshake already established that this
       // client may see this tournament; here we only confirm the board it asks

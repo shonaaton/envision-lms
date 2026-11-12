@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { registerGuestForTournament, returnGuestToTournament } from "@/app/tournament-join/[token]/actions";
 import { applyGameMove, startTournament } from "@/lib/tournamentEngine";
 import { GET as getTournamentState } from "@/app/api/tournaments/[id]/state/route";
+import { playerSeen } from "@/lib/tournament/presence";
 
 const mocks = vi.hoisted(() => ({
   findTournament: vi.fn(),
@@ -180,6 +181,9 @@ describe.each(["swiss", "arena"])("%s guest games", (type) => {
       externalParticipants: [{ username: "GuestOne" }, { username: "GUESTONE" }, { username: "GuestTwo" }],
       save: vi.fn(),
     });
+    // An Arena pairs only players who are in the room.
+    playerSeen(tournamentId, "external:guestone");
+    playerSeen(tournamentId, "external:guesttwo");
     mocks.findTournament.mockResolvedValue(tournament);
     mocks.findGames.mockReturnValue(lean([]));
     mocks.updateTournament.mockResolvedValue({ modifiedCount: 1 });

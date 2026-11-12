@@ -89,7 +89,9 @@ export function tournamentRuleSections(tournament: any): RuleSection[] {
   }
 
   const attendance: string[] = [
-    "Open the tournament room a few minutes before the start and keep it open. Your board appears automatically when you are paired.",
+    arena
+      ? "Only players with the tournament page open are paired. Open it a few minutes before the start and keep it open; if you close it, you are simply not paired until you come back, and you keep your points."
+      : "Open the tournament room a few minutes before the start and keep it open. Your board appears automatically when you are paired.",
     `Make your first move within ${graceSeconds} seconds of your board appearing. While you are on the board the wait can stretch to ${plural(maxWaitMinutes, "minute")}, never longer.`,
     arena
       ? "If you do not start a game, it is cancelled with no score and you are paused, so you are not paired while away. Press Resume in the tournament room to play again."

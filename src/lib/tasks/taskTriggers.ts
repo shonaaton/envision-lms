@@ -4,6 +4,7 @@ import { formatAcademyDateTime } from "@/lib/academyTime";
 import { contactInterestLabel } from "@/lib/contactEnquiries";
 import { demoAgeGroupLabel, demoChildLevelLabel } from "@/lib/demoRequest";
 import { demoSlotLabel } from "@/lib/demoRequestSlots";
+import { leadSourceLine } from "@/lib/leadSource";
 import {
   cancelAutoTask,
   ensureAutoTask,
@@ -233,6 +234,7 @@ function demoRequestDetails(lead: any) {
   return [
     `WhatsApp: ${[lead?.countryCode, lead?.phone].filter(Boolean).join(" ")} (${lead?.whatsappVerifiedAt ? "verified" : "not verified"})`,
     `Email: ${lead?.email || "Not given"}`,
+    `Source: ${leadSourceLine(lead?.leadSource)}`,
     `Child's age: ${demoAgeGroupLabel(lead?.ageGroup)}`,
     `Child's level: ${demoChildLevelLabel(lead?.childLevel)}`,
     `Class preference: ${contactInterestLabel(lead?.interest)}`,

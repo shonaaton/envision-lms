@@ -1,6 +1,8 @@
 import { pushLeadStage } from "@/lib/crm/client";
 import { crmPhoneNumber, phoneKey } from "@/lib/crm/identity";
 import { contactInterestLabel } from "@/lib/contactEnquiries";
+import { assignDemoLeadOwner } from "@/lib/demoLeadCrm";
+import { leadSourceLine } from "@/lib/leadSource";
 import { demoAgeGroupLabel, demoChildLevelLabel } from "@/lib/demoRequest";
 import { raiseDemoRequestTask } from "@/lib/tasks/taskTriggers";
 import { ContactMessage } from "@/models/ContactMessage";
@@ -14,12 +16,21 @@ import { CrmLeadRecord } from "@/models/CrmLeadRecord";
  * family. The claim on `announcedAt` is what keeps it to one announcement.
  */
 export async function announceDemoRequest(leadId: string, request: Request) {
-  const lead: any = await ContactMessage.findOneAndUpdate(
+  const claimed: any = await ContactMessage.findOneAndUpdate(
     { _id: leadId, announcedAt: null },
-    { $set: { announcedAt: new Date() } },
+    { $set: { announcedAt: new Date() }, $unset: { awaitingCode: 1 } },
     { new: true },
   ).lean();
-  if (!lead) return;
+  if (!claimed) return;
+
+  // A request only gets an owner once it is submitted, so an abandoned code
+  // step never uses up a salesperson's turn. A fault here leaves the lead
+  // unowned, where the CRM's next admin visit hands it out.
+  const owned: any = await assignDemoLeadOwner(leadId).catch((error) => {
+    console.error("[demo-request] lead not assigned", error);
+    return null;
+  });
+  const lead = owned || claimed;
 
   await raiseDemoRequestTask(lead);
 
@@ -38,6 +49,7 @@ export async function announceDemoRequest(leadId: string, request: Request) {
     stage: "DEMO_REQUESTED",
     note: [
       "Free demo form",
+      `Source: ${leadSourceLine(lead.leadSource)}`,
       `Age: ${demoAgeGroupLabel(lead.ageGroup)}`,
       `Level: ${demoChildLevelLabel(lead.childLevel)}`,
       `Preference: ${contactInterestLabel(lead.interest)}`,

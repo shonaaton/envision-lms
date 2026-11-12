@@ -4,8 +4,9 @@ import { Types } from "mongoose";
 import { dbConnect } from "@/lib/db";
 import { ownerCandidates } from "@/lib/demoLeadOwner";
 import { demoLeadOwnerForTurn, demoLeadRotationNames, resolveDemoLeadRotation } from "@/lib/demoLeadRotation";
-import { DEMO_LEAD_STAGE_VALUES, DEMO_REQUEST_KIND, demoLeadStage, demoLeadStageLabel, type DemoLeadStage } from "@/lib/demoRequest";
+import { DEMO_LEAD_STAGE_VALUES, DEMO_REQUEST_KIND, SUBMITTED_DEMO_REQUEST, demoLeadStage, demoLeadStageLabel, type DemoLeadStage } from "@/lib/demoRequest";
 import { demoSlotLabel } from "@/lib/demoRequestSlots";
+import { LEAD_CHANNELS, summarizeLeadSource, type LeadChannel, type LeadSourceSummary } from "@/lib/leadSource";
 import { cancelDemoLeadCallTask, reassignDemoRequestTask, resolveDemoLeadCallTask } from "@/lib/tasks/taskTriggers";
 import { ContactMessage, DemoLeadRotation } from "@/models/ContactMessage";
 import { User } from "@/models/User";
@@ -15,7 +16,8 @@ import { WhatsAppOtp } from "@/models/WhatsAppOtp";
  * The Demo Leads CRM: every request from the free demo form
  * (/book-free-demo-class/form), and nothing else.
  *
- * Each lead is given to one salesperson in turn when the form is first saved.
+ * Each lead is given to one salesperson in turn once it is submitted, which
+ * means once the family has entered the WhatsApp code (see SUBMITTED_DEMO_REQUEST).
  * Admins and built-in sub-admins see every lead; anyone on a named access role
  * (the salespeople, marketing) sees only the leads they own, and every write
  * here re-checks that, so a guessed id opens nothing.
@@ -86,11 +88,11 @@ export async function assignDemoLeadOwner(leadId: unknown) {
 
 /** Leads saved before the CRM existed, oldest first so the turns follow the order they arrived in. */
 async function assignLeadsWithoutOwner() {
-  const waiting: any[] = await ContactMessage.find({ kind: DEMO_REQUEST_KIND, salesOwner: null }).sort({ createdAt: 1 }).limit(100).select("_id").lean();
+  const waiting: any[] = await ContactMessage.find({ kind: DEMO_REQUEST_KIND, salesOwner: null, ...SUBMITTED_DEMO_REQUEST }).sort({ createdAt: 1 }).limit(100).select("_id").lean();
   for (const lead of waiting) await assignDemoLeadOwner(lead._id);
 }
 
-export type DemoLeadFilters = { stage: DemoLeadStage | "all"; owner: string; query: string };
+export type DemoLeadFilters = { stage: DemoLeadStage | "all"; owner: string; query: string; channel: LeadChannel | "all" };
 
 export function parseDemoLeadFilters(params: Record<string, string | string[] | undefined>): DemoLeadFilters {
   const single = (key: string) => {
@@ -99,10 +101,12 @@ export function parseDemoLeadFilters(params: Record<string, string | string[] | 
   };
   const stage = single("stage");
   const owner = single("owner");
+  const channel = single("source");
   return {
     stage: (DEMO_LEAD_STAGE_VALUES as readonly string[]).includes(stage) ? (stage as DemoLeadStage) : "all",
     owner: owner === "none" || Types.ObjectId.isValid(owner) ? owner : "all",
     query: single("q").slice(0, 80),
+    channel: LEAD_CHANNELS.some((item) => item.value === channel) ? (channel as LeadChannel) : "all",
   };
 }
 
@@ -112,6 +116,7 @@ export function demoLeadsHref(filters: DemoLeadFilters, change: Partial<DemoLead
   if (next.stage !== "all") params.set("stage", next.stage);
   if (next.owner !== "all") params.set("owner", next.owner);
   if (next.query) params.set("q", next.query);
+  if (next.channel !== "all") params.set("source", next.channel);
   const search = params.toString();
   return search ? `/sales/leads?${search}` : "/sales/leads";
 }
@@ -119,6 +124,7 @@ export function demoLeadsHref(filters: DemoLeadFilters, change: Partial<DemoLead
 export type DemoLeadRow = {
   id: string;
   name: string;
+  source: LeadSourceSummary;
   email: string;
   countryCode: string;
   phone: string;
@@ -138,7 +144,8 @@ export type DemoLeadRow = {
 
 /** What the viewer may see, before any filter they chose. */
 function scopeFor(viewer: DemoLeadViewer): Record<string, unknown> {
-  const scope: Record<string, unknown> = { kind: DEMO_REQUEST_KIND };
+  // A request still waiting for its WhatsApp code was never submitted.
+  const scope: Record<string, unknown> = { kind: DEMO_REQUEST_KIND, ...SUBMITTED_DEMO_REQUEST };
   if (!viewer.seesAll) scope.salesOwner = new Types.ObjectId(viewer.id);
   return scope;
 }
@@ -157,9 +164,18 @@ export async function getDemoLeads(viewer: DemoLeadViewer, filters: DemoLeadFilt
 
   const where: Record<string, unknown> = { ...scope };
   if (filters.stage !== "all") where.leadStage = stageMatch(filters.stage);
+  // Leads from before sources were recorded have no channel and count as "Not recorded".
+  if (filters.channel !== "all") where.leadChannel = filters.channel === "unknown" ? { $in: ["unknown", null] } : filters.channel;
   if (filters.query) {
     const pattern = new RegExp(filters.query.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i");
-    where.$or = [{ name: pattern }, { phone: pattern }, { email: pattern }];
+    where.$or = [
+      { name: pattern },
+      { phone: pattern },
+      { email: pattern },
+      { "leadSource.utm_campaign": pattern },
+      { "leadSource.utm_term": pattern },
+      { "leadSource.utm_content": pattern },
+    ];
   }
 
   const [docs, total, grouped, owners] = await Promise.all([
@@ -178,6 +194,7 @@ export async function getDemoLeads(viewer: DemoLeadViewer, filters: DemoLeadFilt
   const rows: DemoLeadRow[] = (docs as any[]).map((doc) => ({
     id: String(doc._id),
     name: String(doc.name || ""),
+    source: summarizeLeadSource(doc.leadSource),
     email: String(doc.email || ""),
     countryCode: String(doc.countryCode || ""),
     phone: String(doc.phone || ""),
@@ -260,15 +277,18 @@ export async function reassignDemoLead(viewer: DemoLeadViewer, leadId: string, o
 }
 
 /**
- * Admins only: removes a lead for good, with its open call task and any unused
- * WhatsApp code. The rotation counter is left alone, so the next lead still goes
- * to whoever's turn it is. Returns the deleted lead's name and number for the
- * activity log, or null when nothing was deleted.
+ * Removes a lead for good, with its open call task and any unused WhatsApp code.
+ * Admins may delete any lead; a salesperson only the leads they own (user's
+ * call, 2026-11-12), through the same scope as every other write here. The
+ * rotation counter is left alone, so the next lead still goes to whoever's turn
+ * it is. Returns the deleted lead's name and number for the activity log, or
+ * null when nothing was deleted.
  */
 export async function deleteDemoLead(viewer: DemoLeadViewer, leadId: string) {
-  if (!viewer.seesAll || !Types.ObjectId.isValid(leadId)) return null;
+  const match = ownLead(viewer, leadId);
+  if (!match) return null;
   await dbConnect();
-  const deleted: any = await ContactMessage.findOneAndDelete({ _id: leadId, kind: DEMO_REQUEST_KIND }).select("name phone countryCode").lean();
+  const deleted: any = await ContactMessage.findOneAndDelete(match).select("name phone countryCode").lean();
   if (!deleted) return null;
   await cancelDemoLeadCallTask(leadId);
   await WhatsAppOtp.deleteOne({ reference: leadId }).catch(() => undefined);

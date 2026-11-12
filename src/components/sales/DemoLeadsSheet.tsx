@@ -2,6 +2,7 @@
 
 import { Fragment, useState } from "react";
 import { MessageCircle, Trash2 } from "lucide-react";
+import type { LeadSourceSummary } from "@/lib/leadSource";
 
 /**
  * The Demo Leads CRM as a sheet: one lead per row, one detail per column.
@@ -16,6 +17,8 @@ export type DemoLeadSheetRow = {
   name: string;
   /** "" on requests sent before the form asked for one (2026-11-12). */
   email: string;
+  /** The ad or website the family came from. */
+  source: LeadSourceSummary;
   received: string;
   phoneLabel: string;
   telHref: string;
@@ -41,6 +44,8 @@ type Props = {
   owners: Array<{ id: string; name: string }>;
   canManage: boolean;
   seesAll: boolean;
+  /** Admins, and salespeople on their own leads (the page only lists those to them). */
+  canDelete: boolean;
   moveStage: Action;
   addNote: Action;
   changeOwner: Action;
@@ -64,27 +69,27 @@ const VERIFICATION: Record<DemoLeadSheetRow["verification"], { label: string; st
 const TH = "border-b border-r border-slate-200 bg-slate-100 px-2 py-2 text-left text-[10px] font-black uppercase tracking-[0.04em] text-slate-600 last:border-r-0";
 const TD = "break-words border-b border-r border-slate-200 px-2 py-2 align-middle last:border-r-0";
 
-export function DemoLeadsSheet({ rows, stages, owners, canManage, seesAll, moveStage, addNote, changeOwner, deleteLead }: Props) {
+export function DemoLeadsSheet({ rows, stages, owners, canManage, seesAll, canDelete, moveStage, addNote, changeOwner, deleteLead }: Props) {
   const [open, setOpen] = useState<string | null>(null);
-  const columns = seesAll ? 12 : 10;
+  const columns = 10 + (seesAll ? 1 : 0) + (canDelete ? 1 : 0);
 
   return (
     <div className="overflow-x-auto rounded-2xl border border-slate-200 bg-white shadow-sm">
       {/* Fixed column shares and wrapping cells: every column, the delete button included, is on screen without scrolling sideways. */}
       <table className="w-full min-w-[860px] table-fixed border-collapse text-xs text-slate-800">
         <colgroup>
-          <col style={{ width: "8%" }} />
-          <col style={{ width: "14%" }} />
-          <col style={{ width: "12%" }} />
-          <col style={{ width: "6%" }} />
-          <col style={{ width: "8%" }} />
-          <col style={{ width: "8%" }} />
           <col style={{ width: "7%" }} />
-          <col style={{ width: "9%" }} />
+          <col style={{ width: "13%" }} />
+          <col style={{ width: "11%" }} />
+          <col style={{ width: "6%" }} />
+          <col style={{ width: "7%" }} />
+          <col style={{ width: "12%" }} />
+          <col style={{ width: "7%" }} />
+          <col style={{ width: "8%" }} />
           <col style={{ width: "10%" }} />
           {seesAll ? <col style={{ width: "10%" }} /> : null}
           <col style={{ width: "5%" }} />
-          {seesAll ? <col style={{ width: "3%" }} /> : null}
+          {canDelete ? <col style={{ width: "3%" }} /> : null}
         </colgroup>
         <thead>
           <tr>
@@ -93,13 +98,13 @@ export function DemoLeadsSheet({ rows, stages, owners, canManage, seesAll, moveS
             <th className={TH}>WhatsApp</th>
             <th className={TH}>Age</th>
             <th className={TH}>Level</th>
-            <th className={TH}>Class</th>
+            <th className={TH}>Source</th>
             <th className={TH}>Time to call</th>
             <th className={TH}>Demo slot</th>
             <th className={TH}>Stage</th>
             {seesAll ? <th className={TH}>Salesperson</th> : null}
             <th className={TH}>Notes</th>
-            {seesAll ? <th className={TH}><span className="sr-only">Delete</span></th> : null}
+            {canDelete ? <th className={TH}><span className="sr-only">Delete</span></th> : null}
           </tr>
         </thead>
         <tbody>
@@ -136,7 +141,19 @@ export function DemoLeadsSheet({ rows, stages, owners, canManage, seesAll, moveS
                   </td>
                   <td className={TD}>{row.age}</td>
                   <td className={TD}>{row.level}</td>
-                  <td className={TD}>{row.classPreference}</td>
+                  <td className={TD}>
+                    <span className={`block font-bold ${row.source.channel === "meta_ad" ? "text-blue-800" : row.source.channel === "unknown" ? "text-slate-400" : "text-slate-900"}`}>
+                      {row.source.headline}
+                    </span>
+                    {row.source.details
+                      .filter((item) => ["Campaign", "Ad set", "Ad"].includes(item.label))
+                      .map((item) => (
+                        <span key={item.label} className="block text-[11px] text-slate-600" title={`${item.label}: ${item.value}`}>
+                          <span className="font-semibold text-slate-500">{item.label}:</span> {item.value}
+                        </span>
+                      ))}
+                    {row.classPreference !== "Online classes" ? <span className="mt-1 block text-[11px] font-semibold text-amber-800">{row.classPreference}</span> : null}
+                  </td>
                   <td className={TD}>{row.callTime || <span className="text-slate-400">Not given</span>}</td>
                   <td className={TD}>{row.demoSlot || <span className="text-slate-400">Not chosen</span>}</td>
                   <td className={TD}>
@@ -197,7 +214,7 @@ export function DemoLeadsSheet({ rows, stages, owners, canManage, seesAll, moveS
                       {expanded ? "Hide" : row.noteCount ? `Notes (${row.noteCount})` : "Add note"}
                     </button>
                   </td>
-                  {seesAll ? (
+                  {canDelete ? (
                     <td className={`${TD} !px-0 text-center`}>
                       <form
                         action={deleteLead}
@@ -220,6 +237,17 @@ export function DemoLeadsSheet({ rows, stages, owners, canManage, seesAll, moveS
                   <tr className="bg-slate-50">
                     <td colSpan={columns} className="whitespace-normal border-b border-slate-200 px-4 py-3">
                       <div className="max-w-3xl">
+                        {row.source.details.length ? (
+                          <dl className="mb-3 grid gap-x-6 gap-y-1 rounded-lg border border-slate-200 bg-white p-3 text-xs sm:grid-cols-2">
+                            <div className="sm:col-span-2 font-black text-slate-700">Where this lead came from: {row.source.headline}</div>
+                            {row.source.details.map((item) => (
+                              <div key={item.label} className="flex gap-2">
+                                <dt className="shrink-0 font-semibold text-slate-500">{item.label}</dt>
+                                <dd className="break-all text-slate-900">{item.value}</dd>
+                              </div>
+                            ))}
+                          </dl>
+                        ) : null}
                         {row.log.length ? (
                           <ul className="space-y-2">
                             {row.log.map((entry, at) => (

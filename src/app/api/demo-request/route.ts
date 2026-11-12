@@ -1,9 +1,10 @@
 import { NextResponse } from "next/server";
 import { ZodError } from "zod";
 import { dbConnect } from "@/lib/db";
-import { assignDemoLeadOwner } from "@/lib/demoLeadCrm";
+import { leadChannel, sanitizeLeadSource } from "@/lib/leadSource";
 import { DEMO_REQUEST_KIND, demoRequestEventId } from "@/lib/demoRequest";
 import { announceDemoRequest } from "@/lib/demoRequestLead";
+import { exactNationalNumber } from "@/lib/phoneCountryCodes";
 import { consumeRateLimit, getClientIp, jsonRateLimitHeaders } from "@/lib/requestSecurity";
 import { demoRequestSchema } from "@/lib/validation";
 import { issueWhatsAppOtp, maskRecipient } from "@/lib/whatsappOtp";
@@ -12,11 +13,13 @@ import { ContactMessage } from "@/models/ContactMessage";
 export const dynamic = "force-dynamic";
 
 /**
- * The free demo form's submit. Saves the request, then sends the WhatsApp code.
+ * The free demo form's "Submit details". Saves the details, then sends the WhatsApp code.
  *
- * The request is saved before the code goes out, so somebody who never finishes
- * verifying still shows in the inbox, marked unverified. Sales is only tasked
- * once the number is proven, or when the code could not be sent at all.
+ * The form is not submitted yet: the saved request carries `awaitingCode`, so it
+ * is no lead, has no owner and is listed nowhere until the code is entered
+ * (/api/demo-request/otp). The one exception is a code that could not be sent
+ * at all, where the request goes through unverified: paid traffic lands here,
+ * and a WhatsApp outage must not lose the family.
  */
 export async function POST(req: Request) {
   try {
@@ -33,9 +36,12 @@ export async function POST(req: Request) {
     if (data.website) return NextResponse.json({ ok: true, otpSent: false });
 
     await dbConnect();
-    const phone = data.phone.replace(/\D/g, "").replace(/^0+/, "");
+    // The schema already refused a number of the wrong length, so this is never empty.
+    const phone = exactNationalNumber(data.phone, data.countryCode);
+    const source = sanitizeLeadSource(data.source);
     const fields = {
       kind: DEMO_REQUEST_KIND,
+      awaitingCode: true,
       name: data.parentName,
       email: data.email,
       countryCode: data.countryCode,
@@ -45,6 +51,8 @@ export async function POST(req: Request) {
       interest: data.interest,
       preferredTime: data.preferredTime,
       sourcePath: data.sourcePath,
+      leadSource: source,
+      leadChannel: leadChannel(source),
     };
     // One lead per WhatsApp number. A number that already reached sales (verified,
     // or announced because its code could not be sent) is refused, and the try is
@@ -67,9 +75,6 @@ export async function POST(req: Request) {
       (existing && (await ContactMessage.findOneAndUpdate({ _id: existing._id, whatsappVerifiedAt: null, announcedAt: null }, { $set: fields }, { new: true }))) ||
       (await ContactMessage.create(fields));
     const id = String(lead._id);
-    // Owned from the first save, so a family who never enters the code is still
-    // somebody's lead. A fault here must not stop the family's submission.
-    await assignDemoLeadOwner(id).catch((error) => console.error("[demo-request] lead not assigned", error));
 
     const otp = await issueWhatsAppOtp({ reference: id, phone, countryCode: data.countryCode });
     if (otp.status === "throttled") {
@@ -80,7 +85,7 @@ export async function POST(req: Request) {
     }
     if (otp.status === "failed") {
       console.error("[demo-request] WhatsApp code not sent", otp.reason);
-      await ContactMessage.updateOne({ _id: id }, { $set: { otpFailedAt: new Date() } });
+      await ContactMessage.updateOne({ _id: id }, { $set: { otpFailedAt: new Date() }, $unset: { awaitingCode: 1 } });
       void announceDemoRequest(id, req).catch((error) => console.error("[demo-request] announce failed", error));
       return NextResponse.json({ ok: true, id, otpSent: false, metaEventId: demoRequestEventId(id) });
     }

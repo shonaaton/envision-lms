@@ -16,6 +16,7 @@ import {
   setDemoLeadStage,
 } from "@/lib/demoLeadCrm";
 import { DEMO_LEAD_STAGES, demoAgeGroupLabel, demoChildLevelLabel, demoLeadStageLabel } from "@/lib/demoRequest";
+import { LEAD_CHANNELS } from "@/lib/leadSource";
 import { logSalesAction, logSalesView, requireSalesViewer } from "@/lib/salesAudit";
 
 export const dynamic = "force-dynamic";
@@ -66,10 +67,11 @@ async function changeOwner(formData: FormData) {
   revalidatePath("/sales/leads");
 }
 
+/** Admins delete any lead; a salesperson with manage access, only their own (checked in deleteDemoLead). */
 async function deleteLead(formData: FormData) {
   "use server";
   const viewer = await crmViewer();
-  if (!viewer?.lead.seesAll) throw new Error("Forbidden");
+  if (!viewer || !(viewer.lead.seesAll || viewer.canManage)) throw new Error("Forbidden");
   const lead = String(formData.get("lead") || "");
   const deleted = await deleteDemoLead(viewer.lead, lead);
   if (deleted) {
@@ -89,7 +91,7 @@ export default async function DemoLeadsPage({ searchParams }: { searchParams: Re
   logSalesView(viewer.sales, "contactEnquiries", { surface: "demoLeads", stage: filters.stage, results: data.rows.length });
 
   const { seesAll } = viewer.lead;
-  const filtered = Boolean(filters.query) || filters.owner !== "all";
+  const filtered = Boolean(filters.query) || filters.owner !== "all" || filters.channel !== "all";
 
   // Labels and IST dates are made here, on the server, so the sheet has nothing to format.
   const sheetRows: DemoLeadSheetRow[] = data.rows.map((row) => {
@@ -98,6 +100,7 @@ export default async function DemoLeadsPage({ searchParams }: { searchParams: Re
       id: row.id,
       name: row.name,
       email: row.email,
+      source: row.source,
       received: when(row.createdAt),
       phoneLabel: contactDisplayPhone(row.countryCode, row.phone),
       telHref: `tel:${wa ? `+${wa}` : row.phone}`,
@@ -155,7 +158,7 @@ export default async function DemoLeadsPage({ searchParams }: { searchParams: Re
                 <input
                   name="q"
                   defaultValue={filters.query}
-                  placeholder="Parent's name, number or email"
+                  placeholder="Name, number, email or campaign"
                   className="h-full min-w-0 flex-1 bg-transparent text-sm text-slate-950 outline-none"
                 />
               </span>
@@ -176,10 +179,23 @@ export default async function DemoLeadsPage({ searchParams }: { searchParams: Re
                 </select>
               </label>
             ) : null}
+            <label className="min-w-[11rem]">
+              <span className="mb-1.5 block text-xs font-black uppercase tracking-[0.1em] text-slate-500">Source</span>
+              <select
+                name="source"
+                defaultValue={filters.channel}
+                className="h-11 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-950 outline-none focus:border-brand"
+              >
+                <option value="all">All sources</option>
+                {LEAD_CHANNELS.map((channel) => (
+                  <option key={channel.value} value={channel.value}>{channel.label}</option>
+                ))}
+              </select>
+            </label>
             {filters.stage !== "all" ? <input type="hidden" name="stage" value={filters.stage} /> : null}
             <button type="submit" className="btn-primary h-11">Apply</button>
             {filtered ? (
-              <Link href={demoLeadsHref(filters, { query: "", owner: "all" })} className="btn-outline h-11">Clear</Link>
+              <Link href={demoLeadsHref(filters, { query: "", owner: "all", channel: "all" })} className="btn-outline h-11">Clear</Link>
             ) : null}
           </form>
         </section>
@@ -201,6 +217,7 @@ export default async function DemoLeadsPage({ searchParams }: { searchParams: Re
               owners={data.owners}
               canManage={viewer.canManage}
               seesAll={seesAll}
+              canDelete={seesAll || viewer.canManage}
               moveStage={moveStage}
               addNote={addNote}
               changeOwner={changeOwner}

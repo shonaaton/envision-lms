@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { carriesCountryCode, dialCodeForCountryName, splitInternationalNumber } from "@/lib/phoneCountryCodes";
+import { carriesCountryCode, dialCodeForCountryName, exactNationalNumber, exactPhoneNumberProblem, splitInternationalNumber } from "@/lib/phoneCountryCodes";
 
 describe("carriesCountryCode", () => {
   it("does not mistake an Indian mobile starting with 9 for a +91 prefix", () => {
@@ -46,5 +46,34 @@ describe("dialCodeForCountryName", () => {
     expect(dialCodeForCountryName("Other")).toBeNull();
     expect(dialCodeForCountryName("")).toBeNull();
     expect(dialCodeForCountryName("Atlantis")).toBeNull();
+  });
+});
+
+describe("exactNationalNumber", () => {
+  it("refuses an Indian mobile with a digit typed twice", () => {
+    // The 12 Nov 2026 lead: 11 digits, so the WhatsApp code went nowhere.
+    expect(exactNationalNumber("80175231325", "+91")).toBe("");
+    expect(exactPhoneNumberProblem("80175231325", "+91")).toBe("Please enter a valid India WhatsApp number (10 digits).");
+  });
+
+  it("accepts ten digits, with spaces, a trunk zero or the country code in front", () => {
+    expect(exactNationalNumber("98765 43210", "+91")).toBe("9876543210");
+    expect(exactNationalNumber("09876543210", "+91")).toBe("9876543210");
+    expect(exactNationalNumber("919876543210", "+91")).toBe("9876543210");
+    expect(exactPhoneNumberProblem("9876543210", "+91")).toBe("");
+  });
+
+  it("refuses too short", () => {
+    expect(exactNationalNumber("987654321", "+91")).toBe("");
+  });
+
+  it("uses each country's own length", () => {
+    expect(exactNationalNumber("81234567", "+65")).toBe("81234567");
+    expect(exactNationalNumber("812345678", "+65")).toBe("");
+  });
+
+  it("keeps the loose range for codes outside the table", () => {
+    expect(exactNationalNumber("1712345678", "+880")).toBe("1712345678");
+    expect(exactNationalNumber("12345", "+880")).toBe("");
   });
 });

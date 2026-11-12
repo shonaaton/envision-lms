@@ -3,6 +3,7 @@
 import { useEffect, useId, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import { Loader2, X } from "lucide-react";
+import { captureLeadSource } from "@/lib/leadSource";
 import "./form/form.css";
 
 const DemoRequestForm = dynamic(() => import("./form/DemoRequestForm"), {
@@ -32,6 +33,11 @@ export default function DemoFormModal({ formHref }: { formHref: string }) {
   const dialog = useRef<HTMLDialogElement>(null);
   const [opened, setOpened] = useState(false);
   const titleId = useId();
+
+  // The ad tags on the link the parent arrived by, kept for the form to send.
+  useEffect(() => {
+    captureLeadSource();
+  }, []);
 
   useEffect(() => {
     function onClick(event: MouseEvent) {

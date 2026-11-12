@@ -5,6 +5,18 @@
 
 export const DEMO_REQUEST_KIND = "demo_request";
 
+/**
+ * Only requests the family actually submitted, for every query that lists or
+ * hands out leads.
+ *
+ * Since 2026-11-12 the form is not submitted until the WhatsApp code is entered.
+ * The details are saved when the parent presses "Submit details" (so the code
+ * has something to check against and "Change number" keeps them), but carry
+ * `awaitingCode` until the code is right or could not be sent at all. Requests
+ * saved before then have no flag and stay listed, verified or not.
+ */
+export const SUBMITTED_DEMO_REQUEST = { awaitingCode: { $ne: true } } as const;
+
 /** Where the form sends a family once their request is in, and the sessionStorage key that carries it there. */
 export const DEMO_THANKS_PATH = "/book-free-demo-class/thank-you";
 export const DEMO_THANKS_STORAGE_KEY = "envision:demo-request";

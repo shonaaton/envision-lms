@@ -29,12 +29,40 @@ const ContactMessageSchema = new Schema(
     handledAt: Date,
     /** The page the form was submitted from, for attribution. */
     sourcePath: { type: String, trim: true },
+    /**
+     * Demo requests only: the ad tags (utm_*, campaign/ad set/ad ids, placement)
+     * or the referring site the family arrived with - see src/lib/leadSource.ts.
+     * `leadChannel` is worked out from it on save, for the CRM's source filter.
+     */
+    leadSource: {
+      _id: false,
+      utm_source: String,
+      utm_medium: String,
+      utm_campaign: String,
+      utm_id: String,
+      utm_term: String,
+      utm_content: String,
+      campaign_id: String,
+      adset_id: String,
+      ad_id: String,
+      placement: String,
+      fbclid: String,
+      gclid: String,
+      referrer: String,
+      landingPath: String,
+    },
+    leadChannel: { type: String, trim: true, index: true },
 
     /** Absent on older rows, which are all contact-form messages. See src/lib/demoRequest.ts. */
     kind: { type: String, enum: ["contact", "demo_request"], default: "contact", index: true },
     ageGroup: { type: String, trim: true },
     childLevel: { type: String, trim: true },
     preferredTime: { type: String, trim: true },
+    /**
+     * True from "Submit details" until the code is entered (or could not be sent).
+     * Such a request is not a lead yet: see SUBMITTED_DEMO_REQUEST in src/lib/demoRequest.ts.
+     */
+    awaitingCode: Boolean,
     /** Set once the family has entered the code sent to this WhatsApp number. */
     whatsappVerifiedAt: Date,
     /** Set when the code could not be sent, so sales knows why it is unverified. */
@@ -52,7 +80,7 @@ const ContactMessageSchema = new Schema(
 
     /**
      * The Demo Leads CRM (/sales/leads), demo requests only. The owner is set by
-     * rotation when the form is first saved - see src/lib/demoLeadCrm.ts - and
+     * rotation when the request is submitted - see src/lib/demoLeadCrm.ts - and
      * a salesperson sees only the leads they own.
      */
     salesOwner: { type: Schema.Types.ObjectId, ref: "User", index: true },

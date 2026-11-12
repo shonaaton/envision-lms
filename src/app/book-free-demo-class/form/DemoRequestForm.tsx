@@ -4,8 +4,9 @@ import { useEffect, useRef, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { ChevronDown, Clock3, Loader2, Mail, MessageCircle, UserRound } from "lucide-react";
 import { ONLINE_INTEREST } from "@/lib/contactEnquiries";
+import { captureLeadSource, readLeadSource } from "@/lib/leadSource";
 import { DEMO_AGE_GROUPS, DEMO_CHILD_LEVELS, DEMO_THANKS_PATH, DEMO_THANKS_STORAGE_KEY } from "@/lib/demoRequest";
-import { DIAL_CODES, dialCodeEntry } from "@/lib/phoneCountryCodes";
+import { DIAL_CODES, dialCodeEntry, exactPhoneNumberProblem } from "@/lib/phoneCountryCodes";
 import { LEGAL_LINKS } from "@/lib/publicLinks";
 import { trackConversion } from "@/lib/siteAnalytics";
 
@@ -61,6 +62,11 @@ export default function DemoRequestForm({ embedded = false, titleId }: { embedde
   const dial = dialCodeEntry(form.countryCode);
   const phonePlaceholder = dial ? `Enter ${dial.nationalLengths.join(" or ")}-digit number` : "Enter your number";
 
+  // On the form's own page (no pop-up), the ad tags arrive on this URL.
+  useEffect(() => {
+    captureLeadSource();
+  }, []);
+
   useEffect(() => {
     if (step !== "code" || resendIn <= 0) return;
     const timer = window.setTimeout(() => setResendIn((seconds) => seconds - 1), 1000);
@@ -98,10 +104,16 @@ export default function DemoRequestForm({ embedded = false, titleId }: { embedde
   async function submitDetails(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (busy) return;
+    // The server says the same; checking here first saves a round trip on the commonest slip.
+    const numberProblem = exactPhoneNumberProblem(form.phone, form.countryCode);
+    if (numberProblem) {
+      setError(numberProblem);
+      return;
+    }
     setBusy(true);
     setError("");
     try {
-      const { ok, payload } = await post("/api/demo-request", { ...form, sourcePath: window.location.pathname });
+      const { ok, payload } = await post("/api/demo-request", { ...form, sourcePath: window.location.pathname, source: readLeadSource() });
       if (!ok) {
         setError(payload?.error || "Could not save your details. Please try again.");
         return;
@@ -176,7 +188,8 @@ export default function DemoRequestForm({ embedded = false, titleId }: { embedde
         <div className="dform-head">
           <Title id={titleId} className="dform-title">Check your WhatsApp</Title>
           <p>
-            We sent a {CODE_LENGTH}-digit code to <strong>{sentTo}</strong>. Enter it here to confirm your number.
+            We sent a {CODE_LENGTH}-digit code to <strong>{sentTo}</strong>. Enter it here to send your request: we receive it only once the
+            code is entered.
           </p>
         </div>
         <form
@@ -209,7 +222,7 @@ export default function DemoRequestForm({ embedded = false, titleId }: { embedde
           ) : null}
           <button className="dform-btn" type="submit" disabled={busy || code.length !== CODE_LENGTH}>
             {busy ? <Loader2 className="dform-spin" size={18} aria-hidden="true" /> : null}
-            Verify
+            Verify and submit
           </button>
         </form>
         <div className="dform-code-actions">
@@ -310,7 +323,7 @@ export default function DemoRequestForm({ embedded = false, titleId }: { embedde
               />
             </div>
           </div>
-          <small>We will send a code to this number on WhatsApp.</small>
+          <small>We will send a code to this number on WhatsApp. Your request is sent once you enter it.</small>
         </div>
 
         <fieldset className="dform-field">

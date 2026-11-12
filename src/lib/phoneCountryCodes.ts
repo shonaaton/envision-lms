@@ -85,6 +85,35 @@ export function phoneNumberProblem(phone: unknown, countryCode?: unknown) {
   return "";
 }
 
+/**
+ * The national part of a number whose length is exactly right, or "" when it is not.
+ *
+ * Stricter than `phoneNumberProblem`, for forms where a wrong number costs a lead:
+ * the free demo form sends its code over WhatsApp, and an 11-digit "Indian
+ * mobile" (a digit typed twice) was accepted, the code went nowhere, and the
+ * family could never verify. The number may carry its own dialling code in
+ * front ("919876543210"); that is dropped. Codes the table does not describe
+ * keep the old 6-15 digit range.
+ */
+export function exactNationalNumber(phone: unknown, countryCode?: unknown) {
+  const digits = String(phone || "").replace(/[^\d]/g, "").replace(/^0+/, "");
+  if (!digits) return "";
+  const entry = dialCodeEntry(String(countryCode || ""));
+  if (!entry) return digits.length >= 6 && digits.length <= 15 ? digits : "";
+  if (entry.nationalLengths.includes(digits.length)) return digits;
+  if (carriesCountryCode(digits, entry.code)) return digits.slice(entry.code.length);
+  return "";
+}
+
+/** Why `exactNationalNumber` refused this number, or "" when it is fine. */
+export function exactPhoneNumberProblem(phone: unknown, countryCode?: unknown) {
+  if (!String(phone || "").replace(/[^\d]/g, "")) return "Please enter your WhatsApp number.";
+  if (exactNationalNumber(phone, countryCode)) return "";
+  const entry = dialCodeEntry(String(countryCode || ""));
+  if (!entry) return "Please enter a valid WhatsApp number.";
+  return `Please enter a valid ${entry.country} WhatsApp number (${entry.nationalLengths.join(" or ")} digits).`;
+}
+
 /** Splits a full international number into its dialling code and national part. */
 export function splitInternationalNumber(digits: string) {
   const clean = String(digits || "").replace(/[^\d]/g, "");

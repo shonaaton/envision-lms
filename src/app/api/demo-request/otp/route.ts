@@ -37,7 +37,7 @@ export async function POST(req: Request) {
       }
       if (otp.status === "failed") {
         console.error("[demo-request] WhatsApp code not resent", otp.reason);
-        await ContactMessage.updateOne({ _id: id }, { $set: { otpFailedAt: new Date() } });
+        await ContactMessage.updateOne({ _id: id }, { $set: { otpFailedAt: new Date() }, $unset: { awaitingCode: 1 } });
         void announceDemoRequest(id, req).catch((error) => console.error("[demo-request] announce failed", error));
         return NextResponse.json({ ok: true, otpSent: false, metaEventId: demoRequestEventId(id) });
       }
@@ -53,7 +53,8 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: `That code is not right. You have ${left} left.` }, { status: 400 });
     }
 
-    await ContactMessage.updateOne({ _id: id }, { $set: { whatsappVerifiedAt: new Date() } });
+    // The right code is what submits the form: from here it is a lead.
+    await ContactMessage.updateOne({ _id: id }, { $set: { whatsappVerifiedAt: new Date() }, $unset: { awaitingCode: 1 } });
     void announceDemoRequest(id, req).catch((error) => console.error("[demo-request] announce failed", error));
     return NextResponse.json({ ok: true, verified: true, metaEventId: demoRequestEventId(id) });
   } catch (error) {

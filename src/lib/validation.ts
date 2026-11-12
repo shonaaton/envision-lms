@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { COURSE_TIER_ENUM, COURSE_TIER_ENUM_WITH_MIXED_AND_BLANK } from "@/lib/courseTiers";
-import { phoneNumberProblem } from "@/lib/phoneCountryCodes";
+import { exactPhoneNumberProblem, phoneNumberProblem } from "@/lib/phoneCountryCodes";
 import { CONTACT_INTEREST_VALUES, ONLINE_INTEREST } from "@/lib/contactEnquiries";
 import { DEMO_AGE_GROUP_VALUES, DEMO_CHILD_LEVEL_VALUES } from "@/lib/demoRequest";
 
@@ -327,9 +327,12 @@ export const demoRequestSchema = z.object({
   }),
   preferredTime: z.string().trim().min(2, "Please tell us a convenient time to connect.").max(80),
   sourcePath: optionalText(200),
+  /** Ad tags from the landing link. Cleaned by sanitizeLeadSource, never trusted as-is. */
+  source: z.unknown().optional(),
   website: optionalText(200),
 }).superRefine((value, context) => {
-  const problem = phoneNumberProblem(value.phone, value.countryCode);
+  // Exact length, not the portal's looser check: the code goes to this number on WhatsApp.
+  const problem = exactPhoneNumberProblem(value.phone, value.countryCode);
   if (problem) context.addIssue({ code: z.ZodIssueCode.custom, path: ["phone"], message: problem });
 });
 

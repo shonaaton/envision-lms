@@ -1,3 +1,4 @@
+import { CURRENT_RULES_VERSION } from "@/lib/tournament/scoring";
 import { canAccessFeature } from "@/lib/featureAccess";
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
@@ -17,6 +18,8 @@ export async function POST(_: Request, { params }: { params: { id: string } }) {
   startAt.setDate(startAt.getDate() + 7);
   const clone = await Tournament.create({
     name: `${source.name} Copy`,
+    // A copy is a new event: it plays by the current rules, not the source's.
+    rulesVersion: CURRENT_RULES_VERSION,
     description: source.description,
     type: source.type,
     status: "created",

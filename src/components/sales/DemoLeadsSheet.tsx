@@ -32,7 +32,8 @@ export type DemoLeadSheetRow = {
   phoneLabel: string;
   telHref: string;
   whatsappHref: string;
-  verification: "verified" | "failed" | "unverified";
+  /** "manual": added by hand in the CRM, so there was never a code to check. */
+  verification: "verified" | "failed" | "unverified" | "manual";
   age: string;
   level: string;
   classPreference: string;
@@ -91,6 +92,7 @@ const VERIFICATION: Record<DemoLeadSheetRow["verification"], { label: string; st
   verified: { label: "Verified", style: "bg-emerald-100 text-emerald-800" },
   failed: { label: "Code not sent", style: "bg-rose-100 text-rose-800" },
   unverified: { label: "Not verified", style: "bg-rose-100 text-rose-800" },
+  manual: { label: "Added by hand", style: "bg-slate-200 text-slate-700" },
 };
 
 const OUTCOME_STYLES: Record<string, string> = {

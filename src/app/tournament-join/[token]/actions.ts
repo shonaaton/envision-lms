@@ -10,6 +10,7 @@ import { getTournamentGuestUsername, setTournamentGuestUsername } from "@/lib/to
 import { notifyAdmins } from "@/lib/tournamentNotifications";
 import { sendTournamentRegistrationConfirmation } from "@/lib/tournamentReminders";
 import { consumeTournamentRate } from "@/lib/tournamentRateLimit";
+import { lateEntryOpen } from "@/lib/tournament/lichessRules";
 import { findReturningGuest, registrationClash, validateGuestRegistration, type GuestFormState } from "@/lib/tournament/externalRegistration";
 
 /**
@@ -50,7 +51,7 @@ async function requestIp() {
 }
 
 const GUEST_FIELDS =
-  "name status type lateJoiningAllowed startAt arenaEndsAt arenaDurationMinutes rounds initialClockSeconds timeControlMinutes incrementSeconds allowBerserk arenaStreaks berserkMinPlies earlyDrawMoveLimit drawStreakLimit breakBetweenRoundsMinutes chatEnabled entryRestrictions rulesVersion externalInvite externalParticipants.username externalParticipants.displayName externalParticipants.email externalParticipants.phone externalParticipants.countryCode __v";
+  "name status type lateJoiningAllowed currentRound startAt arenaEndsAt arenaDurationMinutes rounds initialClockSeconds timeControlMinutes incrementSeconds allowBerserk arenaStreaks berserkMinPlies earlyDrawMoveLimit drawStreakLimit breakBetweenRoundsMinutes chatEnabled entryRestrictions rulesVersion externalInvite externalParticipants.username externalParticipants.displayName externalParticipants.email externalParticipants.phone externalParticipants.countryCode __v";
 
 function accessProblem(tournament: any, password: string) {
   const mode = String(tournament.externalInvite?.accessMode || "password");
@@ -119,7 +120,7 @@ export async function registerGuestForTournament(_previous: GuestFormState, form
       return fail("closed");
     }
     const playing = isPlayingStatus(tournament.status);
-    if (playing && tournament.lateJoiningAllowed === false) return fail("late_join");
+    if (playing && !lateEntryOpen(tournament)) return fail("late_join");
     if (players.some((player) => player.registrationKey === registrationKey)) return fail("already_registered");
     const clash = registrationClash(players, guest);
     if (clash) return fail(clash, clash === "username_taken" ? "username" : clash === "email_registered" ? "email" : "phone");

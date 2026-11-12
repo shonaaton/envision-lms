@@ -9,6 +9,7 @@ import { playerKeyForExternal, playerKeyForUser, recalculateTournamentStandings,
 import { notifyAdmins } from "@/lib/tournamentNotifications";
 import { sendTournamentRegistrationConfirmation } from "@/lib/tournamentReminders";
 import { recordActivity } from "@/lib/activity";
+import { lateEntryOpen } from "@/lib/tournament/lichessRules";
 import { inactiveStudentMessage } from "@/lib/studentAccess";
 import { emitTournamentUpdate } from "@/lib/tournamentSocketServer";
 
@@ -27,8 +28,19 @@ export async function POST(_: Request, { params }: { params: { id: string } }) {
     return NextResponse.json({ error: "This tournament is no longer joinable." }, { status: 400 });
   }
   const isPlaying = ["live", "playing"].includes(String(tournament.status || ""));
-  if (isPlaying && tournament.lateJoiningAllowed === false) {
-    return NextResponse.json({ error: "Late joining is disabled for this tournament." }, { status: 400 });
+  // Players already in can always come back; only new entries are limited
+  // (late-entry switch, and Lichess's Swiss round limit).
+  const alreadyIn = session && (tournament.participants || []).some((player: any) => objectId(player) === String((session.user as any).id));
+  if (!alreadyIn && !lateEntryOpen(tournament)) {
+    return NextResponse.json(
+      {
+        error:
+          tournament.lateJoiningAllowed === false
+            ? "Late joining is disabled for this tournament."
+            : "Entry is closed: new players can join a Swiss only until half of its rounds have started.",
+      },
+      { status: 400 }
+    );
   }
 
   const cookieStore = await cookies();

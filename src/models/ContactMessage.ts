@@ -52,6 +52,15 @@ const ContactMessageSchema = new Schema(
       landingPath: String,
     },
     leadChannel: { type: String, trim: true, index: true },
+    /**
+     * Demo requests a salesperson added by hand in the Demo Leads CRM: "manual",
+     * with how the family reached us (MANUAL_LEAD_SOURCES) and who typed it in.
+     * Absent on form leads.
+     */
+    leadEntry: { type: String, trim: true },
+    manualSource: { type: String, trim: true },
+    addedBy: { type: Schema.Types.ObjectId, ref: "User" },
+    addedByName: { type: String, trim: true },
 
     /** Absent on older rows, which are all contact-form messages. See src/lib/demoRequest.ts. */
     kind: { type: String, enum: ["contact", "demo_request"], default: "contact", index: true },

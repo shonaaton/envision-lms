@@ -23,14 +23,27 @@
  *     counts in Buchholz and Sonneborn-Berger as a game against a dummy
  *     opponent on the player's own score rather than as a zero
  *   - the forfeit loser is not credited with the no-show opponent either
+ *
+ * v4 is Lichess, ported from lila (modules/tournament ArenaSheet.scala and
+ * Pairing.scala, modules/swiss SwissSheet.scala and SwissScoring.scala):
+ *   - Arena: a draw in under 20 plies scores 0; a draw scores 0 when the
+ *     player's last non-loss result was a draw (a loss does not break the
+ *     streak, only a win does), unless the game reached 60 plies; berserk pays
+ *     only from 14 plies; two wins in a row double everything after, draws too
+ *   - Arena ties break on tournament performance (opponent rating +/- 500)
+ *   - Swiss: a player who joined after round 1 has 0.5 for missing it ("Late");
+ *     ties break on Sonneborn-Berger, then performance
+ *   - the tournament's own early-draw, draw-streak and berserk settings are not
+ *     used: Lichess's numbers are fixed
  */
 
-export type RulesVersion = 1 | 2 | 3;
-export const CURRENT_RULES_VERSION: RulesVersion = 3;
+export type RulesVersion = 1 | 2 | 3 | 4;
+export const CURRENT_RULES_VERSION: RulesVersion = 4;
 
 /** Parse a stored rules version, defaulting absent values to the legacy rules. */
 export function normalizeRulesVersion(value: any): RulesVersion {
   const version = Number(value || 1);
+  if (version >= 4) return 4;
   if (version >= 3) return 3;
   return version >= 2 ? 2 : 1;
 }
@@ -39,6 +52,13 @@ export function normalizeRulesVersion(value: any): RulesVersion {
 export const FORFEIT_TERMINATION = "forfeit";
 
 export const DEFAULT_BERSERK_MIN_PLIES = 7;
+
+/* Lichess thresholds (v4); see lichessRules.ts. Inlined to keep this module free of imports. */
+const QUICK_DRAW_PLIES = 20;
+const LONG_GAME_PLIES = 60;
+const BERSERK_VALID_PLIES = 14;
+const PERFORMANCE_STEP = 500;
+const UNRATED = 1500;
 
 export type GameResult = "*" | "1-0" | "0-1" | "1/2-1/2";
 
@@ -53,6 +73,9 @@ export type ScoredGame = {
   plyCount: number;
   berserkWhite?: boolean;
   berserkBlack?: boolean;
+  /** Ratings the players had when the game was paired, for tournament performance. */
+  whiteRating?: number;
+  blackRating?: number;
   /** Epoch milliseconds. Completion order drives streaks, so this matters. */
   endedAt: number;
 };
@@ -74,6 +97,8 @@ export type ScoringOptions = {
   berserkMinPlies: number;
   /** Games completing after this instant do not score. Infinity while open. */
   scoringCutoff: number;
+  /** Swiss v4: players who joined after round 1 started, owed Lichess's "Late" half point. */
+  lateJoiners?: Set<string>;
 };
 
 export type StandingEntry = {
@@ -90,6 +115,8 @@ export type StandingEntry = {
   gamesPlayed: number;
   buchholz: number;
   sonnebornBerger: number;
+  /** Lichess tournament performance (v4); 0 before the first game. */
+  performance: number;
   streak: number;
   /**
    * Whether this player's *next* game scores double. A rule, not a display
@@ -108,9 +135,9 @@ export type StandingEntry = {
  * impossible for a player to argue with. Legacy events keep Buchholz because
  * that is what they were played under.
  */
-export function tieBreakFor(tournament: any): { key: "sonnebornBerger" | "buchholz"; label: string } | null {
-  if (tournament?.type === "arena") return null;
+export function tieBreakFor(tournament: any): { key: "sonnebornBerger" | "buchholz" | "performance"; label: string } | null {
   const rulesVersion = Number(tournament?.rulesVersion || 1);
+  if (tournament?.type === "arena") return rulesVersion >= 4 ? { key: "performance", label: "tournament performance" } : null;
   return rulesVersion >= 2
     ? { key: "sonnebornBerger", label: "Sonneborn-Berger" }
     : { key: "buchholz", label: "Buchholz" };
@@ -181,6 +208,8 @@ export function scoreArenaGame({ game, playerKey, priorResults, legacyStreak, op
   const isWhite = game.whiteKey === playerKey;
   const berserked = Boolean(isWhite ? game.berserkWhite : game.berserkBlack);
 
+  if (options.rulesVersion >= 4) return scoreLichessArenaGame(score, berserked, game.plyCount, priorResults, options.arenaStreaks);
+
   if (score === 0.5 && drawIsDevalued(game, priorResults, options)) return 0;
 
   if (options.rulesVersion === 1) {
@@ -195,6 +224,34 @@ export function scoreArenaGame({ game, playerKey, priorResults, legacyStreak, op
   const multiplier = options.arenaStreaks && isOnStreak(priorResults) ? 2 : 1;
   const berserkBonus = score === 1 && berserked && game.plyCount >= options.berserkMinPlies ? 1 : 0;
   return base * multiplier + berserkBonus;
+}
+
+/**
+ * lila ArenaSheet.isDrawStreak: walking back from the latest result, a draw
+ * means yes, a win means no, and a loss is skipped.
+ */
+export function isLichessDrawStreak(priorResults: string[]) {
+  for (let index = priorResults.length - 1; index >= 0; index -= 1) {
+    if (priorResults[index] === "D") return true;
+    if (priorResults[index] === "W") return false;
+  }
+  return false;
+}
+
+/** lila ArenaSheet.addResult + Score.value, for standard chess. */
+export function scoreLichessArenaGame(score: number, berserked: boolean, plyCount: number, priorResults: string[], streakable: boolean) {
+  const onFire = isOnStreak(priorResults);
+  if (score === 0.5) {
+    if (plyCount < QUICK_DRAW_PLIES) return 0;
+    if (streakable && onFire) return 2;
+    if (plyCount < LONG_GAME_PLIES && isLichessDrawStreak(priorResults)) return 0;
+    return 1;
+  }
+  if (score === 1) {
+    const base = streakable && onFire ? 4 : 2;
+    return base + (berserked && plyCount >= BERSERK_VALID_PLIES ? 1 : 0);
+  }
+  return 0;
 }
 
 /** Tournament points for one player in one game, for either format. */
@@ -218,6 +275,7 @@ function emptyEntry(player: ScoringPlayer): StandingEntry {
     gamesPlayed: 0,
     buchholz: 0,
     sonnebornBerger: 0,
+    performance: 0,
     streak: 0,
     onStreak: false,
     lastColor: "",
@@ -233,6 +291,15 @@ export function sortStandings(entries: StandingEntry[], options: ScoringOptions)
     if (options.rulesVersion === 1) {
       if (b.buchholz !== a.buchholz) return b.buchholz - a.buchholz;
       if (b.wins !== a.wins) return b.wins - a.wins;
+      return byName(a, b);
+    }
+    if (options.rulesVersion >= 4) {
+      // lila: Swiss sorts on points, tie-break, performance; Arena on
+      // score * 10000 + (performance or rating).
+      if (options.type === "swiss" && b.sonnebornBerger !== a.sonnebornBerger) return b.sonnebornBerger - a.sonnebornBerger;
+      const perfA = a.performance || a.rating || UNRATED;
+      const perfB = b.performance || b.rating || UNRATED;
+      if (perfB !== perfA) return perfB - perfA;
       return byName(a, b);
     }
     if (options.type === "swiss") {
@@ -260,6 +327,15 @@ export function computeStandings(players: ScoringPlayer[], games: ScoredGame[], 
   // Rounds a player was scored for without playing anyone: byes and forfeits.
   const unplayed = new Map<string, number[]>(players.map((player) => [player.playerKey, []]));
   const dummyOpponents = options.rulesVersion >= 3 && options.type === "swiss";
+  // Lichess performance: the mean over played games of opponent rating +500 / -500 / +0.
+  const performanceSums = new Map<string, { sum: number; games: number }>();
+  const addPerformance = (key: string, opponentRating: number | undefined, score: number) => {
+    const rating = Number(opponentRating || 0) > 0 ? Number(opponentRating) : UNRATED;
+    const current = performanceSums.get(key) || { sum: 0, games: 0 };
+    current.sum += rating + (score === 1 ? PERFORMANCE_STEP : score === 0 ? -PERFORMANCE_STEP : 0);
+    current.games += 1;
+    performanceSums.set(key, current);
+  };
 
   const scored = games
     .filter((game) => game.status === "completed" && game.result !== "*" && game.endedAt <= options.scoringCutoff)
@@ -312,6 +388,9 @@ export function computeStandings(players: ScoringPlayer[], games: ScoredGame[], 
     black.lastColor = "black";
     white.scoreHistory.push(whitePoints);
     black.scoreHistory.push(blackPoints);
+    // lila counts every finished pairing, a no-start forfeit included.
+    addPerformance(game.whiteKey, game.blackRating, whiteRaw);
+    addPerformance(game.blackKey, game.whiteRating, blackRaw);
     white.recentResults.push(whiteRaw === 1 ? "W" : whiteRaw === 0.5 ? "D" : "L");
     black.recentResults.push(blackRaw === 1 ? "W" : blackRaw === 0.5 ? "D" : "L");
     if (dummyOpponents && game.termination === FORFEIT_TERMINATION) {
@@ -340,7 +419,20 @@ export function computeStandings(players: ScoringPlayer[], games: ScoredGame[], 
     }
   }
 
+  if (options.rulesVersion >= 4 && options.type === "swiss") {
+    // lila SwissSheet: a player with no pairing in round 1 is "Late", worth a
+    // draw. Missed rounds after that are simply absent (0).
+    for (const key of Array.from(options.lateJoiners || [])) {
+      const entry = entries.get(key);
+      if (!entry) continue;
+      entry.points += 0.5;
+      entry.scoreHistory.unshift(0.5);
+    }
+  }
+
   for (const entry of Array.from(entries.values())) {
+    const perf = performanceSums.get(entry.playerKey);
+    entry.performance = options.rulesVersion >= 4 && perf?.games ? Math.round(perf.sum / perf.games) : 0;
     entry.onStreak = options.type === "arena" && options.arenaStreaks && options.rulesVersion >= 2 && isOnStreak(entry.recentResults);
     for (const opponent of opponents.get(entry.playerKey) || []) {
       const other = entries.get(opponent.key);

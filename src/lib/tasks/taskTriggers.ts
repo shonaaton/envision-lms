@@ -2,7 +2,7 @@ import "server-only";
 
 import { formatAcademyDateTime } from "@/lib/academyTime";
 import { contactInterestLabel } from "@/lib/contactEnquiries";
-import { demoAgeGroupLabel, demoChildLevelLabel } from "@/lib/demoRequest";
+import { demoAgeGroupLabel, demoChildLevelLabel, manualLeadSourceLabel } from "@/lib/demoRequest";
 import { demoSlotLabel } from "@/lib/demoRequestSlots";
 import { leadSourceLine } from "@/lib/leadSource";
 import {
@@ -231,10 +231,11 @@ export function raiseContactEnquiryTask(message: any) {
 }
 
 function demoRequestDetails(lead: any) {
+  const manual = lead?.leadEntry === "manual";
   return [
-    `WhatsApp: ${[lead?.countryCode, lead?.phone].filter(Boolean).join(" ")} (${lead?.whatsappVerifiedAt ? "verified" : "not verified"})`,
+    `WhatsApp: ${[lead?.countryCode, lead?.phone].filter(Boolean).join(" ")} (${manual ? "added by hand" : lead?.whatsappVerifiedAt ? "verified" : "not verified"})`,
     `Email: ${lead?.email || "Not given"}`,
-    `Source: ${leadSourceLine(lead?.leadSource)}`,
+    `Source: ${manual ? `Added by hand by ${lead?.addedByName || "a colleague"} (${manualLeadSourceLabel(lead?.manualSource)})` : leadSourceLine(lead?.leadSource)}`,
     `Child's age: ${demoAgeGroupLabel(lead?.ageGroup)}`,
     `Child's level: ${demoChildLevelLabel(lead?.childLevel)}`,
     `Class preference: ${contactInterestLabel(lead?.interest)}`,

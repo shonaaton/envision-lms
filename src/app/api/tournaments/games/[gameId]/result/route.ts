@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { SWISS_NO_DRAW_BEFORE_PLIES } from "@/lib/tournament/lichessRules";
 import { auth } from "@/lib/auth";
 import { dbConnect } from "@/lib/db";
 import { TournamentGame } from "@/models/TournamentGame";
@@ -93,6 +94,10 @@ export async function POST(req: Request, { params }: { params: { gameId: string 
     completed = true;
   } else if (action === "draw") {
     if (!canActAsPlayer) return NextResponse.json({ error: "Only assigned players can agree a draw." }, { status: 400 });
+    // lila Game.swissPreventsDraw: no draw offers in Swiss before move 30.
+    if (tournament?.type === "swiss" && Number(tournament?.rulesVersion || 1) >= 4 && Number(game.ply || 0) < SWISS_NO_DRAW_BEFORE_PLIES) {
+      return NextResponse.json({ error: "Draw offers are not allowed before move 30 in a Swiss tournament." }, { status: 400 });
+    }
     if (!game.drawOfferBy || game.drawOfferBy === actorKey) {
       await TournamentGame.updateOne({ _id: game._id, status: "active" }, { $set: { drawOfferBy: actorKey } });
       emitGameFlags({ gameId: String(game._id), drawOfferBy: actorKey });

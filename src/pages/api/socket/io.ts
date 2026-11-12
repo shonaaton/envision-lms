@@ -32,7 +32,12 @@ declare global {
 }
 
 const SOCKET_ATTEMPT_WINDOW_MS = 60_000;
-const SOCKET_ATTEMPT_LIMIT = 60;
+/**
+ * Per IP address. A whole branch or classroom shares one address on its
+ * Wi-Fi, so this is sized for a room of players opening and reconnecting
+ * pages, not for one person: at 60 the 61st page open in a minute was refused.
+ */
+const SOCKET_ATTEMPT_LIMIT = 1_200;
 const socketAttempts = global._tournamentSocketAttempts ?? new Map<string, AttemptEntry>();
 if (!global._tournamentSocketAttempts) global._tournamentSocketAttempts = socketAttempts;
 
@@ -78,6 +83,8 @@ async function resolveSocketSession(headers: Record<string, string | string[] | 
   } satisfies SocketSession;
 }
 
+class SocketRateLimited extends Error {}
+
 /**
  * Whether this connection may join the tournament room, and which players it
  * speaks for (an LMS session, a guest seat, or both in one browser). `null`
@@ -86,7 +93,7 @@ async function resolveSocketSession(headers: Record<string, string | string[] | 
 async function admitToTournamentRoom(tournamentId: string, headers: Record<string, string | string[] | undefined>): Promise<string[] | null> {
   if (!tournamentId) return null;
   const ip = socketIpAddress(headers);
-  if (!consumeSocketAttempt(ip)) return null;
+  if (!consumeSocketAttempt(ip)) throw new SocketRateLimited();
 
   await dbConnect();
   const tournament: any = await Tournament.findById(tournamentId).select("participants access externalInvite externalParticipants").lean();
@@ -199,8 +206,9 @@ export default function handler(_: NextApiRequest, res: NextApiResponse) {
         client.data.tournamentId = tournamentId;
         client.data.playerKeys = playerKeys;
         return next();
-      } catch {
-        return next(new Error("forbidden"));
+      } catch (error) {
+        // The client retries either way; the name tells it to back off.
+        return next(new Error(error instanceof SocketRateLimited ? "rate_limited" : "forbidden"));
       }
     });
 

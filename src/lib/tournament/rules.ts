@@ -5,11 +5,14 @@
  * registration dialog, the event page, the confirmation email), so what a
  * player is told can never drift from what the server does.
  *
+ * Rules version 4 tournaments play by Lichess's rules (see scoring.ts and
+ * lichessRules.ts); older events keep the wording they were played under.
+ *
  * Pure: no I/O, safe on the client and the server.
  */
 
-import { FIRST_MOVE_GRACE_MS, FIRST_MOVE_MAX_WAIT_MS } from "@/lib/tournament/firstMove";
 import { DEFAULT_BERSERK_MIN_PLIES, tieBreakFor } from "@/lib/tournament/scoring";
+import { arenaPairingsClosedSeconds, firstMoveSeconds, SWISS_NO_DRAW_BEFORE_PLIES } from "@/lib/tournament/lichessRules";
 import { berserkClock, canBerserkTimeControl, formatTimeControl, resolveTimeControl } from "@/lib/tournament/timeControl";
 
 export type RuleSection = { title: string; rules: string[] };
@@ -30,24 +33,24 @@ function movesFromPlies(plies: number) {
 
 export function tournamentRuleSections(tournament: any): RuleSection[] {
   const arena = tournament?.type === "arena";
+  const lichess = Number(tournament?.rulesVersion || 4) >= 4;
   const control = resolveTimeControl(tournament || {});
   const label = formatTimeControl(control);
-  const graceSeconds = Math.round(FIRST_MOVE_GRACE_MS / 1000);
-  const maxWaitMinutes = Math.round(FIRST_MOVE_MAX_WAIT_MS / 60000);
+  const firstMove = firstMoveSeconds(tournament || {});
   const lateJoin = tournament?.lateJoiningAllowed !== false;
+  const rounds = Number(tournament?.rounds || 0);
 
   const format: string[] = arena
     ? [
         `Arena: the tournament runs for ${plural(Number(tournament?.arenaDurationMinutes || 0), "minute")}. Play as many games as you can in that time.`,
-        "When your game ends you go straight back into the queue and are usually paired again within a few seconds. An instant rematch with the opponent you just played is avoided while someone else is free or about to be.",
-        "Games still being played when the Arena ends can be finished, but they do not count towards the standings.",
+        "When your game ends you go back into the queue and are paired again with someone close to you in the standings and rating - never with the opponent you just played.",
+        `No new games start in the last ${clockPhrase(arenaPairingsClosedSeconds(tournament || {}))}, and games still being played when the Arena ends do not count.`,
       ]
     : [
-        `Swiss: ${plural(Number(tournament?.rounds || 0), "round")}. Everyone plays one game per round, against a player on a similar score.`,
+        `Swiss: ${plural(rounds, "round")}. Everyone plays one game per round, against a player on the same or a similar score.`,
+        "Round 1 is paired by rating: the top half of the field plays the bottom half.",
         `The next round starts when every board in the current round has finished${
-          Number(tournament?.breakBetweenRoundsMinutes || 0) > 0
-            ? `, after a ${Number(tournament.breakBetweenRoundsMinutes)}-minute break`
-            : ""
+          Number(tournament?.breakBetweenRoundsMinutes || 0) > 0 ? `, after a ${Number(tournament.breakBetweenRoundsMinutes)}-minute break` : ""
         }.`,
         "You never play the same opponent twice. With an odd number of players, one player gets a bye (a free point) in a round, and nobody gets a second bye while others have not had one.",
       ];
@@ -62,48 +65,69 @@ export function tournamentRuleSections(tournament: any): RuleSection[] {
   if (arena) {
     scoring.push("Win 2 points, draw 1 point, loss 0.");
     if (tournament?.arenaStreaks !== false) {
-      scoring.push("Win two games in a row and you are on fire: every game after that scores double until you fail to win one.");
+      scoring.push("Win two games in a row and you are on fire: every game after that scores double, draws included, until you fail to win one.");
     }
     if (tournament?.allowBerserk && canBerserkTimeControl(control)) {
       const berserk = berserkClock(control);
-      const minPlies = Number(tournament?.berserkMinPlies ?? DEFAULT_BERSERK_MIN_PLIES);
+      const minPlies = lichess ? 14 : Number(tournament?.berserkMinPlies ?? DEFAULT_BERSERK_MIN_PLIES);
       scoring.push(
         `Berserk: before your first move you may press Berserk to cut your clock to ${clockPhrase(berserk.initialSeconds)}${
           control.incrementSeconds > 0 ? " with no increment" : ""
         }. Win that game and you earn 1 extra point, as long as the game lasted at least ${plural(movesFromPlies(minPlies), "move")}.`
       );
     }
-    const earlyDraw = Number(tournament?.earlyDrawMoveLimit ?? 10);
-    if (earlyDraw > 0) scoring.push(`A draw in fewer than ${plural(movesFromPlies(earlyDraw), "move")} scores nothing for either player.`);
-    const drawStreak = Number(tournament?.drawStreakLimit ?? 2);
-    if (drawStreak > 0) scoring.push(`After ${plural(drawStreak, "draw")} in a row, further draws score nothing until you win or lose a game.`);
-    scoring.push("Ties are broken by the number of wins, then by who needed fewer games.");
+    if (lichess) {
+      scoring.push("A draw in fewer than 10 moves scores nothing for either player.");
+      scoring.push("After a draw, your next draws score nothing until you win a game (a loss does not reset this), unless the draw lasts 30 moves or more.");
+      scoring.push("Ties are broken on tournament performance: the average of your opponents' ratings, plus 500 for each win and minus 500 for each loss.");
+    } else {
+      const earlyDraw = Number(tournament?.earlyDrawMoveLimit ?? 10);
+      if (earlyDraw > 0) scoring.push(`A draw in fewer than ${plural(movesFromPlies(earlyDraw), "move")} scores nothing for either player.`);
+      const drawStreak = Number(tournament?.drawStreakLimit ?? 2);
+      if (drawStreak > 0) scoring.push(`After ${plural(drawStreak, "draw")} in a row, further draws score nothing until you win or lose a game.`);
+      scoring.push("Ties are broken by the number of wins, then by who needed fewer games.");
+    }
   } else {
     scoring.push("Win 1 point, draw ½ point, loss 0. A bye is worth 1 point.");
+    if (lichess) {
+      scoring.push(`No draw offers before move ${movesFromPlies(SWISS_NO_DRAW_BEFORE_PLIES)}. Draws by the rules of chess (stalemate, repetition, not enough material) still count at any time.`);
+    }
     const tieBreak = tieBreakFor(tournament);
     scoring.push(
       tieBreak?.key === "sonnebornBerger"
-        ? "Ties are broken on Sonneborn-Berger (the strength of the opponents you scored against), then Buchholz, then the number of wins."
+        ? lichess
+          ? "Ties are broken on Sonneborn-Berger (the scores of the opponents you beat, plus half of those you drew), then on tournament performance."
+          : "Ties are broken on Sonneborn-Berger (the strength of the opponents you scored against), then Buchholz, then the number of wins."
         : "Ties are broken on Buchholz (the combined score of your opponents), then the number of wins."
     );
+  }
+  if (tournament?.rated) {
+    scoring.push("This tournament is rated: your tournament rating (Glicko-2, starting at 1500, as on Lichess) changes after every game against another academy player. Guest games are not rated.");
   }
 
   const attendance: string[] = [
     arena
       ? "Only players with the tournament page open are paired. Open it a few minutes before the start and keep it open; if you close it, you are simply not paired until you come back, and you keep your points."
       : "Open the tournament room a few minutes before the start and keep it open. Your board appears automatically when you are paired.",
-    `Make your first move within ${graceSeconds} seconds of your board appearing. While you are on the board the wait can stretch to ${plural(maxWaitMinutes, "minute")}, never longer.`,
-    arena
-      ? "If you do not start a game, it is cancelled with no score and you are paused, so you are not paired while away. Press Resume in the tournament room to play again."
-      : "If you do not start a game while your opponent is there, you lose it by forfeit. If neither player starts, the game is cancelled with no score. Either way you sit out the next round until you return to the tournament room.",
+    lichess
+      ? `Make your first move within ${firstMove} seconds of your board appearing (as Black, within ${firstMove} seconds of White's first move). If you do not, you lose that game and ${
+          arena ? "are paused: press Resume in the tournament room to play again." : "sit out the following rounds until you return to the tournament room."
+        }`
+      : "Make your first move promptly when your board appears. A player who does not start a game loses it or has it cancelled, and is paused until they return.",
     "If your internet drops, your clock keeps running. Reconnect quickly: running out of time loses the game.",
-    lateJoin
-      ? arena
-        ? "Late entry is allowed: you can join at any time while the Arena is running."
-        : "Late entry is allowed: a late player joins from the next round, starting on 0 points."
-      : "Late entry is not allowed: you must be registered before the tournament starts.",
   ];
-  if (arena) attendance.push("You can pause between games if you need a break. You are not paired while paused.");
+  if (arena) {
+    attendance.push(lateJoin ? "Late entry is allowed: you can join at any time while the Arena is running." : "Late entry is not allowed: you must be registered before the tournament starts.");
+    attendance.push("You can pause between games if you need a break. You are not paired while paused.");
+  } else if (!lateJoin) {
+    attendance.push("Late entry is not allowed: you must be registered before the tournament starts.");
+  } else if (lichess) {
+    attendance.push(
+      `Late entry is allowed until round ${Math.floor(rounds / 2) + 1} starts. A late player starts with ½ point for missing round 1; any other rounds missed score 0.`
+    );
+  } else {
+    attendance.push("Late entry is allowed: a late player joins from the next round, starting on 0 points.");
+  }
 
   const fairPlay: string[] = [
     "Play on your own. No chess engines, apps, books or help from anyone else during a game.",

@@ -16,6 +16,11 @@ const TournamentGameSchema = new Schema(
     blackName: { type: String, default: "" },
     whiteRating: { type: Number, default: 0 },
     blackRating: { type: Number, default: 0 },
+    /** Rating change from this game, in a rated tournament between two portal members. */
+    whiteRatingDiff: Number,
+    blackRatingDiff: Number,
+    /** Set once the game has been rated, so it is never rated twice. */
+    ratedAt: Date,
     fen: { type: String, default: "start" },
     /** Position the game began from. Standard games leave this empty. */
     startFen: { type: String, default: "" },

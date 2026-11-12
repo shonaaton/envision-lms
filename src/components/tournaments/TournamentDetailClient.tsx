@@ -26,6 +26,7 @@ import { useViewerTimeZone, zoneAbbreviation } from "@/lib/viewerTime";
 import { TournamentAdminPanel } from "./TournamentAdminPanel";
 import { TournamentRules } from "./TournamentRules";
 import { tournamentRuleSections, type RuleSection } from "@/lib/tournament/rules";
+import { lateEntryOpen } from "@/lib/tournament/lichessRules";
 
 const LOBBY_REFRESH_SPACING_MS = 3_000;
 
@@ -263,10 +264,10 @@ export function TournamentDetailClient({
         participantStatus: state.participantState?.status,
         roundProgress: state.roundProgress,
         nextRoundAt: state.nextRoundAt,
-        lateJoiningAllowed: tournament.lateJoiningAllowed,
+        lateJoiningAllowed: lateEntryOpen(tournament) ? tournament.lateJoiningAllowed : false,
         now,
       }),
-    [tournamentId, tournament.status, tournament.type, tournament.lateJoiningAllowed, state, now]
+    [tournamentId, tournament, state, now]
   );
 
   const rules = useMemo(() => tournamentRuleSections(tournament), [tournament]);
@@ -451,7 +452,9 @@ export function TournamentDetailClient({
                         </td>
                         {tieBreak ? (
                           <td className="px-1 py-2 text-right text-xs tabular-nums text-slate-400">
-                            {Number(entry[tieBreak.key] || 0).toFixed(1)}
+                            {tieBreak.key === "performance"
+                              ? Number(entry.performance || 0) ? Math.round(Number(entry.performance)) : "-"
+                              : Number(entry[tieBreak.key] || 0).toFixed(1)}
                           </td>
                         ) : null}
                       </tr>
@@ -527,6 +530,15 @@ export function TournamentDetailClient({
                       {game.whiteName} <span className="text-slate-400">vs</span> {game.blackName || "Bye"}
                     </span>
                     <span className="shrink-0 text-xs font-semibold tabular-nums text-slate-500">{resultLabel(game)}</span>
+                    {(() => {
+                      const diff = game.whiteKey === myPlayerKey ? game.whiteRatingDiff : game.blackKey === myPlayerKey ? game.blackRatingDiff : undefined;
+                      if (typeof diff !== "number") return null;
+                      return (
+                        <span className={`shrink-0 text-xs font-semibold tabular-nums ${diff > 0 ? "text-emerald-600" : diff < 0 ? "text-red-600" : "text-slate-400"}`}>
+                          {diff > 0 ? `+${diff}` : diff}
+                        </span>
+                      );
+                    })()}
                   </li>
                 ))}
               </ol>

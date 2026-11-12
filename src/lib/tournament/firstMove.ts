@@ -1,29 +1,19 @@
 /**
- * First-move deadlines and no-shows.
+ * First-move deadlines and no-shows, as Lichess does it.
  *
- * A board nobody starts must end, or a Swiss round never finishes. What it ends
- * as depends on who was there:
+ * lila Game.timeForFirstMove gives each side a fixed time to make its first
+ * move: 11 / 16 / 21 / 25 / 30 seconds in tournaments, by speed (see
+ * lichessRules.firstMoveSeconds). White's starts when the board appears;
+ * Black's when White moves. It is not extended for having the board open.
  *
- *   Arena  — the board is aborted and nobody is scored. The player who never
- *            started is paused, so they are not paired again and again while
- *            away — previously one absent player could swallow an opponent's
- *            whole arena, one abandoned board after another.
- *   Swiss  — the player to move who never moves forfeits to an opponent who
- *            showed up. White not moving with Black never having opened the
- *            board either is a double no-show: aborted, nobody scored.
- *
- * In both formats Black gets a deadline for their first move too, so a present
- * White is not left waiting out Black's entire clock.
- *
- * Only the player *to move* can push their own deadline back by having the
- * board open, and only up to a cap. Previously either player's presence
- * extended it, so a waiting opponent kept an absent player's board alive
- * forever and the round never ended.
+ * lila Finisher.noStart: tournament games cannot be aborted, so the player who
+ * did not move loses and the opponent wins - in Arena and Swiss alike - and
+ * the player who did not move is taken out of pairing (paused here) until
+ * they come back. Only that player is paused.
  */
 
-export const FIRST_MOVE_GRACE_MS = 60 * 1000;
-/** However long the player to move keeps the board open, the wait never exceeds this. */
-export const FIRST_MOVE_MAX_WAIT_MS = 3 * 60 * 1000;
+/** Fallback when a game has no clock to derive the time from (lila's slowest tournament value). */
+export const FIRST_MOVE_GRACE_MS = 30 * 1000;
 
 export type FirstMoveGame = {
   source?: string;
@@ -47,7 +37,7 @@ function plyOf(game: FirstMoveGame) {
   return Number(game.ply ?? (game.moveHistorySAN || []).length ?? 0);
 }
 
-/** Which side still owes its first move, if either does. */
+/** Which side still owes its first move, if either does (lila playerWhoDidNotMove). */
 export function sideOwingFirstMove(game: FirstMoveGame): "white" | "black" | null {
   if (game.status !== "active") return null;
   const ply = plyOf(game);
@@ -56,28 +46,8 @@ export function sideOwingFirstMove(game: FirstMoveGame): "white" | "black" | nul
   return turn === "w" ? "white" : "black";
 }
 
-/** When the deadline for the side owing its first move started counting. */
-function anchorOf(game: FirstMoveGame) {
-  return plyOf(game) === 0 ? time(game.startedAt || game.createdAt) : time(game.lastMoveAt);
-}
-
-/**
- * The deadline after a presence ping from `color`, or null when it should not
- * move. Only the player to move extends it, never past the cap.
- */
-export function extendedFirstMoveDeadline(game: FirstMoveGame, color: "white" | "black", now: number = Date.now()) {
-  const owing = sideOwingFirstMove(game);
-  if (!owing || owing !== color) return null;
-  const current = time(game.firstMoveDeadlineAt);
-  const anchor = anchorOf(game);
-  const cap = anchor ? anchor + FIRST_MOVE_MAX_WAIT_MS : Infinity;
-  const extended = Math.min(now + FIRST_MOVE_GRACE_MS, cap);
-  return extended > current ? new Date(extended) : null;
-}
-
 export type NoShowOutcome =
   | { action: "none" }
-  | { action: "abort"; absent: Array<"white" | "black"> }
   | { action: "forfeit"; winner: "white" | "black"; absent: Array<"white" | "black"> };
 
 /** What to do with a board whose first-move deadline may have passed. */
@@ -85,11 +55,5 @@ export function noShowOutcome(game: FirstMoveGame, now: number = Date.now()): No
   const owing = sideOwingFirstMove(game);
   const deadline = time(game.firstMoveDeadlineAt);
   if (!owing || !deadline || deadline > now) return { action: "none" };
-
-  const opponent = owing === "white" ? "black" : "white";
-  const opponentOnlineAt = opponent === "white" ? game.whiteOnlineAt : game.blackOnlineAt;
-  const opponentPresent = plyOf(game) === 1 || Boolean(opponentOnlineAt);
-  const absent: Array<"white" | "black"> = opponentPresent ? [owing] : [owing, opponent];
-  if (game.source === "swiss" && opponentPresent) return { action: "forfeit", winner: opponent, absent };
-  return { action: "abort", absent };
+  return { action: "forfeit", winner: owing === "white" ? "black" : "white", absent: [owing] };
 }

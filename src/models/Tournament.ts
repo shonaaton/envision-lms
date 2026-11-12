@@ -137,6 +137,8 @@ const TournamentSchema = new Schema(
         gamesPlayed: { type: Number, default: 0 },
         buchholz: { type: Number, default: 0 },
         sonnebornBerger: { type: Number, default: 0 },
+        /** Lichess tournament performance (rules v4). */
+        performance: { type: Number, default: 0 },
         streak: { type: Number, default: 0 },
         onStreak: { type: Boolean, default: false },
         lastColor: { type: String, enum: ["white", "black", ""], default: "" },

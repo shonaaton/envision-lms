@@ -16,7 +16,35 @@
  */
 
 import { computeStandings, type ScoredGame, type ScoringOptions, type ScoringPlayer } from "../src/lib/tournament/scoring";
-import { buildArenaPairings, mostRecentOpponents, pairingHistory, type GameEdge, type PairingCandidate } from "../src/lib/tournament/pairing";
+import { mostRecentOpponents, type GameEdge } from "../src/lib/tournament/pairing";
+import { lichessArenaPairings, NO_COLOUR_HISTORY, type ArenaWaiter } from "../src/lib/tournament/arenaLichess";
+type PairingCandidate = { playerKey: string; displayName: string; points: number; gamesPlayed: number; lastColor: string; waitingMs: number };
+
+/** Run the production (Lichess) Arena pairing over simple candidates. */
+function pairArena(waiting: PairingCandidate[], edges: GameEdge[]) {
+  const now = Date.now();
+  const ranked = [...waiting].sort((a, b) => b.points - a.points || a.playerKey.localeCompare(b.playerKey));
+  const rank = new Map(ranked.map((player, index) => [player.playerKey, index]));
+  const arenaWaiters: ArenaWaiter[] = waiting.map((player) => ({
+    playerKey: player.playerKey,
+    rank: rank.get(player.playerKey) ?? 0,
+    rating: 1500,
+    since: now - player.waitingMs,
+    colours: player.lastColor === "white" ? { strike: 1, balance: 1 } : player.lastColor === "black" ? { strike: -1, balance: -1 } : NO_COLOUR_HISTORY,
+  }));
+  const pairs = lichessArenaPairings({
+    waiting: arenaWaiters,
+    lastOpponents: mostRecentOpponents(edges),
+    now,
+    recentlyStarted: false,
+    hadPairings: false,
+    waitSeconds: 24,
+    smallTourActivePlayers: null,
+  });
+  const byKey = new Map(waiting.map((player) => [player.playerKey, player]));
+  return { pairs: pairs.map((pair) => ({ white: byKey.get(pair.white.playerKey)!, black: byKey.get(pair.black.playerKey)! })) };
+}
+
 import { toLeaderboardRows } from "../src/lib/tournamentSocketServer";
 
 const FIELD_SIZES = [20, 50, 100, 200];
@@ -132,9 +160,7 @@ function runArena(size: number) {
       .map((player) => ({ ...player, waitingMs: Math.max(0, (clock - player.busyUntil) * 1000) }));
 
     const startedPairing = performance.now();
-    const history = pairingHistory(edges);
-    const recent = mostRecentOpponents(edges);
-    const { pairs } = buildArenaPairings(waiting, { history, recent });
+    const { pairs } = pairArena(waiting, edges);
     pairingSamples.push(performance.now() - startedPairing);
     pairingPasses += 1;
 

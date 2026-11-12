@@ -3,6 +3,7 @@ import mongoose from "mongoose";
 import { TournamentGame } from "@/models/TournamentGame";
 import { Tournament } from "@/models/Tournament";
 import { User } from "@/models/User";
+import { displayRating } from "@/lib/tournament/ratingService";
 import {
   notifyExternalTournamentParticipant,
   notifyExternalTournamentParticipants,
@@ -11,6 +12,7 @@ import {
 import { buildPgn, detectTermination, loadGamePosition, STANDARD_START_FEN } from "@/lib/tournament/chessRules";
 import {
   computeStandings,
+  sortStandings,
   CURRENT_RULES_VERSION,
   FORFEIT_TERMINATION,
   normalizeRulesVersion,
@@ -29,9 +31,18 @@ import {
   releasePairingLockGuard,
   releaseRoundGuard,
 } from "@/lib/tournament/guards";
-import { buildArenaPairings, freeSinceMs, mostRecentOpponents, pairingHistory, resolveColors } from "@/lib/tournament/pairing";
+import { freeSinceMs, mostRecentOpponents } from "@/lib/tournament/pairing";
+import { addColour, lichessArenaPairings, NO_COLOUR_HISTORY, type ArenaWaiter, type ColourHistory } from "@/lib/tournament/arenaLichess";
+import {
+  ARENA_RECENT_START_MS,
+  ARENA_SMALL_TOURNAMENT_PLAYERS,
+  arenaPairingsClosedSeconds,
+  arenaWaitSeconds,
+  DEFAULT_RATING,
+  firstMoveMsForClock,
+} from "@/lib/tournament/lichessRules";
 import { pairSwissRound, swissHistoriesFromGames, type SwissPlayer } from "@/lib/tournament/swiss";
-import { FIRST_MOVE_GRACE_MS, noShowOutcome } from "@/lib/tournament/firstMove";
+import { noShowOutcome } from "@/lib/tournament/firstMove";
 import { presentPlayerKeys } from "@/lib/tournament/presence";
 import {
   emitGameEnded,
@@ -163,6 +174,7 @@ export function ensureTournamentStandings(tournament: TournamentLike) {
       gamesPlayed: Number(existing?.gamesPlayed || 0),
       buchholz: Number(existing?.buchholz || 0),
       sonnebornBerger: Number(existing?.sonnebornBerger || 0),
+      performance: Number(existing?.performance || 0),
       streak: Number(existing?.streak || 0),
       onStreak: Boolean(existing?.onStreak),
       lastColor: String(existing?.lastColor || ""),
@@ -177,21 +189,26 @@ export function ensureTournamentStandings(tournament: TournamentLike) {
 /**
  * Portal participants are stored as bare ids, so the standings had nothing to
  * name them with and every student showed as "Student" in the table and the
- * pairings (all three in the 7 Oct 2026 event). Look the names up once; after
- * that the standing keeps it.
+ * pairings (all three in the 7 Oct 2026 event). This looks up each member's
+ * name (when missing) and current tournament rating (Glicko-2, 1500 until
+ * their first rated game), which Arena pairing and performance use.
  */
-async function nameMemberStandings(tournament: TournamentLike) {
-  const unnamed = (tournament.standings || []).filter(
-    (entry: any) => String(entry.playerKey || "").startsWith("user:") && (!entry.displayName || entry.displayName === "Student")
-  );
-  if (!unnamed.length) return;
-  const ids = unnamed.map((entry: any) => String(entry.playerKey).slice("user:".length)).filter((id: string) => mongoose.isValidObjectId(id));
+export async function syncMemberStandings(tournament: TournamentLike) {
+  const members = (tournament.standings || []).filter((entry: any) => String(entry.playerKey || "").startsWith("user:"));
+  if (!members.length) return;
+  const ids = members.map((entry: any) => String(entry.playerKey).slice("user:".length)).filter((id: string) => mongoose.isValidObjectId(id));
   if (!ids.length) return;
-  const users: any[] = await User.find({ _id: { $in: ids } }).select("name username").lean();
-  const names = new Map(users.map((user) => [String(user._id), String(user.name || user.username || "").trim()]));
-  for (const entry of unnamed) {
-    const name = names.get(String(entry.playerKey).slice("user:".length));
-    if (name) entry.displayName = name;
+  const users: any[] = await User.find({ _id: { $in: ids } }).select("name username tournamentRating").lean();
+  const byId = new Map(users.map((user) => [String(user._id), user]));
+  for (const entry of members) {
+    const user = byId.get(String(entry.playerKey).slice("user:".length));
+    if (!user) continue;
+    if (!entry.displayName || entry.displayName === "Student") {
+      const name = String(user.name || user.username || "").trim();
+      if (name) entry.displayName = name;
+    }
+    const rating = displayRating(user);
+    if (Number(entry.rating || 0) !== rating) entry.rating = rating;
   }
 }
 
@@ -292,7 +309,22 @@ export function scoringOptionsFor(tournament: TournamentLike): ScoringOptions {
     drawStreakLimit: Math.max(0, Number(tournament?.drawStreakLimit ?? 2)),
     berserkMinPlies: Math.max(0, Number(tournament?.berserkMinPlies ?? 7)),
     scoringCutoff: cutoff,
+    lateJoiners: swissLateJoiners(tournament),
   };
+}
+
+/**
+ * Swiss players who were not in the field when round 1 was paired: Lichess
+ * scores that missed round as "Late", half a point.
+ */
+function swissLateJoiners(tournament: TournamentLike) {
+  if (tournament?.type === "arena") return undefined;
+  const initial: string[] = Array.isArray(tournament?.initialParticipantKeys) ? tournament.initialParticipantKeys : [];
+  if (!initial.length) return undefined;
+  const starters = new Set(initial.map(String));
+  return new Set<string>(
+    (tournament.standings || []).map((entry: any) => String(entry.playerKey)).filter((key: string) => !starters.has(key))
+  );
 }
 
 /**
@@ -304,10 +336,10 @@ export function scoringOptionsFor(tournament: TournamentLike): ScoringOptions {
  */
 export async function recalculateTournamentStandings(tournament: TournamentLike) {
   ensureTournamentStandings(tournament);
-  await nameMemberStandings(tournament);
+  await syncMemberStandings(tournament);
   const games = await TournamentGame.find(
     { tournament: tournament._id, status: "completed" },
-    "source status result termination whiteKey blackKey ply moveHistorySAN berserkWhite berserkBlack endedAt createdAt updatedAt"
+    "source status result termination whiteKey blackKey whiteRating blackRating ply moveHistorySAN berserkWhite berserkBlack endedAt createdAt updatedAt"
   ).lean();
 
   const players = (tournament.standings || []).map((entry: any) => ({
@@ -364,8 +396,8 @@ async function createGame(
     blackKey: input.black?.playerKey || "",
     whiteName: input.white.displayName,
     blackName: input.black?.displayName || "",
-    whiteRating: Number(input.white.rating || 0),
-    blackRating: Number(input.black?.rating || 0),
+    whiteRating: Number(input.white.rating || 0) || DEFAULT_RATING,
+    blackRating: input.black ? Number(input.black.rating || 0) || DEFAULT_RATING : 0,
     fen: chess.fen(),
     startFen,
     ply: 0,
@@ -380,7 +412,7 @@ async function createGame(
     result: input.bye ? "1-0" : "*",
     termination: input.bye ? "bye" : "ongoing",
     winnerKey: input.bye ? input.white.playerKey : "",
-    firstMoveDeadlineAt: input.bye ? undefined : new Date(Date.now() + FIRST_MOVE_GRACE_MS),
+    firstMoveDeadlineAt: input.bye ? undefined : new Date(Date.now() + firstMoveMsForClock(initialMs, incrementMs)),
     endedAt: input.bye ? new Date() : undefined,
   });
 
@@ -471,7 +503,7 @@ export async function applyGameMove(
   const unset: Record<string, any> = { firstMoveDeadlineAt: 1 };
   // Give the other side its first-move window.
   if (nextPly === 1 && !finished) {
-    update.firstMoveDeadlineAt = new Date(now + FIRST_MOVE_GRACE_MS);
+    update.firstMoveDeadlineAt = new Date(now + firstMoveMsForClock(Number(game.initialClockMs || 0), Number(game.incrementMs || 0)));
     delete unset.firstMoveDeadlineAt;
   }
 
@@ -623,14 +655,12 @@ export async function enforceTournamentGameTimeouts(tournament: TournamentLike) 
   for (const game of activeGames) {
     const noShow = noShowOutcome(game, now);
     if (noShow.action !== "none") {
-      const result =
-        noShow.action === "abort"
-          ? await abortGame(game, "abandoned")
-          : await completeGame(game, {
-              result: noShow.winner === "white" ? "1-0" : "0-1",
-              termination: FORFEIT_TERMINATION,
-              winnerKey: noShow.winner === "white" ? game.whiteKey : game.blackKey,
-            });
+      // lila Finisher.noStart: the player who did not move loses.
+      const result = await completeGame(game, {
+        result: noShow.winner === "white" ? "1-0" : "0-1",
+        termination: FORFEIT_TERMINATION,
+        winnerKey: noShow.winner === "white" ? game.whiteKey : game.blackKey,
+      });
       if (result?.status !== "active" && result !== game) {
         ended.push(result);
         for (const side of noShow.absent) {
@@ -726,8 +756,15 @@ export async function syncArenaPairings(tournamentId: string) {
       return { created: 0, skipped: "expired" as const };
     }
 
+    const now = Date.now();
+    // lila Tournament.pairingsClosed: a game started this close to the end could not count.
+    if (tournament.arenaEndsAt && new Date(tournament.arenaEndsAt).getTime() - now < arenaPairingsClosedSeconds(tournament) * 1000) {
+      return { created: 0, skipped: "closing" as const };
+    }
+
     ensureTournamentStandings(tournament);
     normalizeParticipantStates(tournament);
+    await syncMemberStandings(tournament);
 
     const games = await TournamentGame.find(
       { tournament: tournament._id },
@@ -746,24 +783,57 @@ export async function syncArenaPairings(tournamentId: string) {
       }
     }
     const states = participantStateMap(tournament);
-    const history = pairingHistory(games as any);
-    const recent = mostRecentOpponents(games as any);
-    const now = Date.now();
+    // lila LastOpponents (aborted boards were never played) and ColorHistory (finished games).
+    const played = (games as any[]).filter((game) => game.blackKey && game.status !== "aborted");
+    const lastOpponents = mostRecentOpponents(played);
+    const colourGames = played
+      .filter((game) => game.status === "completed")
+      .sort((a, b) => new Date(a.createdAt || 0).getTime() - new Date(b.createdAt || 0).getTime());
+    const colours = new Map<string, ColourHistory>();
+    for (const game of colourGames) {
+      colours.set(game.whiteKey, addColour(colours.get(game.whiteKey) || NO_COLOUR_HISTORY, "white"));
+      colours.set(game.blackKey, addColour(colours.get(game.blackKey) || NO_COLOUR_HISTORY, "black"));
+    }
+
+    // Ranking as the table shows it: lila pairs on rank, not on stored order.
+    const ranked = sortStandings(
+      (tournament.standings || []).map((entry: any) => (entry.toObject ? entry.toObject() : entry)),
+      scoringOptionsFor(tournament)
+    );
+    const rankOf = new Map<string, number>(ranked.map((entry: any, index: number) => [entry.playerKey, index]));
+    const standingByKey = new Map<string, any>((tournament.standings || []).map((entry: any) => [entry.playerKey, entry.toObject ? entry.toObject() : entry]));
 
     // Only players in the room are paired; see lib/tournament/presence.ts.
     const present = presentPlayerKeys(id, now);
-    const waiting = (tournament.standings || [])
-      .filter((entry: any) => !busy.has(entry.playerKey) && present.has(entry.playerKey) && isAvailableForPairing(states.get(entry.playerKey)))
+    const active = ranked.filter((entry: any) => present.has(entry.playerKey) && isAvailableForPairing(states.get(entry.playerKey)));
+    const waiting: ArenaWaiter[] = active
+      .filter((entry: any) => !busy.has(entry.playerKey))
       .map((entry: any) => {
         const state = states.get(entry.playerKey);
-        const since = freeSinceMs({
-          lastGameEndedAt: lastGameEnded.get(entry.playerKey),
-          queuedAt: state?.queuedAt ? new Date(state.queuedAt).getTime() : null,
-          joinedAt: state?.joinedAt ? new Date(state.joinedAt).getTime() : null,
-          startedAt: tournament.startedAt ? new Date(tournament.startedAt).getTime() : null,
-        });
-        return { ...(entry.toObject ? entry.toObject() : entry), waitingMs: Math.max(0, now - (since || now)) };
+        return {
+          playerKey: entry.playerKey,
+          rank: rankOf.get(entry.playerKey) ?? 0,
+          rating: Number(entry.rating || 0) || DEFAULT_RATING,
+          since:
+            freeSinceMs({
+              lastGameEndedAt: lastGameEnded.get(entry.playerKey),
+              queuedAt: state?.queuedAt ? new Date(state.queuedAt).getTime() : null,
+              joinedAt: state?.joinedAt ? new Date(state.joinedAt).getTime() : null,
+              startedAt: tournament.startedAt ? new Date(tournament.startedAt).getTime() : null,
+            }) || now,
+          colours: colours.get(entry.playerKey) || NO_COLOUR_HISTORY,
+        };
       });
+
+    const pairs = lichessArenaPairings({
+      waiting,
+      lastOpponents,
+      now,
+      recentlyStarted: Boolean(tournament.startedAt) && now - new Date(tournament.startedAt).getTime() < ARENA_RECENT_START_MS,
+      hadPairings: games.length > 0,
+      waitSeconds: arenaWaitSeconds(tournament),
+      smallTourActivePlayers: ranked.length < ARENA_SMALL_TOURNAMENT_PLAYERS ? active.length : null,
+    }).map((pair) => ({ white: standingByKey.get(pair.white.playerKey), black: standingByKey.get(pair.black.playerKey) }));
 
     // Board numbers continue from the games already loaded above, rather than
     // costing an extra count query on every pass.
@@ -772,8 +842,8 @@ export async function syncArenaPairings(tournamentId: string) {
 
     const announce: PairingCreatedEvent[] = [];
     const openedGames: TournamentGameLike[] = [];
-    const { pairs } = buildArenaPairings(waiting, { history, recent, playing: busy.size });
     for (const pair of pairs) {
+      if (!pair.white || !pair.black) continue;
       const game = await createGame(tournament, {
         source: "arena",
         roundNumber: 0,

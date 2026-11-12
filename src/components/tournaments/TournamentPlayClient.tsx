@@ -6,6 +6,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Chess } from "chess.js";
 import { isPromotionMove, promotionFromBoardPiece, type PendingPromotion, type PromotionPiece } from "@/lib/chessPromotion";
 import { ArrowLeft, Flag, Handshake, Pause, Play, RefreshCcw, Trophy, X, Zap } from "lucide-react";
+import { SWISS_NO_DRAW_BEFORE_PLIES } from "@/lib/tournament/lichessRules";
 import { useTournamentSocket } from "@/lib/useTournamentSocket";
 import { clockBaselineFromGame, deriveClocks, useNow, type ClockBaseline } from "@/lib/useLiveClock";
 import { sideOwingFirstMove } from "@/lib/tournament/firstMove";
@@ -387,6 +388,9 @@ export function TournamentPlayClient({
   const myTurn = gameIsActive && ((game.turn === "w" && myColor === "white") || (game.turn === "b" && myColor === "black"));
   const canInteract = gameIsActive && hasBoardControl && !submitting;
   const isArena = state?.tournament?.type === "arena";
+  // lila Game.swissPreventsDraw: no draw offers before move 30 in Swiss (rules v4).
+  const swissDrawLocked =
+    !isArena && Number(state?.tournament?.rulesVersion || 1) >= 4 && Number(game?.ply ?? (game?.moveHistorySAN || []).length ?? 0) < SWISS_NO_DRAW_BEFORE_PLIES;
   const tieBreak = state?.tieBreak || null;
   // Memoised: a fresh `|| []` on every render would defeat the memos below it,
   // recomputing the rank and standings lookups on every clock tick.
@@ -878,7 +882,8 @@ export function TournamentPlayClient({
                     <button
                       type="button"
                       onClick={() => setConfirmAction("draw")}
-                      disabled={!hasBoardControl}
+                      disabled={!hasBoardControl || swissDrawLocked}
+                      title={swissDrawLocked ? "Draw offers open at move 30 in a Swiss tournament" : undefined}
                       className="btn-outline min-h-11 disabled:opacity-50"
                     >
                       <Handshake size={15} aria-hidden /> {drawOffered ? "Accept draw" : "Offer draw"}

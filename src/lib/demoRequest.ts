@@ -49,6 +49,27 @@ export function demoChildLevelLabel(value?: string | null) {
 }
 
 /**
+ * How a family reached the academy when a salesperson adds their lead by hand
+ * in the Demo Leads CRM (2026-11-13, user: "there is no way to manually add
+ * leads"). Form leads carry ad tags instead; see src/lib/leadSource.ts.
+ */
+export const MANUAL_LEAD_SOURCES = [
+  { value: "phone_call", label: "Phone call" },
+  { value: "whatsapp", label: "WhatsApp message" },
+  { value: "walk_in", label: "Walk-in" },
+  { value: "referral", label: "Referral (parent or student)" },
+  { value: "social_message", label: "Social media message" },
+  { value: "event", label: "Event or school visit" },
+  { value: "other", label: "Other" },
+] as const;
+
+export type ManualLeadSource = (typeof MANUAL_LEAD_SOURCES)[number]["value"];
+
+export function manualLeadSourceLabel(value?: string | null) {
+  return MANUAL_LEAD_SOURCES.find((item) => item.value === value)?.label || "Other";
+}
+
+/**
  * Where a form lead has got to in the Demo Leads CRM (/sales/leads).
  * A lead saved before the CRM existed has no stage and reads as "new".
  */

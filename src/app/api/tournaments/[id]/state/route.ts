@@ -36,7 +36,7 @@ function objectId(value: any) {
 
 /** Only the fields a lobby needs. Move histories are never sent in bulk. */
 const GAME_LIST_FIELDS =
-  "tournament source roundNumber tableNumber whiteKey blackKey whiteName blackName whiteUser blackUser whiteExternalUsername blackExternalUsername status result termination winnerKey ply createdAt endedAt";
+  "tournament source roundNumber tableNumber whiteKey blackKey whiteName blackName whiteUser blackUser whiteExternalUsername blackExternalUsername status result termination winnerKey ply createdAt endedAt whiteRatingDiff blackRatingDiff";
 
 const ACTIVE_GAME_FIELDS = `${GAME_LIST_FIELDS} fen startFen moveHistorySAN moveHistoryUCI turn whiteClockMs blackClockMs whiteIncrementMs blackIncrementMs initialClockMs incrementMs lastMoveAt startedAt firstMoveDeadlineAt drawOfferBy berserkWhite berserkBlack whiteRating blackRating`;
 

@@ -73,6 +73,15 @@ const ABSOLUTE_COLOUR_UNIT = 1_000_000_000;
 const SCORE_UNIT = 1_000_000;
 const SOFT_COLOUR_UNIT = 10_000;
 const FLOAT_UNIT = 100;
+/**
+ * FIDE Dutch system (what Lichess runs, through bbpPairings --dutch): inside
+ * a score group, S1 (the top half) plays S2 (the bottom half) in order - 1v5,
+ * 2v6, 3v7, 4v8 for eight players. Weighted below colour preferences, as the
+ * Dutch system exchanges inside S2 to satisfy colours. Capped so that, in a
+ * large group, it can never outweigh one soft colour preference.
+ */
+const DUTCH_UNIT = 1_000;
+const DUTCH_MAX_STEPS = 9;
 /** Only used when repeats are explicitly permitted; dominates everything else. */
 const REPEAT_PENALTY = 100_000_000_000;
 
@@ -225,7 +234,32 @@ export function maxRoundsWithoutRepeat(playerCount: number) {
 /* Pairing                                                             */
 /* ------------------------------------------------------------------ */
 
-function edgeWeight(a: SwissPlayer, b: SwissPlayer, hasMet: boolean, allowRepeats: boolean) {
+type DutchSeats = Map<string, { group: number; index: number; size: number }>;
+
+/** Each player's place inside their score group, in standing order. */
+export function dutchSeats(players: SwissPlayer[]): DutchSeats {
+  const seats: DutchSeats = new Map();
+  const groups = new Map<number, SwissPlayer[]>();
+  for (const player of orderPlayers(players)) {
+    if (!groups.has(player.points)) groups.set(player.points, []);
+    groups.get(player.points)!.push(player);
+  }
+  groups.forEach((members, points) => {
+    members.forEach((player, index) => seats.set(player.playerKey, { group: points, index, size: members.length }));
+  });
+  return seats;
+}
+
+/** How far a pair is from the Dutch S1-v-S2 ideal, in steps; 0 across score groups. */
+export function dutchCost(a: SwissPlayer, b: SwissPlayer, seats?: DutchSeats) {
+  const seatA = seats?.get(a.playerKey);
+  const seatB = seats?.get(b.playerKey);
+  if (!seatA || !seatB || seatA.group !== seatB.group) return 0;
+  const ideal = Math.floor(seatA.size / 2);
+  return Math.min(DUTCH_MAX_STEPS, Math.abs(Math.abs(seatA.index - seatB.index) - ideal));
+}
+
+function edgeWeight(a: SwissPlayer, b: SwissPlayer, hasMet: boolean, allowRepeats: boolean, seats?: DutchSeats) {
   // Score groups first: the further apart in the standings, the worse. Scores
   // come in halves, so doubling keeps the term an integer.
   const scoreSteps = Math.min(MAX_SCORE_GAP_STEPS, Math.round(Math.abs(a.points - b.points) * 2));
@@ -235,6 +269,7 @@ function edgeWeight(a: SwissPlayer, b: SwissPlayer, hasMet: boolean, allowRepeat
     colour.absolute * ABSOLUTE_COLOUR_UNIT -
     scoreSteps * SCORE_UNIT -
     colour.soft * SOFT_COLOUR_UNIT -
+    dutchCost(a, b, seats) * DUTCH_UNIT -
     floatCost(a, b) * FLOAT_UNIT;
   // A stable, tiny nudge so equally good pairings resolve the same way twice.
   weight -= (Math.abs(hashKey(a.playerKey) - hashKey(b.playerKey)) % 64);
@@ -253,13 +288,14 @@ function hashKey(key: string) {
 
 function buildEdges(players: SwissPlayer[], allowRepeats: boolean) {
   const met = new Map<string, Set<string>>(players.map((player) => [player.playerKey, new Set(player.opponents || [])]));
+  const seats = dutchSeats(players);
   const edges: WeightedEdge[] = [];
   for (let i = 0; i < players.length; i += 1) {
     for (let j = i + 1; j < players.length; j += 1) {
       const a = players[i];
       const b = players[j];
       const hasMet = Boolean(met.get(a.playerKey)?.has(b.playerKey) || met.get(b.playerKey)?.has(a.playerKey));
-      const weight = edgeWeight(a, b, hasMet, allowRepeats);
+      const weight = edgeWeight(a, b, hasMet, allowRepeats, seats);
       if (weight === null) continue;
       edges.push([i, j, weight]);
     }
@@ -432,6 +468,7 @@ function roundsBound(players: SwissPlayer[]) {
 type Candidate = { bye: SwissPlayer | null; byeRank: number; field: SwissPlayer[]; mate: number[]; weight: number };
 
 function matchingWeight(field: SwissPlayer[], mate: number[], allowRepeats: boolean) {
+  const seats = dutchSeats(field);
   let total = 0;
   for (let index = 0; index < field.length; index += 1) {
     const other = mate[index];
@@ -439,7 +476,7 @@ function matchingWeight(field: SwissPlayer[], mate: number[], allowRepeats: bool
     const a = field[index];
     const b = field[other];
     const hasMet = Boolean(a.opponents?.includes(b.playerKey) || b.opponents?.includes(a.playerKey));
-    total += edgeWeight(a, b, hasMet, allowRepeats) || 0;
+    total += edgeWeight(a, b, hasMet, allowRepeats, seats) || 0;
   }
   return total;
 }

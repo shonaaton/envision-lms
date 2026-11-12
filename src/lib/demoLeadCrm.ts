@@ -4,7 +4,20 @@ import { Types } from "mongoose";
 import { dbConnect } from "@/lib/db";
 import { ownerCandidates } from "@/lib/demoLeadOwner";
 import { demoLeadOwnerForTurn, demoLeadRotationNames, resolveDemoLeadRotation } from "@/lib/demoLeadRotation";
-import { DEMO_LEAD_STAGE_VALUES, DEMO_REQUEST_KIND, SUBMITTED_DEMO_REQUEST, demoLeadStage, demoLeadStageLabel, type DemoLeadStage } from "@/lib/demoRequest";
+import {
+  DEMO_AGE_GROUP_VALUES,
+  DEMO_CHILD_LEVEL_VALUES,
+  DEMO_LEAD_STAGE_VALUES,
+  DEMO_REQUEST_KIND,
+  MANUAL_LEAD_SOURCES,
+  SUBMITTED_DEMO_REQUEST,
+  demoLeadStage,
+  demoLeadStageLabel,
+  manualLeadSourceLabel,
+  type DemoLeadStage,
+} from "@/lib/demoRequest";
+import { CONTACT_INTEREST_VALUES, ONLINE_INTEREST, contactDisplayPhone } from "@/lib/contactEnquiries";
+import { exactNationalNumber, exactPhoneNumberProblem } from "@/lib/phoneCountryCodes";
 import { demoSlotLabel } from "@/lib/demoRequestSlots";
 import { LEAD_CHANNELS, summarizeLeadSource, type LeadChannel, type LeadSourceSummary } from "@/lib/leadSource";
 import {
@@ -21,6 +34,7 @@ import {
   cancelDemoLeadCallTask,
   cancelDemoLeadReminderTask,
   reassignDemoLeadReminderTasks,
+  raiseDemoRequestTask,
   reassignDemoRequestTask,
   resolveDemoLeadCallTask,
   resolveDemoLeadReminderTasks,
@@ -157,6 +171,8 @@ export type DemoLeadRow = {
   demoSlot: string;
   whatsappVerified: boolean;
   otpFailed: boolean;
+  /** Typed in by a salesperson, so there was never a WhatsApp code to check. */
+  manual: boolean;
   stage: DemoLeadStage;
   ownerId: string;
   ownerName: string;
@@ -165,6 +181,19 @@ export type DemoLeadRow = {
   /** Reminders still waiting to fire ("scheduled") or fired with no call logged since ("sent"), soonest first. */
   reminders: Array<{ id: string; dueAt: string; note: string; status: "scheduled" | "sent"; forId: string; forName: string; byName: string }>;
 };
+
+/** The Source column for a lead added by hand: how the family reached us, and who typed it in. */
+function manualLeadSummary(doc: any): LeadSourceSummary {
+  const how = manualLeadSourceLabel(doc.manualSource);
+  return {
+    channel: "manual",
+    headline: `Added by hand · ${how}`,
+    details: [
+      { label: "How they reached us", value: how },
+      { label: "Added by", value: String(doc.addedByName || "") },
+    ].filter((item) => item.value),
+  };
+}
 
 /** What the viewer may see, before any filter they chose. */
 function scopeFor(viewer: DemoLeadViewer): Record<string, unknown> {
@@ -240,7 +269,8 @@ export async function getDemoLeads(viewer: DemoLeadViewer, filters: DemoLeadFilt
   const rows: DemoLeadRow[] = (docs as any[]).map((doc) => ({
     id: String(doc._id),
     name: String(doc.name || ""),
-    source: summarizeLeadSource(doc.leadSource),
+    source: doc.leadEntry === "manual" ? manualLeadSummary(doc) : summarizeLeadSource(doc.leadSource),
+    manual: doc.leadEntry === "manual",
     email: String(doc.email || ""),
     countryCode: String(doc.countryCode || ""),
     phone: String(doc.phone || ""),
@@ -415,6 +445,118 @@ export async function cancelDemoLeadReminder(viewer: DemoLeadViewer, reminderId:
     $push: { leadLog: { kind: "reminder", text: `Reminder for ${label} removed`, by: viewer.id, byName: viewer.name, at: now } },
   });
   return true;
+}
+
+export type ManualLeadInput = {
+  name: string;
+  countryCode: string;
+  phone: string;
+  email: string;
+  ageGroup: string;
+  childLevel: string;
+  interest: string;
+  preferredTime: string;
+  manualSource: string;
+  note: string;
+  /** Admins only: a rotation salesperson's id, or "" for whoever's turn it is. */
+  owner: string;
+};
+
+export type ManualLeadResult = { ok: true; id: string } | { ok: false; error: string; existingId?: string };
+
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+/**
+ * A lead a salesperson types in: a parent who phoned, walked in, or was
+ * referred, and never filled the form (2026-11-13). It joins the same list,
+ * stages, calls and reminders as a form lead, marked "Added by hand".
+ *
+ * One lead per WhatsApp number, as on the form: a number already in the CRM is
+ * refused and the existing lead named, so nobody works a family twice. A
+ * half-finished form for the number (still waiting for its code) is taken over
+ * rather than duplicated. A salesperson owns what they add; an admin picks a
+ * salesperson or lets the rotation choose, and that salesperson gets the usual
+ * "call this parent" task.
+ */
+export async function addManualDemoLead(viewer: DemoLeadViewer, input: ManualLeadInput): Promise<ManualLeadResult> {
+  const name = input.name.trim().slice(0, 120);
+  if (name.length < 2) return { ok: false, error: "Enter the parent's name." };
+  const countryCode = `+${input.countryCode.replace(/[^\d]/g, "") || "91"}`;
+  const problem = exactPhoneNumberProblem(input.phone, countryCode);
+  if (problem) return { ok: false, error: problem };
+  const phone = exactNationalNumber(input.phone, countryCode);
+  const email = input.email.trim().toLowerCase().slice(0, 160);
+  if (email && !EMAIL_PATTERN.test(email)) return { ok: false, error: "That email address doesn't look right. Leave it empty if you don't have one." };
+  const manualSource = MANUAL_LEAD_SOURCES.some((item) => item.value === input.manualSource) ? input.manualSource : "";
+  if (!manualSource) return { ok: false, error: "Choose how the family reached us." };
+
+  await dbConnect();
+  const existing: any = await ContactMessage.findOne({ kind: DEMO_REQUEST_KIND, countryCode, phone, ...SUBMITTED_DEMO_REQUEST })
+    .sort({ createdAt: -1 })
+    .select("name salesOwner salesOwnerName")
+    .lean();
+  if (existing) {
+    const mine = viewer.seesAll || String(existing.salesOwner || "") === viewer.id;
+    const owner = existing.salesOwnerName ? `, with ${existing.salesOwnerName}` : "";
+    return {
+      ok: false,
+      error: `${contactDisplayPhone(countryCode, phone)} is already a lead (${existing.name || "no name"}${owner}). One lead per number, so it was not added again.`,
+      ...(mine ? { existingId: String(existing._id) } : {}),
+    };
+  }
+
+  // Owner: the salesperson themselves, or for an admin the chosen salesperson / the rotation.
+  let owner: { userId: string; name: string } | null = null;
+  if (!viewer.seesAll) owner = { userId: viewer.id, name: viewer.name };
+  else if (input.owner) {
+    const picked = (await demoLeadRotation()).find((candidate) => candidate.userId === input.owner);
+    if (!picked) return { ok: false, error: "Choose a salesperson from the list." };
+    owner = { userId: picked.userId, name: picked.name || picked.email };
+  }
+
+  const now = new Date();
+  const how = manualLeadSourceLabel(manualSource);
+  const log: Array<Record<string, unknown>> = [{ kind: "owner", text: `Added by hand by ${viewer.name} (${how})`, by: viewer.id, byName: viewer.name, at: now }];
+  if (owner && owner.userId !== viewer.id) log.push({ kind: "owner", text: `Assigned to ${owner.name}`, by: viewer.id, byName: viewer.name, at: now });
+  const note = input.note.trim().slice(0, 1000);
+  if (note) log.push({ kind: "note", text: note, by: viewer.id, byName: viewer.name, at: now });
+
+  const fields: Record<string, unknown> = {
+    kind: DEMO_REQUEST_KIND,
+    awaitingCode: false,
+    // Counts as "already with sales", so the family filling the form later is refused and noted on this lead.
+    announcedAt: now,
+    name,
+    ...(email ? { email } : {}),
+    countryCode,
+    phone,
+    ageGroup: (DEMO_AGE_GROUP_VALUES as readonly string[]).includes(input.ageGroup) ? input.ageGroup : "",
+    childLevel: (DEMO_CHILD_LEVEL_VALUES as readonly string[]).includes(input.childLevel) ? input.childLevel : "",
+    interest: CONTACT_INTEREST_VALUES.includes(input.interest) ? input.interest : ONLINE_INTEREST,
+    preferredTime: input.preferredTime.trim().slice(0, 120),
+    leadChannel: "manual",
+    leadEntry: "manual",
+    manualSource,
+    addedBy: viewer.id,
+    addedByName: viewer.name,
+    leadStage: "new",
+    leadStageAt: now,
+    ...(owner ? { salesOwner: owner.userId, salesOwnerName: owner.name, salesAssignedAt: now } : { salesOwner: null }),
+  };
+
+  // A form for this number abandoned at the code step is the same family: reuse its row.
+  const abandoned: any = await ContactMessage.findOneAndUpdate(
+    { kind: DEMO_REQUEST_KIND, countryCode, phone, awaitingCode: true },
+    { $set: fields, $push: { leadLog: { $each: log } } },
+    { new: true, sort: { createdAt: -1 } },
+  ).lean();
+  const lead: any = abandoned || (await ContactMessage.create({ ...fields, leadLog: log })).toObject();
+  const id = String(lead._id);
+
+  // The rotation spends a turn on it, exactly as for a form lead.
+  const assigned: any = owner ? lead : await assignDemoLeadOwner(id);
+  if (assigned?.salesOwner && String(assigned.salesOwner) !== viewer.id) await raiseDemoRequestTask(assigned);
+  return { ok: true, id };
 }
 
 /** Admins only: hand a lead to the other salesperson. Does not move the rotation. */

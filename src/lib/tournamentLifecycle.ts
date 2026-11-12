@@ -20,6 +20,7 @@ import { notifyTournamentUsers } from "@/lib/tournamentNotifications";
 import { sendTournamentReminder } from "@/lib/tournamentReminders";
 import { dueTournamentReminder } from "@/lib/tournament/reminderSchedule";
 import { forgetTournamentPresence } from "@/lib/tournament/presence";
+import { rateFinishedGames } from "@/lib/tournament/ratingService";
 import { emitRoundCompleted, emitTournamentEnded, emitTournamentStatus, flushStandings } from "@/lib/tournamentSocketServer";
 
 /**
@@ -282,6 +283,7 @@ async function processTournamentOnce(tournamentId: string, options: { force?: bo
   summary.gamesEnded += ended.length;
 
   if (ended.length) {
+    await rateFinishedGames(tournament);
     tournament = await Tournament.findById(tournamentId);
     await recalculateTournamentStandings(tournament);
     await tournament.save();
@@ -329,6 +331,25 @@ export async function runTournamentTick(): Promise<TickSummary> {
     finalized: 0,
   };
 
+  // Boards still running after their tournament finished: the Arena's games
+  // that started before the end. Nobody pairs them any more, but their clocks
+  // and first-move deadlines still have to end them, or a board both players
+  // left would stay "live" for ever.
+  const leftover: any[] = await TournamentGame.distinct("tournament", { status: "active" });
+  const activeIds = new Set(tournaments.map((tournament) => String(tournament._id)));
+  for (const tournamentId of leftover) {
+    if (activeIds.has(String(tournamentId))) continue;
+    try {
+      const finished: any = await Tournament.findById(tournamentId);
+      if (!finished) continue;
+      const ended = await enforceTournamentGameTimeouts(finished);
+      summary.gamesEnded += ended.length;
+      if (ended.length) await rateFinishedGames(finished);
+    } catch (error) {
+      console.error(`Tournament leftover boards failed for ${tournamentId}`, error);
+    }
+  }
+
   for (const tournament of tournaments) {
     try {
       const one = await processTournament(String(tournament._id));
@@ -359,8 +380,13 @@ export async function onGameCompleted(tournamentId: string, gameId: string) {
 }
 
 async function handleGameCompleted(tournamentId: string, _gameId: string) {
-  const tournament: any = await Tournament.findById(tournamentId);
+  let tournament: any = await Tournament.findById(tournamentId);
   if (!tournament) return;
+  // Ratings first, so the standings below carry the new numbers.
+  if (tournament.rated && (await rateFinishedGames(tournament))) {
+    tournament = await Tournament.findById(tournamentId);
+    if (!tournament) return;
+  }
 
   const games = await TournamentGame.find({ tournament: tournament._id }, "_id status result roundNumber").lean();
   const { changed, completedRound } = syncSwissRoundState(tournament, games);

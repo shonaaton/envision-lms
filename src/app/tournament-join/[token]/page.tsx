@@ -10,6 +10,7 @@ import { getTurnstileSiteKey } from "@/lib/humanVerification";
 import { formatAcademyDateTime } from "@/lib/academyTime";
 import { isFinishedStatus, isPlayingStatus } from "@/lib/tournamentEngine";
 import { tournamentRuleSections } from "@/lib/tournament/rules";
+import { lateEntryOpen } from "@/lib/tournament/lichessRules";
 import { formatTimeControl, resolveTimeControl } from "@/lib/tournament/timeControl";
 import { GuestRegistrationForm } from "./GuestRegistrationForm";
 
@@ -21,7 +22,7 @@ function registrationClosedMessage(tournament: any) {
   if (expiresAt && new Date(expiresAt).getTime() <= Date.now()) return "Registration has closed.";
   if (isFinishedStatus(tournament.status) || tournament.status === "cancelled") return "This tournament is over.";
   if (tournament.type === "arena" && tournament.arenaEndsAt && new Date(tournament.arenaEndsAt).getTime() <= Date.now()) return "This tournament is over.";
-  if (isPlayingStatus(tournament.status) && tournament.lateJoiningAllowed === false) return "The tournament has started and late entry is closed.";
+  if (isPlayingStatus(tournament.status) && !lateEntryOpen(tournament)) return "The tournament has started and late entry is closed.";
   return "";
 }
 

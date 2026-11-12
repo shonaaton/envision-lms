@@ -29,6 +29,7 @@ import { BranchStudent } from "@/models/Branch";
 import { Tournament } from "@/models/Tournament";
 import { formatAcademyDateTime } from "@/lib/academyTime";
 import { formatTimeControl, resolveTimeControl } from "@/lib/tournament/timeControl";
+import { lateEntryOpen } from "@/lib/tournament/lichessRules";
 
 const DAY = 86_400_000;
 const KEY_PATTERN = /^(campaign:[a-f0-9]{24}|auto:[a-z_]+:[A-Za-z0-9_-]+)$/;
@@ -87,13 +88,13 @@ async function tournamentCandidates(user: any, now: Date): Promise<PopupCandidat
     startAt: { $lte: new Date(now.getTime() + TOURNAMENT_LOOKAHEAD_DAYS * DAY) },
     $or: audience,
   })
-    .select("name type status startAt rounds arenaDurationMinutes arenaEndsAt initialClockSeconds timeControlMinutes incrementSeconds lateJoiningAllowed pausedByAdmin")
+    .select("name type status startAt rounds arenaDurationMinutes arenaEndsAt initialClockSeconds timeControlMinutes incrementSeconds lateJoiningAllowed pausedByAdmin currentRound rulesVersion")
     .sort({ startAt: 1 })
     .limit(10)
     .lean();
   const open = rows.find((row) => {
     if (LIVE_TOURNAMENT_STATUSES.includes(row.status)) {
-      if (row.lateJoiningAllowed === false || row.pausedByAdmin) return false;
+      if (!lateEntryOpen(row) || row.pausedByAdmin) return false;
       return !(row.type === "arena" && row.arenaEndsAt && new Date(row.arenaEndsAt) <= now);
     }
     return new Date(row.startAt) > now;

@@ -127,6 +127,18 @@ const UserSchema = new Schema(
     avatar: { type: String, default: "" }, // hex color or URL
     fideId: { type: String },
     rating: { type: Number, default: 0 },
+    /**
+     * Online tournament rating, Glicko-2 as Lichess runs it (lib/tournament/
+     * glicko2.ts). Separate from the plain rating field above, which is the rating the
+     * family typed in. Absent until the first rated tournament game.
+     */
+    tournamentRating: {
+      rating: Number,
+      deviation: Number,
+      volatility: Number,
+      games: { type: Number, default: 0 },
+      updatedAt: Date,
+    },
     tags: [{ type: String, index: true }],
     batches: [{ type: Schema.Types.ObjectId, ref: "Batch", index: true }],
     classrooms: [{ type: Schema.Types.ObjectId, ref: "Classroom" }],

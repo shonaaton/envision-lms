@@ -13,11 +13,12 @@ function byKey(version: number, games: ScoredGame[], field = players) {
 }
 
 describe("rules version", () => {
-  it("creates new tournaments on v3", () => expect(CURRENT_RULES_VERSION).toBe(3));
+  it("creates new tournaments on v4 (Lichess rules)", () => expect(CURRENT_RULES_VERSION).toBe(4));
   it("keeps stored versions", () => {
     expect(normalizeRulesVersion(undefined)).toBe(1);
     expect(normalizeRulesVersion(2)).toBe(2);
     expect(normalizeRulesVersion(3)).toBe(3);
+    expect(normalizeRulesVersion(4)).toBe(4);
   });
 });
 

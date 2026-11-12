@@ -7,7 +7,6 @@ import { cookies } from "next/headers";
 import { getTournamentGuestUsername, isTournamentGuestRequest } from "@/lib/tournamentGuests";
 import { inactiveStudentMessage, isCurrentStudent } from "@/lib/studentAccess";
 import { consumeTournamentRate, rateIdentity, rateLimitedResponse } from "@/lib/tournamentRateLimit";
-import { extendedFirstMoveDeadline } from "@/lib/tournament/firstMove";
 
 /**
  * Connectivity, kept separate from chess state.
@@ -101,12 +100,8 @@ export async function POST(req: Request, { params }: { params: { gameId: string 
     }
   }
 
-  // The player who owes the first move keeps their grace period rolling from
-  // the moment they actually see the board, up to a cap.
-  if (visible) {
-    const extended = extendedFirstMoveDeadline(game, color);
-    if (extended) set.firstMoveDeadlineAt = extended;
-  }
+  // The first-move deadline is fixed, as on Lichess: having the board open
+  // does not extend it (lib/tournament/firstMove.ts).
 
   await TournamentGame.updateOne({ _id: game._id }, { $set: set, ...(Object.keys(unset).length ? { $unset: unset } : {}) });
 

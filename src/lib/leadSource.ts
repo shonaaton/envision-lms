@@ -52,6 +52,8 @@ export const LEAD_CHANNELS = [
   { value: "social", label: "Social media" },
   { value: "referral", label: "Another website" },
   { value: "direct", label: "Website (direct)" },
+  /** Typed in by a salesperson in the Demo Leads CRM; never worked out from tags. */
+  { value: "manual", label: "Added by hand" },
   { value: "unknown", label: "Not recorded" },
 ] as const;
 

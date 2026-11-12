@@ -77,6 +77,22 @@ export function useTournamentSocket({ tournamentId, gameId, handlers }: Options)
       });
       socket.on("disconnect", () => setConnected(false));
 
+      // socket.io does not reconnect after the server refuses the handshake
+      // (rate limit, or a guest cookie that is not set yet), so the room would
+      // stay on HTTP polling for good. Retry with a growing, jittered delay.
+      let refusals = 0;
+      socket.on("connect", () => {
+        refusals = 0;
+      });
+      socket.on("connect_error", () => {
+        if (cancelled || socket.active) return;
+        refusals += 1;
+        const delay = Math.min(30_000, 2_000 * 2 ** Math.min(refusals - 1, 4)) + Math.random() * 2_000;
+        window.setTimeout(() => {
+          if (!cancelled && !socket.connected) socket.connect();
+        }, delay);
+      });
+
       const forward = (event: string, handler: keyof TournamentSocketHandlers) => {
         socket.on(event, (payload: any) => {
           (handlersRef.current[handler] as ((value: any) => void) | undefined)?.(payload);

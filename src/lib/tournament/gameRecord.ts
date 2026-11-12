@@ -19,6 +19,8 @@ export function toScoredGame(game: any): ScoredGame {
     plyCount: Number(game?.ply ?? (game?.moveHistorySAN || []).length ?? 0),
     berserkWhite: Boolean(game?.berserkWhite),
     berserkBlack: Boolean(game?.berserkBlack),
+    whiteRating: Number(game?.whiteRating || 0),
+    blackRating: Number(game?.blackRating || 0),
     endedAt: new Date(game?.endedAt || game?.updatedAt || game?.createdAt || 0).getTime(),
   };
 }

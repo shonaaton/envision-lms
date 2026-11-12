@@ -2,13 +2,16 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { AlarmClock, Handshake, Search } from "lucide-react";
+import { AddDemoLeadForm, type AddLeadFormState } from "@/components/sales/AddDemoLeadForm";
 import { DemoLeadsSheet, type DemoLeadSheetRow, type ReminderFormState } from "@/components/sales/DemoLeadsSheet";
 import { NoCopyShell, SalesDataNotice } from "@/components/sales/NoCopyShell";
 import { academyDateKey, academyDateTime, academyDateTimeLocalInput, parseAcademyDateTimeLocal } from "@/lib/academyTime";
-import { contactDisplayPhone, contactInterestLabel, whatsappDigits } from "@/lib/contactEnquiries";
+import { contactDisplayPhone, contactInterestLabel, contactInterests, whatsappDigits } from "@/lib/contactEnquiries";
+import { DIAL_CODES } from "@/lib/phoneCountryCodes";
 import { demoLeadCallOutcomeLabel, reminderPresets } from "@/lib/demoLeadCalls";
 import {
   addDemoLeadNote,
+  addManualDemoLead,
   cancelDemoLeadReminder,
   deleteDemoLead,
   demoLeadViewer,
@@ -21,7 +24,15 @@ import {
   setDemoLeadReminder,
   setDemoLeadStage,
 } from "@/lib/demoLeadCrm";
-import { DEMO_LEAD_STAGES, demoAgeGroupLabel, demoChildLevelLabel, demoLeadStageLabel } from "@/lib/demoRequest";
+import {
+  DEMO_AGE_GROUPS,
+  DEMO_CHILD_LEVELS,
+  DEMO_LEAD_STAGES,
+  MANUAL_LEAD_SOURCES,
+  demoAgeGroupLabel,
+  demoChildLevelLabel,
+  demoLeadStageLabel,
+} from "@/lib/demoRequest";
 import { LEAD_CHANNELS } from "@/lib/leadSource";
 import { logSalesAction, logSalesView, requireSalesViewer } from "@/lib/salesAudit";
 
@@ -59,6 +70,34 @@ async function addNote(formData: FormData) {
     logSalesAction(viewer.sales, `${viewer.sales.name} added a note to a demo lead`, { lead });
   }
   revalidatePath("/sales/leads");
+}
+
+/** A lead typed in by hand. On success the page opens it; on a known number it names the existing lead. */
+async function addLead(previous: AddLeadFormState, formData: FormData): Promise<AddLeadFormState> {
+  "use server";
+  const viewer = await crmViewer();
+  if (!viewer?.canManage) return { error: "You do not have permission to add leads.", existingHref: "" };
+  const text = (key: string) => String(formData.get(key) || "");
+  const result = await addManualDemoLead(viewer.lead, {
+    name: text("name"),
+    countryCode: text("countryCode"),
+    phone: text("phone"),
+    email: text("email"),
+    ageGroup: text("ageGroup"),
+    childLevel: text("childLevel"),
+    interest: text("interest"),
+    preferredTime: text("preferredTime"),
+    manualSource: text("manualSource"),
+    note: text("note"),
+    owner: text("owner"),
+  });
+  if (!result.ok) {
+    const existingHref = result.existingId ? demoLeadsHref({ stage: "all", owner: "all", query: "", channel: "all", lead: result.existingId }) : "";
+    return { error: result.error, existingHref };
+  }
+  logSalesAction(viewer.sales, `${viewer.sales.name} added a demo lead by hand`, { lead: result.id });
+  revalidatePath("/sales/leads");
+  redirect(demoLeadsHref({ stage: "all", owner: "all", query: "", channel: "all", lead: result.id }));
 }
 
 /** Picked up or Missed: the time is the server's clock when the button was pressed. */
@@ -159,7 +198,7 @@ export default async function DemoLeadsPage({ searchParams }: { searchParams: Re
       phoneLabel: contactDisplayPhone(row.countryCode, row.phone),
       telHref: `tel:${wa ? `+${wa}` : row.phone}`,
       whatsappHref: wa ? `https://wa.me/${wa}` : "",
-      verification: row.whatsappVerified ? "verified" : row.otpFailed ? "failed" : "unverified",
+      verification: row.manual ? "manual" : row.whatsappVerified ? "verified" : row.otpFailed ? "failed" : "unverified",
       age: demoAgeGroupLabel(row.ageGroup),
       level: demoChildLevelLabel(row.childLevel),
       classPreference: contactInterestLabel(row.interest),
@@ -195,11 +234,23 @@ export default async function DemoLeadsPage({ searchParams }: { searchParams: Re
           <h1 className="mt-2 text-3xl font-black text-brand">Demo Leads</h1>
           <p className="mt-1 text-sm text-slate-600">
             {seesAll
-              ? "Every lead from the free demo form, shared between the salespeople in turn."
-              : "The free demo form leads assigned to you."}{" "}
+              ? "Every lead from the free demo form or added by hand, shared between the salespeople in turn."
+              : "The free demo form leads assigned to you, and the ones you added."}{" "}
             {data.stageCounts.new} new {data.stageCounts.new === 1 ? "lead" : "leads"} waiting for a first call.
           </p>
         </header>
+
+        {viewer.canManage ? (
+          <AddDemoLeadForm
+            addLead={addLead}
+            dialCodes={DIAL_CODES.map((entry) => ({ value: entry.code, label: `+${entry.code}` }))}
+            ageGroups={DEMO_AGE_GROUPS.map((item) => ({ value: item.value, label: item.label }))}
+            childLevels={DEMO_CHILD_LEVELS.map((item) => ({ value: item.value, label: item.label }))}
+            interests={contactInterests.map((item) => ({ value: item.value, label: item.label }))}
+            sources={MANUAL_LEAD_SOURCES.map((item) => ({ value: item.value, label: item.label }))}
+            owners={seesAll ? data.owners.map((owner) => ({ value: owner.id, label: owner.name })) : []}
+          />
+        ) : null}
 
         {myReminders.length ? (
           <section aria-label="Your call-backs" className="rounded-2xl border border-amber-200 bg-amber-50 p-4">

@@ -57,7 +57,8 @@ export function formatTimeControl(control: TimeControl) {
  * increment is forfeited. Increment is always removed.
  */
 export function berserkClock(control: TimeControl) {
-  const noTimePenalty = control.initialSeconds < control.incrementSeconds * 60;
+  // scalachess Clock.Config.berserkPenalty: no time penalty when the base is under 40x the increment.
+  const noTimePenalty = control.initialSeconds < control.incrementSeconds * 40;
   const initialSeconds = noTimePenalty ? control.initialSeconds : Math.floor(control.initialSeconds / 2);
   return { initialSeconds, incrementSeconds: 0 };
 }

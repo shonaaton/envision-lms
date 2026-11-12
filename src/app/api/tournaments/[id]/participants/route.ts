@@ -14,7 +14,7 @@ export async function DELETE(req: Request, { params }: { params: { id: string } 
   const session = await auth();
   if (!session?.user || !(await canAccessFeature("tournaments", session.user as any, "participants"))) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   await dbConnect();
-  const tournament: any = await Tournament.findById(params.id);
+  const tournament: any = await Tournament.findById(params.id).select("+externalParticipants.pinHash +externalParticipants.registrationKey");
   if (!tournament) return NextResponse.json({ error: "Tournament not found" }, { status: 404 });
   const body = await req.json();
   const playerKey = String(body.playerKey || "");

@@ -12,7 +12,7 @@ export const dynamic = "force-dynamic";
 export async function POST(_: Request, { params }: { params: { id: string } }) {
   const session = await auth();
   await dbConnect();
-  const tournament: any = await Tournament.findById(params.id);
+  const tournament: any = await Tournament.findById(params.id).select("+externalParticipants.pinHash +externalParticipants.registrationKey");
   if (!tournament) return NextResponse.json({ error: "Tournament not found" }, { status: 404 });
   if (["live", "playing", "completed", "finished"].includes(String(tournament.status || ""))) {
     return NextResponse.json({ error: "Withdraw is available only before play starts. Use Pause during a live Arena." }, { status: 400 });

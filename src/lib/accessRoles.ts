@@ -15,6 +15,15 @@ export async function ensureSalesRole() {
   } }, { upsert: true });
 }
 
+/** Sales roles saved before Contact Enquiries was seeded need the CRM grant. */
+export async function grantContactEnquiriesToSalesRole() {
+  await dbConnect();
+  await AccessRole.updateOne(
+    { nameKey: "sales and relationship management", archivedAt: null, "permissions.contactEnquiries": { $exists: false } },
+    { $set: { "permissions.contactEnquiries": SALES_ROLE_GRANTS.contactEnquiries } }
+  );
+}
+
 /**
  * Salespeople raise a monthly invoice like coaches do, but their access comes
  * from the saved Sales role, which predates the Staff Invoices feature. Called

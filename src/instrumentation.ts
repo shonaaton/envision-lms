@@ -23,6 +23,7 @@ export async function register() {
   const { processMonthlyFeedbackCycle } = await import("@/lib/feedback/feedbackService");
   const { processPtmSweep } = await import("@/lib/ptm/ptmService");
   const { processLeaveSweep } = await import("@/lib/leave/leaveService");
+  const { processClassMonitorSweep } = await import("@/lib/classMonitor/classMonitorService");
   const { processHolidayAnnouncements } = await import("@/lib/holidays/holidayNotifications");
   const { sealLegacyTempPasswords } = await import("@/lib/tempPasswordMigration");
   const { processRetentionSweep } = await import("@/lib/retention/retentionSweep");
@@ -70,6 +71,17 @@ export async function register() {
       name: "leave_sweep",
       intervalMs: 60 * 60_000,
       run: () => processLeaveSweep(),
+    },
+    {
+      /**
+       * Class Monitor: a report for every class from CLASS_MONITOR_START on,
+       * kept in step with cancellations and moves; the monitor's task 15
+       * minutes before each class; yesterday's summary to the reviewers after
+       * 09:00 IST (claimed per day). Every write is idempotent.
+       */
+      name: "class_monitor_sweep",
+      intervalMs: 5 * 60_000,
+      run: () => processClassMonitorSweep(),
     },
     {
       /**

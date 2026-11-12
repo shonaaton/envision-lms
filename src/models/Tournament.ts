@@ -92,6 +92,8 @@ const TournamentSchema = new Schema(
       username: { type: String, required: true },
       displayName: String,
       email: String,
+      pinHash: { type: String, select: false },
+      registrationKey: { type: String, select: false },
       entryCode: String,
       joinedAt: { type: Date, default: Date.now },
     }],

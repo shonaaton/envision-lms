@@ -4,7 +4,7 @@ import { dbConnect } from "@/lib/db";
 import { Tournament } from "@/models/Tournament";
 import { TournamentGame } from "@/models/TournamentGame";
 import { cookies } from "next/headers";
-import { getTournamentGuestUsername } from "@/lib/tournamentGuests";
+import { getTournamentGuestUsername, isTournamentGuestRequest } from "@/lib/tournamentGuests";
 import { isPlayingStatus, playerKeyForExternal, playerKeyForUser, setTournamentPlayerState, syncArenaPairings } from "@/lib/tournamentEngine";
 import { inactiveStudentMessage, isCurrentStudent } from "@/lib/studentAccess";
 import { consumeTournamentRate, rateIdentity, rateLimitedResponse } from "@/lib/tournamentRateLimit";
@@ -28,7 +28,7 @@ import { consumeTournamentRate, rateIdentity, rateLimitedResponse } from "@/lib/
 export const dynamic = "force-dynamic";
 
 export async function POST(req: Request, { params }: { params: { id: string } }) {
-  const session = await auth();
+  const session = isTournamentGuestRequest(req) ? null : await auth();
   await dbConnect();
 
   const tournament: any = await Tournament.findById(params.id);

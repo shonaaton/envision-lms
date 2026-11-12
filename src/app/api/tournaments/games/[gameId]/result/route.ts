@@ -7,7 +7,7 @@ import { completeGame, estimateClock } from "@/lib/tournamentEngine";
 import { onGameCompleted } from "@/lib/tournamentLifecycle";
 import { recordActivity } from "@/lib/activity";
 import { cookies } from "next/headers";
-import { getTournamentGuestUsername } from "@/lib/tournamentGuests";
+import { getTournamentGuestUsername, isTournamentGuestRequest } from "@/lib/tournamentGuests";
 import { inactiveStudentMessage, isCurrentStudent } from "@/lib/studentAccess";
 import { consumeTournamentRate, rateIdentity, rateLimitedResponse } from "@/lib/tournamentRateLimit";
 import { awardTournamentGameRewards } from "@/lib/tournamentRewards";
@@ -37,7 +37,7 @@ function canBerserk(game: any, side: "white" | "black") {
 }
 
 export async function POST(req: Request, { params }: { params: { gameId: string } }) {
-  const session = await auth();
+  const session = isTournamentGuestRequest(req) ? null : await auth();
   await dbConnect();
 
   let game: any = await TournamentGame.findById(params.gameId);

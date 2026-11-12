@@ -793,3 +793,41 @@ export function raiseFeedbackReviewTask(input: { cycle: any; monthLabel: string;
 export function resolveFeedbackReviewTask(cycleId: unknown, by?: unknown) {
   return settle("MonthlyFeedbackReview", cycleId, by, "Every submitted report has been reviewed.");
 }
+
+/**
+ * Class Monitor: one task per class for the monitor (Saptarshi by default),
+ * raised shortly before the class starts and closed automatically when its
+ * form is submitted (lib/classMonitor). Raised silently - a busy day has dozens
+ * of classes, and the daily digest already lists what is open.
+ */
+export function raiseClassMonitorTask(input: { report: any; ownerId: string | null; timing: string; reopen?: boolean }) {
+  const report = input.report;
+  const reportId = idOf(report);
+  return raise({
+    kind: "class_monitor",
+    referenceType: "ClassMonitorReport",
+    referenceId: reportId,
+    title: `Monitor ${report.isDemo ? "demo class" : "class"}: ${report.className || "Class"} · ${input.timing}`,
+    details: [
+      `Coach: ${report.coachName || "—"}`,
+      report.lessonPlanned ? `Lesson planned: ${report.lessonPlanned}` : "",
+      "Fill the Class Monitor form for this class. The task closes itself once the form is submitted.",
+    ].filter(Boolean).join("\n"),
+    assignedTo: input.ownerId || undefined,
+    pool: input.ownerId ? null : "admins",
+    priority: "normal",
+    dueAt: new Date(new Date(report.endAt).getTime() + 3 * 60 * 60_000),
+    actionHref: `/class-monitor?date=${report.dateKey}&id=${reportId}`,
+    metadata: { reportId, classroomId: idOf(report.classroom), sessionId: String(report.sessionId || ""), dateKey: report.dateKey },
+    reopenIfClosed: Boolean(input.reopen),
+    notify: false,
+  });
+}
+
+export function resolveClassMonitorTask(reportId: unknown, by?: unknown) {
+  return settle("ClassMonitorReport", reportId, by, "Class Monitor form submitted.");
+}
+
+export function withdrawClassMonitorTask(reportId: unknown, reason: string) {
+  return withdraw("ClassMonitorReport", reportId, reason);
+}

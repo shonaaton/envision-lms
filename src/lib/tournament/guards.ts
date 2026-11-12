@@ -29,6 +29,11 @@ export function finishGameGuard(gameId: unknown): Filter {
   return { _id: gameId, status: "active" };
 }
 
+/** Only the still-unplayed position whose deadline was observed can be forfeited. */
+export function noShowFinishGuard(gameId: unknown, turn: "w" | "b", ply: number, deadline: Date): Filter {
+  return { ...moveGuard(gameId, turn, ply), firstMoveDeadlineAt: deadline };
+}
+
 /** Each side may berserk once, and only before the game has left the start. */
 export function berserkGuard(gameId: unknown, side: "white" | "black"): Filter {
   return { _id: gameId, status: "active", ...(side === "white" ? { berserkWhite: false } : { berserkBlack: false }) };
@@ -119,6 +124,11 @@ export function matchesFilter(document: any, filter: Filter): boolean {
 
     // Mongo treats a missing field and an explicit null as equal; nothing else
     // in these filters relies on loose comparison.
+    if (condition instanceof Date) {
+      if (!(value instanceof Date) || value.getTime() !== condition.getTime()) return false;
+      continue;
+    }
+
     if (condition === null) {
       if (value !== null && value !== undefined) return false;
       continue;

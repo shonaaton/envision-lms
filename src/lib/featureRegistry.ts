@@ -491,6 +491,18 @@ export const FEATURE_DEFINITIONS: FeatureDefinition[] = [
     defaultRolePermissions: { instructor: ["view", "create", "edit"], "sub-admin": ["view", "create", "edit"], admin: all(view, create, edit) },
   },
   {
+    key: "classMonitor",
+    label: "Class Monitor",
+    category: "Communication",
+    description: "A form for every class (video on, right lesson, finished on time, join times), filled by the class monitor through a task per class, emailed to the reviewers, with daily and monthly downloads.",
+    routes: ["/class-monitor"], apiPrefixes: ["/api/class-monitor"], permissions: [view, edit, exportRecords], defaultStatus: "enabled",
+    // Who sees it is also decided by identity (admins, CLASS_MONITOR_EMAILS and
+    // CLASS_MONITOR_REVIEWER_EMAILS) in lib/classMonitor/classMonitorAccess.ts:
+    // salespeople are sub-admins too. Sub-admins never hold `export`, so the
+    // named monitor and reviewers download by identity there as well.
+    defaultRolePermissions: { "sub-admin": all(view, edit), admin: all(view, edit, exportRecords) },
+  },
+  {
     key: "monthlyFeedback",
     label: "Monthly Feedback",
     category: "Communication",
@@ -788,10 +800,10 @@ export const FEATURE_DEFINITIONS: FeatureDefinition[] = [
   },
   {
     key: "contactEnquiries",
-    label: "Contact Enquiries",
+    label: "Contact Enquiries & Demo Leads CRM",
     category: "Sales",
     description: "Submissions from the public contact form, and the Demo Leads CRM: free demo form leads shared out between the salespeople, each seeing only their own.",
-    routes: ["/sales/enquiries", "/sales/leads"],
+    routes: ["/sales/enquiries", "/sales/leads", "/sales/crm"],
     apiPrefixes: ["/api/sales/enquiries"],
     // `manage` covers moving an enquiry between new, contacted and closed. It is
     // not critical: marking a message as answered is ordinary daily work, and

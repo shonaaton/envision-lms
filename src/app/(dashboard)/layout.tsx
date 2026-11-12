@@ -12,6 +12,7 @@ import { canStudentUseLearnChess } from "@/lib/learning/studentAccess";
 import { touchLastSeen } from "@/lib/engagement/lastSeen";
 import { branchHomePath, isBranchAllowedPath } from "@/lib/branch/paths";
 import { resolveBranchAccess } from "@/lib/branch/access";
+import { isClassMonitorAudience } from "@/lib/classMonitor/classMonitorAccess";
 
 export const dynamic = "force-dynamic";
 
@@ -22,6 +23,8 @@ export default async function DashboardLayout({ children }: { children: React.Re
   const accountStatus = (session.user as any).accountStatus;
   const isSuperAdmin = await isSuperAdminSession(session.user as any);
   const featureState = await getNavigationFeatureState({ ...(session.user as any), isSuperAdmin });
+  // Class Monitor is for admins, the monitor and the reviewers only, whatever the sub-admin grant says.
+  if (featureState.classMonitor && !isClassMonitorAudience(session.user as any)) featureState.classMonitor = { ...featureState.classMonitor, visible: false };
   const pathname = headers().get("x-pathname") || "";
   const isActive = (session.user as any).isActive !== false;
   const isPaused = (session.user as any).isPaused === true;

@@ -33,6 +33,10 @@ export function redactTournamentForPlayer(tournament: any, canManage: boolean) {
     };
   }
 
+  if (Array.isArray(next.externalParticipants)) {
+    next.externalParticipants = next.externalParticipants.map(({ username, displayName, joinedAt }: any) => ({ username, displayName, joinedAt }));
+  }
+
   // A message an arbiter hid should not come back down the wire.
   if (Array.isArray(next.chatMessages)) {
     next.chatMessages = next.chatMessages.filter((message: any) => !message?.hidden);

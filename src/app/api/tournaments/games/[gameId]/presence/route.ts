@@ -4,7 +4,7 @@ import { dbConnect } from "@/lib/db";
 import { TournamentGame } from "@/models/TournamentGame";
 import { Tournament } from "@/models/Tournament";
 import { cookies } from "next/headers";
-import { getTournamentGuestUsername } from "@/lib/tournamentGuests";
+import { getTournamentGuestUsername, isTournamentGuestRequest } from "@/lib/tournamentGuests";
 import { inactiveStudentMessage, isCurrentStudent } from "@/lib/studentAccess";
 import { consumeTournamentRate, rateIdentity, rateLimitedResponse } from "@/lib/tournamentRateLimit";
 import { extendedFirstMoveDeadline } from "@/lib/tournament/firstMove";
@@ -36,11 +36,11 @@ async function readBody(req: Request) {
 }
 
 export async function POST(req: Request, { params }: { params: { gameId: string } }) {
-  const session = await auth();
+  const session = isTournamentGuestRequest(req) ? null : await auth();
   await dbConnect();
 
   const game: any = await TournamentGame.findById(params.gameId).select(
-    "tournament source whiteUser blackUser whiteExternalUsername blackExternalUsername status ply moveHistorySAN firstMoveDeadlineAt startedAt createdAt lastMoveAt whiteActiveTabId blackActiveTabId whiteActiveTabAt blackActiveTabAt"
+    "tournament source whiteUser blackUser whiteExternalUsername blackExternalUsername status turn ply moveHistorySAN firstMoveDeadlineAt startedAt createdAt lastMoveAt whiteActiveTabId blackActiveTabId whiteActiveTabAt blackActiveTabAt"
   );
   if (!game) return NextResponse.json({ error: "Game not found" }, { status: 404 });
 

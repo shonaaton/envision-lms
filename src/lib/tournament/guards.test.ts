@@ -6,6 +6,7 @@ import {
   finishGameGuard,
   matchesFilter,
   moveGuard,
+  noShowFinishGuard,
   releasePairingLockGuard,
   releaseRoundGuard,
   type Filter,
@@ -336,5 +337,17 @@ describe("matchesFilter", () => {
   it("requires all top-level conditions to hold", () => {
     expect(matchesFilter({ status: "active", turn: "w" }, { status: "active", turn: "w" })).toBe(true);
     expect(matchesFilter({ status: "active", turn: "b" }, { status: "active", turn: "w" })).toBe(false);
+  });
+});
+
+
+describe("first-move deadline guard", () => {
+  it("only ends a board if no move or deadline extension won the race", () => {
+    const deadline = new Date("2026-11-12T14:31:00Z");
+    const board = { _id: "g1", status: "active", turn: "w", ply: 0, firstMoveDeadlineAt: deadline };
+    const guard = noShowFinishGuard(board._id, board.turn as "w", board.ply, deadline);
+    expect(matchesFilter(board, guard)).toBe(true);
+    expect(matchesFilter({ ...board, ply: 1, turn: "b" }, guard)).toBe(false);
+    expect(matchesFilter({ ...board, firstMoveDeadlineAt: new Date(deadline.getTime() + 10_000) }, guard)).toBe(false);
   });
 });

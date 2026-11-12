@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { dbConnect } from "@/lib/db";
 import { Tournament } from "@/models/Tournament";
-import { startTournament } from "@/lib/tournamentEngine";
+import { countAvailableTournamentPlayers, startTournament, withVersionRetry } from "@/lib/tournamentEngine";
 import { recordActivity } from "@/lib/activity";
 import { emitTournamentStatus } from "@/lib/tournamentSocketServer";
 
@@ -23,40 +23,41 @@ export async function POST(req: Request, { params }: { params: { id: string } })
   if (!session?.user || !(await canAccessFeature("tournaments", session.user as any, "pairings"))) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
   await dbConnect();
-  const tournament: any = await Tournament.findById(params.id);
-  if (!tournament) return NextResponse.json({ error: "Tournament not found" }, { status: 404 });
-
-  if (["live", "playing"].includes(String(tournament.status))) {
-    return NextResponse.json({ ok: true, alreadyStarted: true });
-  }
-  if (["completed", "finished", "cancelled"].includes(String(tournament.status))) {
-    return NextResponse.json({ error: "This tournament has already ended." }, { status: 400 });
-  }
-
-  const participantCount = (tournament.participants || []).length + (tournament.externalParticipants || []).length;
-  if (participantCount < 2) {
-    return NextResponse.json({ error: "At least two participants are needed to start." }, { status: 400 });
-  }
-
   const body = await req.json().catch(() => ({}));
-  tournament.adminActions = [
-    ...(tournament.adminActions || []),
-    {
-      actor: (session!.user as any).id,
-      action: "tournament.started_manually",
-      note: String(body.reason || "Started early by admin.").slice(0, 500),
-      createdAt: new Date(),
-    },
-  ];
-  await startTournament(tournament);
-  emitTournamentStatus(String(tournament._id), "playing", { startedAt: tournament.startedAt });
+  return withVersionRetry(async () => {
+    const tournament: any = await Tournament.findById(params.id);
+    if (!tournament) return NextResponse.json({ error: "Tournament not found" }, { status: 404 });
 
-  await recordActivity({
-    actor: (session!.user as any).id,
-    type: "tournament.started_manually",
-    label: `Started tournament ${tournament.name}`,
-    entityType: "Tournament",
-    entityId: String(tournament._id),
+    if (["live", "playing"].includes(String(tournament.status))) {
+      return NextResponse.json({ ok: true, alreadyStarted: true });
+    }
+    if (["completed", "finished", "cancelled"].includes(String(tournament.status))) {
+      return NextResponse.json({ error: "This tournament has already ended." }, { status: 400 });
+    }
+
+    if (countAvailableTournamentPlayers(tournament) < 2) {
+      return NextResponse.json({ error: "At least two participants are needed to start." }, { status: 400 });
+    }
+
+    tournament.adminActions = [
+      ...(tournament.adminActions || []),
+      {
+        actor: (session!.user as any).id,
+        action: "tournament.started_manually",
+        note: String(body.reason || "Started early by admin.").slice(0, 500),
+        createdAt: new Date(),
+      },
+    ];
+    await startTournament(tournament);
+    emitTournamentStatus(String(tournament._id), "playing", { startedAt: tournament.startedAt });
+
+    await recordActivity({
+      actor: (session!.user as any).id,
+      type: "tournament.started_manually",
+      label: `Started tournament ${tournament.name}`,
+      entityType: "Tournament",
+      entityId: String(tournament._id),
+    });
+    return NextResponse.json({ ok: true });
   });
-  return NextResponse.json({ ok: true });
 }

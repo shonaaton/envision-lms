@@ -23,6 +23,7 @@ export const TOURNAMENT_LIMITS = {
   presence: { capacity: 20, refillPerSecond: 1 },
   /** The heaviest read in the app, so the most worth protecting. */
   state: { capacity: 30, refillPerSecond: 1 },
+  guestJoin: { capacity: 30, refillPerSecond: 0.5 },
 } as const;
 
 export type LimitName = keyof typeof TOURNAMENT_LIMITS;

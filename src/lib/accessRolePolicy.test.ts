@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 vi.mock("@/lib/auth", () => ({ auth: vi.fn() }));
 vi.mock("@/lib/db", () => ({ dbConnect: vi.fn() }));
 vi.mock("@/lib/accessRoles", () => ({ resolveAccessRole: vi.fn() }));
-import { FEATURE_DEFINITIONS } from "@/lib/featureRegistry";
+import { FEATURE_DEFINITIONS, findFeatureByPath } from "@/lib/featureRegistry";
 import { evaluateFeatureState, type FeatureAccessSnapshot } from "@/lib/featureAccess";
 import { ESSENTIAL_ROLE_GRANTS, MARKETING_ROLE_GRANTS, PROTECTED_ROLE_FEATURES, SALES_ROLE_GRANTS, roleHasPermission, roleInputSchema, validateRoleGrants } from "@/lib/accessRolePolicy";
 import { namedRoleApiFeature, namedRoleApiPermissions } from "@/lib/accessRoleRequests";
@@ -13,6 +13,16 @@ function feature(key: string, extra: Partial<FeatureAccessSnapshot> = {}): Featu
 const sales = { id: "staff-id", role: "sub-admin" as const, accessRoleId: "role-id", roleEnabled: true, roleGrants: SALES_ROLE_GRANTS };
 
 describe("named role permission boundary", () => {
+  it("lets sales staff reach the Demo Leads CRM from its current URL and old bookmarks", () => {
+    for (const path of ["/sales/leads", "/sales/crm"]) {
+      const key = findFeatureByPath(path)?.key;
+      expect(key).toBe("contactEnquiries");
+      expect(evaluateFeatureState({ feature: feature(key!), user: sales })).toBe(true);
+    }
+    expect(namedRoleApiFeature("/api/sales/crm/leads")).toBe("salesCrm");
+    expect(evaluateFeatureState({ feature: feature("salesCrm"), user: sales })).toBe(false);
+  });
+
   it.each(FEATURE_DEFINITIONS.flatMap(item => item.permissions.map(permission => [item.key, permission.id])))('%s / %s follows only the saved role', (key, permission) => {
     const expected = Boolean(SALES_ROLE_GRANTS[key]?.includes(permission));
     expect(evaluateFeatureState({ feature: feature(key), user: sales, permission })).toBe(expected);

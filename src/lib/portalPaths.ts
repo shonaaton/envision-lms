@@ -26,6 +26,7 @@ export const portalPaths = [
   "/bowbazar",
   "/calendar",
   "/chess-profile",
+  "/class-monitor",
   "/classrooms",
   "/coach-pay",
   "/dashboard",

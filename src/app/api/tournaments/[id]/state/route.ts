@@ -11,7 +11,7 @@ import { tieBreakFor } from "@/lib/tournament/scoring";
 import { redactTournamentForPlayer } from "@/lib/tournament/redact";
 import { maxRoundsWithoutRepeat } from "@/lib/tournament/swiss";
 import { cookies } from "next/headers";
-import { getTournamentGuestUsername } from "@/lib/tournamentGuests";
+import { getTournamentGuestUsername, isTournamentGuestRequest } from "@/lib/tournamentGuests";
 import { inactiveStudentMessage, isCurrentStudent } from "@/lib/studentAccess";
 import { consumeTournamentRate, rateIdentity, rateLimitedResponse } from "@/lib/tournamentRateLimit";
 
@@ -53,10 +53,17 @@ function withLiveClocks(game: any) {
 }
 
 export async function GET(request: Request, { params }: { params: { id: string } }) {
-  const session = await auth();
+  const query = new URL(request.url).searchParams;
+  const poll = query.get("poll") === "1";
+  const guestRoom = isTournamentGuestRequest(request);
+  const session = guestRoom ? null : await auth();
 
   await dbConnect();
-  const tournament: any = await Tournament.findById(params.id).populate("participants", "name username rating").lean();
+  const tournamentQuery = Tournament.findById(params.id);
+  const tournament: any = await (poll
+    ? tournamentQuery.select("status currentRound participants access externalInvite.token externalParticipants.username")
+    : tournamentQuery.populate("participants", "name username rating")
+  ).lean();
   if (!tournament) return NextResponse.json({ error: "Tournament not found" }, { status: 404 });
 
   const cookieStore = await cookies();
@@ -88,25 +95,29 @@ export async function GET(request: Request, { params }: { params: { id: string }
         (tournament.participants || []).some((player: any) => objectId(player) === String(userId))));
   if (!allowed) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
+  const playerGames = {
+    tournament: params.id,
+    $or: [{ whiteKey: myPlayerKey }, { blackKey: myPlayerKey }],
+  };
+  if (poll) {
+    const game = await TournamentGame.findOne({ ...playerGames, status: "active" }, "_id ply")
+      .lean<{ _id: mongoose.Types.ObjectId; ply?: number } | null>();
+    return NextResponse.json({
+      status: tournament.status,
+      round: Number(tournament.currentRound || 0),
+      gameId: String(game?._id || ""),
+      gamePly: Number(game?.ply || 0),
+    });
+  }
+
   const [activeGameRaw, recentGames, myGamesRaw, liveGames, gameCounts] = await Promise.all([
     TournamentGame.findOne(
-      {
-        tournament: params.id,
-        status: "active",
-        ...(isGuest
-          ? { $or: [{ whiteExternalUsername: guestUsername }, { blackExternalUsername: guestUsername }] }
-          : { $or: [{ whiteUser: userId }, { blackUser: userId }] }),
-      },
+      { ...playerGames, status: "active" },
       ACTIVE_GAME_FIELDS
     ).lean(),
     TournamentGame.find({ tournament: params.id }, GAME_LIST_FIELDS).sort({ createdAt: -1 }).limit(25).lean(),
     TournamentGame.find(
-      {
-        tournament: params.id,
-        ...(isGuest
-          ? { $or: [{ whiteExternalUsername: guestUsername }, { blackExternalUsername: guestUsername }] }
-          : { $or: [{ whiteUser: userId }, { blackUser: userId }] }),
-      },
+      playerGames,
       GAME_LIST_FIELDS
     )
       .sort({ createdAt: -1 })
@@ -156,20 +167,8 @@ export async function GET(request: Request, { params }: { params: { id: string }
     roundNumber: Number(game.roundNumber || tournament.currentRound || 0),
     boardNumber: Number(game.tableNumber || 0),
     gameId: String(game._id),
-    color: isGuest
-      ? String(game.whiteExternalUsername || "").toLowerCase() === guestUsername.toLowerCase()
-        ? "white"
-        : "black"
-      : String(game.whiteUser || "") === String(userId)
-        ? "white"
-        : "black",
-    opponentName: isGuest
-      ? String(game.whiteExternalUsername || "").toLowerCase() === guestUsername.toLowerCase()
-        ? game.blackName || "Bye"
-        : game.whiteName
-      : String(game.whiteUser || "") === String(userId)
-        ? game.blackName || "Bye"
-        : game.whiteName,
+    color: game.whiteKey === myPlayerKey ? "white" : "black",
+    opponentName: game.whiteKey === myPlayerKey ? game.blackName || "Bye" : game.whiteName,
     status,
     result: game.result || "*",
     termination: game.termination || "",

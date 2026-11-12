@@ -24,6 +24,7 @@ import {
   claimRoundGuard,
   finishGameGuard,
   moveGuard,
+  noShowFinishGuard,
   releasePairingLockGuard,
   releaseRoundGuard,
 } from "@/lib/tournament/guards";
@@ -128,7 +129,18 @@ export function getTournamentPlayers(tournament: TournamentLike): TournamentPlay
     name: item.displayName || item.username || standingMap.get(playerKeyForExternal(item.username))?.displayName || "Guest",
     rating: Number(standingMap.get(playerKeyForExternal(item.username))?.rating || 0),
   }));
-  return [...internal, ...external];
+  const players = [...internal, ...external];
+  const seen = new Set<string>();
+  return players.filter((player) => {
+    if (seen.has(player.key)) return false;
+    seen.add(player.key);
+    return true;
+  });
+}
+
+export function countAvailableTournamentPlayers(tournament: TournamentLike) {
+  const states = participantStateMap(tournament);
+  return getTournamentPlayers(tournament).filter((player) => isAvailableForPairing(states.get(player.key))).length;
 }
 
 export function ensureTournamentStandings(tournament: TournamentLike) {
@@ -360,15 +372,18 @@ async function createGame(
       whiteName: input.white.displayName,
       blackName: input.black?.displayName || "",
     });
-    await notifyTournamentUsers(tournament, {
-      users: [objectId(input.white.user), objectId(input.black?.user)].filter(Boolean),
-      type: "tournament.game_ready",
-      title: "Tournament game ready",
-      message: `Board ${input.tableNumber}: ${input.white.displayName} vs ${input.black?.displayName}.`,
-      href: `/tournaments/${objectId(tournament)}/play`,
-    });
   }
   return game;
+}
+
+function notifyGameReady(tournament: TournamentLike, game: TournamentGameLike) {
+  void notifyTournamentUsers(tournament, {
+    users: [objectId(game.whiteUser), objectId(game.blackUser)].filter(Boolean),
+    type: "tournament.game_ready",
+    title: "Tournament game ready",
+    message: `Board ${game.tableNumber}: ${game.whiteName} vs ${game.blackName}.`,
+    href: `/tournaments/${objectId(tournament)}/play`,
+  });
 }
 
 /* ------------------------------------------------------------------ */
@@ -430,8 +445,8 @@ export async function applyGameMove(
     [game.turn === "w" ? "whiteClockMs" : "blackClockMs"]: movedClockMs,
   };
   const unset: Record<string, any> = { firstMoveDeadlineAt: 1 };
-  // Black owes a first move too; see lib/tournament/firstMove.ts.
-  if (nextPly === 1 && !detectTermination(chess)) {
+  // Give the other side its first-move window.
+  if (nextPly === 1 && !finished) {
     update.firstMoveDeadlineAt = new Date(now + FIRST_MOVE_GRACE_MS);
     delete unset.firstMoveDeadlineAt;
   }
@@ -510,7 +525,9 @@ export async function completeGame(
   input: { result: "1-0" | "0-1" | "1/2-1/2"; termination: any; winnerKey?: string }
 ) {
   const updated: any = await TournamentGame.findOneAndUpdate(
-    finishGameGuard(game._id),
+    input.termination === FORFEIT_TERMINATION
+      ? noShowFinishGuard(game._id, game.turn, Number(game.ply || 0), game.firstMoveDeadlineAt)
+      : finishGameGuard(game._id),
     {
       $set: {
         status: "completed",
@@ -541,7 +558,9 @@ export async function completeGame(
 /** Abort a game so that neither side is scored. Also idempotent. */
 export async function abortGame(game: TournamentGameLike, termination: "abandoned" | "manual" = "abandoned") {
   const updated: any = await TournamentGame.findOneAndUpdate(
-    finishGameGuard(game._id),
+    termination === "abandoned"
+      ? noShowFinishGuard(game._id, game.turn, Number(game.ply || 0), game.firstMoveDeadlineAt)
+      : finishGameGuard(game._id),
     { $set: { status: "aborted", result: "*", termination, winnerKey: "", endedAt: new Date(), drawOfferBy: "" } },
     { new: true }
   );
@@ -571,7 +590,7 @@ export async function enforceTournamentGameTimeouts(tournament: TournamentLike) 
   // fields a flag-fall decision needs — never the move histories.
   const activeGames: any[] = await TournamentGame.find(
     { tournament: tournament._id, status: "active" },
-    "source whiteKey blackKey whiteUser blackUser turn whiteClockMs blackClockMs lastMoveAt startedAt createdAt status ply firstMoveDeadlineAt blackOnlineAt tournament fen"
+    "source whiteKey blackKey whiteUser blackUser turn whiteClockMs blackClockMs lastMoveAt startedAt createdAt status ply firstMoveDeadlineAt whiteOnlineAt blackOnlineAt tournament fen"
   ).lean();
   const now = Date.now();
   const ended: any[] = [];
@@ -726,9 +745,10 @@ export async function syncArenaPairings(tournamentId: string) {
     let created = 0;
 
     const announce: PairingCreatedEvent[] = [];
+    const openedGames: TournamentGameLike[] = [];
     const { pairs } = buildArenaPairings(waiting, { history, recent, playing: busy.size });
     for (const pair of pairs) {
-      await createGame(tournament, {
+      const game = await createGame(tournament, {
         source: "arena",
         roundNumber: 0,
         tableNumber,
@@ -736,13 +756,14 @@ export async function syncArenaPairings(tournamentId: string) {
         black: pair.black,
         announce,
       });
+      openedGames.push(game);
       tableNumber += 1;
       created += 1;
     }
 
-    if (created) await tournament.save();
-    // One event for the whole pass, however many boards it opened.
     emitPairingsCreated(id, announce);
+    for (const game of openedGames) notifyGameReady(tournament, game);
+    if (created) await tournament.save();
     return { created, skipped: null };
   } finally {
     await releasePairingLock(id, token);
@@ -812,6 +833,8 @@ export async function generateSwissRound(tournamentId: string, options: { force?
   const token = await claimSwissRound(id, expectedCurrentRound, roundNumber);
   if (!token) return { created: false, roundNumber: expectedCurrentRound, skipped: "locked" as const };
 
+  const createdIds: any[] = [];
+  let commitAttempted = false;
   try {
     const tournament: any = await Tournament.findById(id);
     await recalculateTournamentStandings(tournament);
@@ -839,6 +862,8 @@ export async function generateSwissRound(tournamentId: string, options: { force?
         lastFloat: lastFloat.get(entry.playerKey) ?? null,
       }));
 
+    if (!field.length) return { created: false, roundNumber: expectedCurrentRound, skipped: "no_players" as const };
+
     const result = pairSwissRound(field, {
       allowRepeats: options.allowRepeats,
       roundsRemaining: Math.max(1, Number(tournament.rounds || 0) - expectedCurrentRound),
@@ -850,7 +875,7 @@ export async function generateSwissRound(tournamentId: string, options: { force?
     const pairings: any[] = [];
     const announce: PairingCreatedEvent[] = [];
     let tableNumber = 1;
-    const createdIds: any[] = [];
+    const openedGames: TournamentGameLike[] = [];
 
     if (result.bye) {
       const byeEntry = standingByKey.get(result.bye.playerKey);
@@ -881,6 +906,7 @@ export async function generateSwissRound(tournamentId: string, options: { force?
         announce,
       });
       createdIds.push(game._id);
+      openedGames.push(game);
       pairings.push({
         gameId: game._id,
         tableNumber,
@@ -899,6 +925,7 @@ export async function generateSwissRound(tournamentId: string, options: { force?
     // failed whole-document save here used to leave the boards created but the
     // round unrecorded — so the next attempt paired the round a second time.
     // The version bump makes any copy loaded before this point reload.
+    commitAttempted = true;
     const committed = await Tournament.updateOne(
       { _id: tournament._id, "roundLock.token": token, currentRound: expectedCurrentRound },
       {
@@ -911,15 +938,19 @@ export async function generateSwissRound(tournamentId: string, options: { force?
       await TournamentGame.deleteMany({ _id: { $in: createdIds } });
       return { created: false, roundNumber: expectedCurrentRound, skipped: "locked" as const };
     }
+    emitPairingsCreated(id, announce);
+    emitRoundStarted(id, roundNumber);
+    for (const game of openedGames) notifyGameReady(tournament, game);
     // A bye scores at once, so the table moves with the new round.
     await withVersionRetry(async () => {
       const fresh: any = await Tournament.findById(id);
       await recalculateTournamentStandings(fresh);
       await fresh.save();
     });
-    emitPairingsCreated(id, announce);
-    emitRoundStarted(id, roundNumber);
     return { created: true, roundNumber, skipped: null, repeats: result.repeats };
+  } catch (error) {
+    if (!commitAttempted && createdIds.length) await TournamentGame.deleteMany({ _id: { $in: createdIds } });
+    throw error;
   } finally {
     await releaseSwissRound(id, token);
   }
@@ -972,32 +1003,35 @@ export async function startTournament(tournament: TournamentLike) {
 
   const alreadyNotified = (tournament.adminActions || []).some((action: any) => action.action === "notification.started");
   if (!alreadyNotified) {
-    await notifyTournamentUsers(tournament, {
-      type: "tournament.started",
-      title: "Tournament started",
-      message: `${tournament.name} has started. Your board will appear when you are paired.`,
-      href: `/tournaments/${objectId(tournament)}`,
-    });
-    await notifyExternalTournamentParticipants(tournament, {
-      subject: `Started: ${tournament.name}`,
-      message: (participant) =>
-        `Hello ${participant.displayName || participant.username},\n\n${tournament.name} has started. Open your tournament link to enter the lobby.`,
-    });
     tournament.adminActions = [
       ...(tournament.adminActions || []),
-      { action: "notification.started", note: "Tournament-start notification sent by server lifecycle.", createdAt: new Date() },
+      { action: "notification.started", note: "Tournament-start notification queued by server lifecycle.", createdAt: new Date() },
     ];
   }
 
   if (tournament.type === "arena") {
     tournament.arenaEndsAt = new Date(Date.now() + Number(tournament.arenaDurationMinutes || 0) * 60000);
-    await tournament.save();
-    await syncArenaPairings(String(tournament._id));
-    return tournament;
+  }
+  await tournament.save();
+
+  if (!alreadyNotified) {
+    void Promise.all([
+      notifyTournamentUsers(tournament, {
+        type: "tournament.started",
+        title: "Tournament started",
+        message: `${tournament.name} has started. Your board will appear when you are paired.`,
+        href: `/tournaments/${objectId(tournament)}`,
+      }),
+      notifyExternalTournamentParticipants(tournament, {
+        subject: `Started: ${tournament.name}`,
+        message: (participant) =>
+          `Hello ${participant.displayName || participant.username},\n\n${tournament.name} has started. Open your tournament link to enter the lobby.`,
+      }),
+    ]).catch((error) => console.error("Tournament start notification failed", error));
   }
 
-  await tournament.save();
-  await generateSwissRound(String(tournament._id));
+  if (tournament.type === "arena") await syncArenaPairings(String(tournament._id));
+  else await generateSwissRound(String(tournament._id));
   return tournament;
 }
 

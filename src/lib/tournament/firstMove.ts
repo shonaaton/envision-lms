@@ -29,11 +29,13 @@ export type FirstMoveGame = {
   source?: string;
   status?: string;
   ply?: number;
+  turn?: "w" | "b";
   moveHistorySAN?: string[];
   firstMoveDeadlineAt?: Date | string | null;
   startedAt?: Date | string | null;
   createdAt?: Date | string | null;
   lastMoveAt?: Date | string | null;
+  whiteOnlineAt?: Date | string | null;
   blackOnlineAt?: Date | string | null;
 };
 
@@ -49,9 +51,9 @@ function plyOf(game: FirstMoveGame) {
 export function sideOwingFirstMove(game: FirstMoveGame): "white" | "black" | null {
   if (game.status !== "active") return null;
   const ply = plyOf(game);
-  if (ply === 0) return "white";
-  if (ply === 1) return "black";
-  return null;
+  if (ply >= 2) return null;
+  const turn = game.turn ?? (ply === 0 ? "w" : "b");
+  return turn === "w" ? "white" : "black";
 }
 
 /** When the deadline for the side owing its first move started counting. */
@@ -84,10 +86,10 @@ export function noShowOutcome(game: FirstMoveGame, now: number = Date.now()): No
   const deadline = time(game.firstMoveDeadlineAt);
   if (!owing || !deadline || deadline > now) return { action: "none" };
 
-  const absent: Array<"white" | "black"> = owing === "black" ? ["black"] : game.blackOnlineAt ? ["white"] : ["white", "black"];
-  if (game.source !== "swiss") return { action: "abort", absent };
-  if (owing === "black") return { action: "forfeit", winner: "white", absent };
-  // White never moved. Black only earns the point by having turned up.
-  if (game.blackOnlineAt) return { action: "forfeit", winner: "black", absent };
+  const opponent = owing === "white" ? "black" : "white";
+  const opponentOnlineAt = opponent === "white" ? game.whiteOnlineAt : game.blackOnlineAt;
+  const opponentPresent = plyOf(game) === 1 || Boolean(opponentOnlineAt);
+  const absent: Array<"white" | "black"> = opponentPresent ? [owing] : [owing, opponent];
+  if (game.source === "swiss" && opponentPresent) return { action: "forfeit", winner: opponent, absent };
   return { action: "abort", absent };
 }

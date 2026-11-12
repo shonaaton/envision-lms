@@ -45,7 +45,6 @@ export function useTournamentSocket({ tournamentId, gameId, handlers }: Options)
   const socketRef = useRef<Socket | null>(null);
   const handlersRef = useRef(handlers);
   const [connected, setConnected] = useState(false);
-  const hasConnectedRef = useRef(false);
 
   useEffect(() => {
     handlersRef.current = handlers;
@@ -74,8 +73,7 @@ export function useTournamentSocket({ tournamentId, gameId, handlers }: Options)
         setConnected(true);
         // A reconnect may have missed events, so the authoritative position,
         // clocks and standings are pulled once rather than guessed at.
-        if (hasConnectedRef.current) handlersRef.current.onResync?.("reconnect");
-        hasConnectedRef.current = true;
+        handlersRef.current.onResync?.("connect");
       });
       socket.on("disconnect", () => setConnected(false));
 
@@ -108,7 +106,6 @@ export function useTournamentSocket({ tournamentId, gameId, handlers }: Options)
       cancelled = true;
       socketRef.current?.disconnect();
       socketRef.current = null;
-      hasConnectedRef.current = false;
     };
   }, [tournamentId]);
 

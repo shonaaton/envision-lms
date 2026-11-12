@@ -63,6 +63,8 @@ import {
   HeartHandshake,
   Landmark,
   FilePlus2,
+  MonitorCheck,
+  FileSpreadsheet,
 } from "lucide-react";
 import Logo from "./Logo";
 import { cn } from "@/lib/utils";
@@ -194,6 +196,17 @@ const sections: NavSection[] = [
       { href: "/fees/credit-monitoring", label: "Credit Monitoring", icon: WalletCards, featureKey: "creditMonitoring" },
       { href: "/fees/credit-history", label: "Credit History", icon: WalletCards, featureKey: "studentFees" },
       { href: "/fees/invoices", label: "My Invoices", icon: Receipt, featureKey: "invoices" },
+    ],
+  },
+  {
+    // Shown only to admins, the class monitor and the reviewers: the layout
+    // switches the feature off for every other sub-admin (salespeople included).
+    id: "class-monitor",
+    title: "Class Monitor",
+    roles: ["admin", "sub-admin"],
+    items: [
+      { href: "/class-monitor", label: "Class Monitor", icon: MonitorCheck, featureKey: "classMonitor" },
+      { href: "/class-monitor/reports", label: "Reports", icon: FileSpreadsheet, featureKey: "classMonitor" },
     ],
   },
   {

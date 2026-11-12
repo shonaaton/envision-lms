@@ -79,7 +79,11 @@ function parseCookieValue(cookieHeader: string, name: string) {
     if (separator <= 0) continue;
     const key = trimmed.slice(0, separator).trim();
     if (key !== name) continue;
-    return decodeURIComponent(trimmed.slice(separator + 1));
+    try {
+      return decodeURIComponent(trimmed.slice(separator + 1));
+    } catch {
+      return "";
+    }
   }
   return "";
 }
@@ -96,21 +100,21 @@ export function getTournamentGuestUsername(store: CookieStore, token: string) {
   return getTournamentGuestSession(store, token)?.username || "";
 }
 
-export function setTournamentGuestUsername(store: CookieStore, token: string, username: string, options?: { expiresAt?: Date | number | string | null }) {
+export function isTournamentGuestRequest(request: Request) {
+  return new URL(request.url).searchParams.get("guest") === "1";
+}
+
+export function setTournamentGuestUsername(store: CookieStore, token: string, username: string) {
   const normalizedUsername = normalizeTournamentGuestUsername(username);
-  if (!normalizedUsername) return;
-  const requestedExpiry = options?.expiresAt ? new Date(options.expiresAt).getTime() : 0;
-  const expiresAt = Math.min(
-    requestedExpiry && Number.isFinite(requestedExpiry) ? requestedExpiry : Date.now() + TOURNAMENT_GUEST_SESSION_TTL_MS,
-    Date.now() + TOURNAMENT_GUEST_SESSION_TTL_MS
-  );
+  if (!normalizedUsername) return false;
+  const expiresAt = Date.now() + TOURNAMENT_GUEST_SESSION_TTL_MS;
   const value = encodeGuestSession({
     username: normalizedUsername,
     tournamentToken: String(token || "").trim(),
     issuedAt: Date.now(),
     expiresAt,
   });
-  if (!value) return;
+  if (!value) return false;
   store.set(tournamentGuestCookieName(token), value, {
     httpOnly: true,
     sameSite: "lax",
@@ -118,6 +122,7 @@ export function setTournamentGuestUsername(store: CookieStore, token: string, us
     path: "/",
     maxAge: Math.max(1, Math.floor((expiresAt - Date.now()) / 1000)),
   });
+  return true;
 }
 
 export function clearTournamentGuestUsername(store: CookieStore, token: string) {

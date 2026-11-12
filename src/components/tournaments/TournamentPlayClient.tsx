@@ -8,6 +8,7 @@ import { isPromotionMove, promotionFromBoardPiece, type PendingPromotion, type P
 import { ArrowLeft, Flag, Handshake, Pause, Play, RefreshCcw, Trophy, X, Zap } from "lucide-react";
 import { useTournamentSocket } from "@/lib/useTournamentSocket";
 import { clockBaselineFromGame, deriveClocks, useNow, type ClockBaseline } from "@/lib/useLiveClock";
+import { sideOwingFirstMove } from "@/lib/tournament/firstMove";
 import { CLOCK_START_PLY } from "@/lib/tournament/timeControl";
 import { applyLeaderboardRows, findMyPairing, mergeLiveGames, rankOf } from "@/lib/tournament/leaderboard";
 import { BOARD_DARK_SQUARE, BOARD_LIGHT_SQUARE, buildBoardSquareStyles, findKingSquare } from "@/lib/tournament/boardTheme";
@@ -44,8 +45,8 @@ type PlayState = {
 
 type Premove = { from: string; to: string; promotion?: PromotionPiece };
 
-/** How long a socket must stay down before the player is told about it. */
-const RECONNECT_NOTICE_MS = 8000;
+/** Allow time for an HTTP refresh after live updates are interrupted. */
+const RECONNECT_NOTICE_MS = 18_000;
 
 function terminationLabel(game: any) {
   if (!game) return "";
@@ -133,9 +134,21 @@ export function TournamentPlayClient({
   const now = useNow(200, gameIsActive);
   const clocks = useMemo(() => deriveClocks(clockBaseline, now), [clockBaseline, now]);
 
+  const guestQuery = publicRoom ? "?guest=1" : "";
+  const latestRefresh = useRef(0);
+  const lastHttpContact = useRef(0);
+  const lastStateSnapshot = useRef<{
+    status: string;
+    round: number;
+    gameId: string;
+    gamePly: number;
+  } | null>(null);
   const retryTimerRef = useRef<number | null>(null);
   const refresh = useCallback(async (): Promise<void> => {
-    const response = await fetch(`/api/tournaments/${tournamentId}/state`, { cache: "no-store" });
+    const requestNumber = ++latestRefresh.current;
+    const response = await fetch(`/api/tournaments/${tournamentId}/state${guestQuery}`, { cache: "no-store" }).catch(() => null);
+    if (!response || requestNumber !== latestRefresh.current) return;
+    if (response.ok || response.status === 429) lastHttpContact.current = Date.now();
     if (response.status === 429) {
       /* Throttled: this fetch may be the one carrying a new pairing, so try
          again shortly rather than leave the player without their board. */
@@ -152,12 +165,22 @@ export function TournamentPlayClient({
       setError(payload?.error || "Could not load the tournament room.");
       return;
     }
-    setError("");
     const payload: PlayState = await response.json();
+    if (requestNumber !== latestRefresh.current) return;
+    const last = lastStateSnapshot.current;
+    if (payload.activeGame && last?.gameId === String(payload.activeGame._id) &&
+        last.gamePly > Number(payload.activeGame.ply || 0)) return;
+    lastStateSnapshot.current = {
+      status: String(payload.tournament?.status || ""),
+      round: Number(payload.tournament?.currentRound || 0),
+      gameId: String(payload.activeGame?._id || ""),
+      gamePly: Number(payload.activeGame?.ply || 0),
+    };
+    setError("");
     setState(payload);
     setGame(payload.activeGame || null);
     setClockBaseline(clockBaselineFromGame(payload.activeGame));
-  }, [tournamentId]);
+  }, [tournamentId, guestQuery]);
 
   useEffect(() => {
     void refresh();
@@ -187,6 +210,16 @@ export function TournamentPlayClient({
   const handlers = useMemo(
     () => ({
       onGameMove: (payload: any) => {
+        const last = lastStateSnapshot.current;
+        if (last?.gameId === String(payload.gameId)) {
+          const ply = Number(payload.ply);
+          if (ply <= last.gamePly) return;
+          if (ply !== last.gamePly + 1) {
+            void refresh();
+            return;
+          }
+          lastStateSnapshot.current = { ...last, gamePly: ply };
+        }
         setGame((current: any) => {
           if (!current || String(current._id) !== String(payload.gameId)) return current;
           // Ignore an event describing a position we have already passed.
@@ -296,8 +329,7 @@ export function TournamentPlayClient({
 
   const { connected } = useTournamentSocket({ tournamentId, gameId, handlers });
 
-  /* Only tell the player about a disconnection once it has lasted long enough
-     to matter. A dialog on every momentary blip would be worse than useless. */
+  /* The board remains playable over HTTP while live updates reconnect. */
   useEffect(() => {
     if (connected) {
       setOfflineSince(null);
@@ -305,9 +337,43 @@ export function TournamentPlayClient({
     }
     setOfflineSince((current) => current ?? Date.now());
   }, [connected]);
-  const showReconnectDialog = !connected && offlineSince !== null && now - offlineSince > RECONNECT_NOTICE_MS;
+  const showReconnectDialog =
+    !connected && offlineSince !== null && now - Math.max(offlineSince, lastHttpContact.current) > RECONNECT_NOTICE_MS;
 
   const tournamentStatus = String(state?.tournament?.status || "");
+  useEffect(() => {
+    if (["completed", "finished", "cancelled"].includes(tournamentStatus) && !gameIsActive) return;
+    // A board can be assigned before the socket subscribes or while its events
+    // are unavailable. Read the authoritative state even on a quiet connection.
+    const pollQuery = publicRoom ? "?guest=1&poll=1" : "?poll=1";
+    let polls = 0;
+    const timer = window.setInterval(async () => {
+      if (document.visibilityState !== "visible") return;
+      const last = lastStateSnapshot.current;
+      polls += 1;
+      if (!last || (!connected && polls % 3 === 0)) {
+        void refresh();
+        return;
+      }
+      const response = await fetch(`/api/tournaments/${tournamentId}/state${pollQuery}`, { cache: "no-store" }).catch(() => null);
+      if (response?.ok || response?.status === 429) lastHttpContact.current = Date.now();
+      if (!response?.ok || lastStateSnapshot.current !== last) return;
+      const next = await response.json().catch(() => null);
+      if (!next || lastStateSnapshot.current !== last) return;
+      if (next.status !== last.status || next.round !== last.round || next.gameId !== last.gameId ||
+          (next.gamePly !== last.gamePly && next.gameId)) {
+        void refresh();
+      }
+    }, gameIsActive && !connected ? 4_000 : 7_000 + Math.round(Math.random() * 2_000));
+    const onVisibility = () => {
+      if (document.visibilityState === "visible") void refresh();
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
+  }, [tournamentId, tournamentStatus, gameIsActive, publicRoom, connected, refresh]);
   const tournamentPlaying = ["live", "playing"].includes(tournamentStatus);
   const tournamentFinished = ["completed", "finished"].includes(tournamentStatus);
   const currentSeat = state?.currentSeat || null;
@@ -344,11 +410,7 @@ export function TournamentPlayClient({
     }
   }, [game?.fen]);
 
-  // Who still owes a first move: White from the start, then Black once White
-  // has moved. Mirrors lib/tournament/firstMove.ts.
-  const plyNow = Number(game?.moveHistorySAN?.length || 0);
-  const firstMoveOwedBy: "white" | "black" | null =
-    !gameIsActive || !game?.firstMoveDeadlineAt ? null : plyNow === 0 ? "white" : plyNow === 1 ? "black" : null;
+  const firstMoveOwedBy = game?.firstMoveDeadlineAt ? sideOwingFirstMove(game) : null;
   const firstMoveSecondsLeft = useMemo(() => {
     if (!firstMoveOwedBy) return 0;
     return Math.max(0, Math.ceil((new Date(game.firstMoveDeadlineAt).getTime() - now) / 1000));
@@ -367,7 +429,7 @@ export function TournamentPlayClient({
   useEffect(() => {
     if (!gameId) return;
     const send = (visible = document.visibilityState === "visible", claim = false) =>
-      fetch(`/api/tournaments/games/${gameId}/presence`, {
+      fetch(`/api/tournaments/games/${gameId}/presence${guestQuery}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ tabId: tabIdRef.current, visible, claim }),
@@ -386,18 +448,18 @@ export function TournamentPlayClient({
       window.clearInterval(timer);
       document.removeEventListener("visibilitychange", onVisibility);
     };
-  }, [gameId]);
+  }, [gameId, guestQuery]);
 
   const claimBoard = useCallback(async () => {
     if (!gameId) return;
-    const response = await fetch(`/api/tournaments/games/${gameId}/presence`, {
+    const response = await fetch(`/api/tournaments/games/${gameId}/presence${guestQuery}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ tabId: tabIdRef.current, visible: true, claim: true }),
     }).catch(() => null);
     const payload = response && response.ok ? await response.json().catch(() => null) : null;
     setHasBoardControl(payload?.activeTab !== false);
-  }, [gameId]);
+  }, [gameId, guestQuery]);
 
   const postMove = useCallback(
     async (from: string, to: string, promotion: PromotionPiece = "q", options?: { quiet?: boolean }) => {
@@ -405,7 +467,7 @@ export function TournamentPlayClient({
       setSubmitting(true);
       setError("");
       try {
-        const response = await fetch(`/api/tournaments/games/${game._id}/move`, {
+        const response = await fetch(`/api/tournaments/games/${game._id}/move${guestQuery}`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           // The ply we believe we are moving from. The server rejects the move
@@ -439,7 +501,7 @@ export function TournamentPlayClient({
         setSubmitting(false);
       }
     },
-    [game, refresh, submitting]
+    [game, guestQuery, refresh, submitting]
   );
 
   /* Run a queued premove the moment the turn arrives, if it is still legal in
@@ -578,7 +640,7 @@ export function TournamentPlayClient({
   async function submitResult(action: "resign" | "draw" | "decline_draw" | "berserk") {
     if (!game) return;
     setError("");
-    const response = await fetch(`/api/tournaments/games/${game._id}/result`, {
+    const response = await fetch(`/api/tournaments/games/${game._id}/result${guestQuery}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ action, tabId: tabIdRef.current }),
@@ -601,7 +663,7 @@ export function TournamentPlayClient({
 
   async function setQueueStatus(action: "pause" | "resume") {
     setError("");
-    const response = await fetch(`/api/tournaments/${tournamentId}/queue`, {
+    const response = await fetch(`/api/tournaments/${tournamentId}/queue${guestQuery}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ action }),

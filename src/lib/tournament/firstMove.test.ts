@@ -18,6 +18,10 @@ describe("who owes a first move", () => {
   it("is White at the start", () => expect(sideOwingFirstMove(game())).toBe("white"));
   it("is Black after White's first move in Swiss", () => expect(sideOwingFirstMove(game({ ply: 1 }))).toBe("black"));
   it("is Black after White's first move in Arena too", () => expect(sideOwingFirstMove(game({ ply: 1, source: "arena" }))).toBe("black"));
+  it("follows the turn when a custom starting position begins with Black", () => {
+    expect(sideOwingFirstMove(game({ turn: "b" }))).toBe("black");
+    expect(sideOwingFirstMove(game({ ply: 1, turn: "w" }))).toBe("white");
+  });
   it("is nobody once both have moved", () => expect(sideOwingFirstMove(game({ ply: 2 }))).toBeNull());
 });
 
@@ -63,6 +67,12 @@ describe("no-show outcome", () => {
   it("awards White the game when Black never made a first move", () => {
     const current = game({ ply: 1, lastMoveAt: new Date(T0), firstMoveDeadlineAt: new Date(T0 + FIRST_MOVE_GRACE_MS) });
     expect(noShowOutcome(current, expired)).toEqual({ action: "forfeit", winner: "white", absent: ["black"] });
+  });
+
+  it("uses the correct side for a custom position", () => {
+    const current = game({ turn: "b", whiteOnlineAt: new Date(T0) });
+    expect(noShowOutcome(current, expired)).toEqual({ action: "forfeit", winner: "white", absent: ["black"] });
+    expect(noShowOutcome({ ...current, source: "arena" }, expired)).toEqual({ action: "abort", absent: ["black"] });
   });
 
   it("aborts an Arena board and names the player who never started", () => {

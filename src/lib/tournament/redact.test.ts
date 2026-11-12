@@ -14,6 +14,7 @@ const tournament = {
     password: "hunter2",
     entryCode: "ENTRY-99",
   },
+  externalParticipants: [{ username: "Guest", displayName: "Guest Player", email: "private@example.com", entryCode: "ENTRY-99", pinHash: "private-hash", registrationKey: "private-key" }],
   adminActions: [{ action: "tournament.paused", note: "Paused for a fire drill" }],
   pairingLock: { token: "lock-1" },
   roundLock: { token: "lock-2" },
@@ -49,6 +50,12 @@ describe("redactTournamentForPlayer", () => {
     const result = redactTournamentForPlayer(tournament, false);
     expect(result.pairingLock).toBeUndefined();
     expect(result.roundLock).toBeUndefined();
+  });
+
+  it("keeps guest names while hiding contact details and registration credentials", () => {
+    expect(redactTournamentForPlayer(tournament, false).externalParticipants).toEqual([
+      { username: "Guest", displayName: "Guest Player", joinedAt: undefined },
+    ]);
   });
 
   it("drops chat messages an arbiter hid", () => {

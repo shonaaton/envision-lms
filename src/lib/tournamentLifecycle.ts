@@ -2,6 +2,7 @@ import { dbConnect } from "@/lib/db";
 import { Tournament } from "@/models/Tournament";
 import { TournamentGame } from "@/models/TournamentGame";
 import {
+  countAvailableTournamentPlayers,
   enforceTournamentGameTimeouts,
   freezeTournamentResults,
   generateSwissRound,
@@ -44,35 +45,37 @@ export type TickSummary = {
   finalized: number;
 };
 
-function participantCount(tournament: any) {
-  return Number((tournament?.participants || []).length) + Number((tournament?.externalParticipants || []).length);
-}
-
 async function announceStartingSoon(tournament: any) {
   const already = (tournament.adminActions || []).some((action: any) => action.action === "notification.starting_soon");
+  if (!already) {
+    tournament.adminActions = [
+      ...(tournament.adminActions || []),
+      { action: "notification.starting_soon", note: "Starting-soon notification queued by lifecycle worker.", createdAt: new Date() },
+    ];
+  }
+  await tournament.save();
   if (already) return;
-  await notifyTournamentUsers(tournament, {
-    type: "tournament.starting_soon",
-    title: "Tournament starting soon",
-    message: `${tournament.name} starts in less than 15 minutes.`,
-    href: `/tournaments/${tournament._id}`,
-  });
-  await notifyExternalTournamentParticipants(tournament, {
-    subject: `Starting soon: ${tournament.name}`,
-    message: (participant) =>
-      `Hello ${participant.displayName || participant.username},\n\n${tournament.name} starts in less than 15 minutes. Open your tournament link to enter the lobby.`,
-  });
-  tournament.adminActions = [
-    ...(tournament.adminActions || []),
-    { action: "notification.starting_soon", note: "Starting-soon notification sent by lifecycle worker.", createdAt: new Date() },
-  ];
+
+  void Promise.all([
+    notifyTournamentUsers(tournament, {
+      type: "tournament.starting_soon",
+      title: "Tournament starting soon",
+      message: `${tournament.name} starts in less than 15 minutes.`,
+      href: `/tournaments/${tournament._id}`,
+    }),
+    notifyExternalTournamentParticipants(tournament, {
+      subject: `Starting soon: ${tournament.name}`,
+      message: (participant) =>
+        `Hello ${participant.displayName || participant.username},\n\n${tournament.name} starts in less than 15 minutes. Open your tournament link to enter the lobby.`,
+    }),
+  ]).catch((error) => console.error("Tournament reminder failed", error));
 }
 
 export function isDueToStart(tournament: any, at: number = Date.now()) {
   return (
     PENDING_STATUSES.includes(String(tournament.status || "")) &&
     new Date(tournament.startAt || 0).getTime() <= at &&
-    participantCount(tournament) >= 2
+    countAvailableTournamentPlayers(tournament) >= 2
   );
 }
 
@@ -213,7 +216,6 @@ async function processTournamentOnce(tournamentId: string, options: { force?: bo
       emitTournamentStatus(String(tournament._id), "starting_soon", { startAt: tournament.startAt });
     }
     await announceStartingSoon(tournament);
-    await tournament.save();
     summary.startingSoon += 1;
   }
 

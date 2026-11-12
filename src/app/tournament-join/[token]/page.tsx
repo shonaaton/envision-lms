@@ -1,87 +1,16 @@
 import { dbConnect } from "@/lib/db";
 import { Tournament } from "@/models/Tournament";
-import { revalidatePath } from "next/cache";
+import { randomUUID } from "crypto";
 import { notFound, redirect } from "next/navigation";
 import Script from "next/script";
-import { Trophy, ArrowRight } from "lucide-react";
-import { cookies, headers } from "next/headers";
-import { getTournamentGuestUsername, setTournamentGuestUsername } from "@/lib/tournamentGuests";
-import { playerKeyForExternal, recalculateTournamentStandings, setTournamentPlayerState, syncArenaPairings } from "@/lib/tournamentEngine";
-import { notifyAdmins, notifyExternalTournamentParticipant } from "@/lib/tournamentNotifications";
-import { getTurnstileSiteKey, isTurnstileEnabled, verifyTurnstileToken } from "@/lib/humanVerification";
+import { Trophy } from "lucide-react";
+import { cookies } from "next/headers";
+import { getTournamentGuestUsername } from "@/lib/tournamentGuests";
+import { getTurnstileSiteKey } from "@/lib/humanVerification";
+import { joinExternalTournament } from "./actions";
 import { formatAcademyDateTime } from "@/lib/academyTime";
 
 export const dynamic = "force-dynamic";
-
-async function joinExternalTournament(formData: FormData) {
-  "use server";
-  const token = String(formData.get("token") || "");
-  const username = String(formData.get("username") || "").trim();
-  const displayName = String(formData.get("displayName") || "").trim();
-  const email = String(formData.get("email") || "").trim();
-  const password = String(formData.get("password") || "").trim();
-  const captchaResponse = String(formData.get("cf-turnstile-response") || "").trim();
-  if (!token || !username) return;
-  if (username.length < 3 || username.length > 40) redirect(`/tournament-join/${token}?error=username`);
-
-  if (isTurnstileEnabled()) {
-    const headerStore = await headers();
-    const remoteIp = String(headerStore.get("x-forwarded-for") || "").split(",")[0]?.trim() || headerStore.get("x-real-ip");
-    const verification = await verifyTurnstileToken(captchaResponse, remoteIp);
-    if (!verification.ok) redirect(`/tournament-join/${token}?error=human_verification`);
-  }
-
-  await dbConnect();
-  const tournament: any = await Tournament.findOne({ "externalInvite.enabled": true, "externalInvite.token": token });
-  if (!tournament) redirect(`/tournament-join/${token}?error=invalid_invite`);
-  if (tournament.externalInvite?.expiresAt && new Date(tournament.externalInvite.expiresAt).getTime() <= Date.now()) redirect(`/tournament-join/${token}?error=expired`);
-  const mode = String(tournament.externalInvite?.accessMode || "password");
-  if (mode === "password" && tournament.externalInvite?.password !== password) redirect(`/tournament-join/${token}?error=access`);
-  if (mode === "entry_code" && tournament.externalInvite?.entryCode !== password) redirect(`/tournament-join/${token}?error=access`);
-
-  const cookieStore = await cookies();
-  const alreadyJoined = (tournament.externalParticipants || []).some((player: any) => player.username.toLowerCase() === username.toLowerCase());
-  if (!alreadyJoined) {
-    tournament.externalParticipants.push({ username, displayName: displayName || username, email, entryCode: mode === "entry_code" ? password : "", joinedAt: new Date() });
-  }
-  const isPlaying = ["live", "playing"].includes(String(tournament.status || ""));
-  // A guest coming back on another device mid-game keeps their board; only a
-  // player who is not on one is (re)queued.
-  const currentState = (tournament.participantStates || []).find(
-    (entry: any) => entry.playerKey === playerKeyForExternal(username)
-  );
-  if (!(alreadyJoined && currentState?.status === "playing")) {
-    setTournamentPlayerState(tournament, playerKeyForExternal(username), tournament.type === "arena" && isPlaying ? "queued" : "joined");
-  }
-  await recalculateTournamentStandings(tournament);
-  tournament.adminActions = [...(tournament.adminActions || []), {
-    action: "external.registration",
-    note: `${displayName || username} registered through ${mode} invitation.`,
-    metadata: { username, email, mode },
-    createdAt: new Date(),
-  }];
-  await tournament.save();
-  if (tournament.type === "arena" && isPlaying) await syncArenaPairings(String(tournament._id));
-  await notifyAdmins({
-    type: "tournament.external_registration",
-    title: "External tournament registration",
-    message: `${displayName || username} registered for ${tournament.name}.`,
-    tournamentId: tournament._id.toString(),
-    href: `/tournaments/${tournament._id}`,
-  });
-  await notifyExternalTournamentParticipant({
-    email,
-    name: displayName || username,
-    tournamentName: tournament.name,
-    subject: `Registration confirmed: ${tournament.name}`,
-    message: `Hello ${displayName || username},\n\nYour registration for ${tournament.name} is confirmed.\n\nStart: ${`${formatAcademyDateTime(tournament.startAt)} IST`}\nTime control: ${tournament.timeControlMinutes}+${tournament.incrementSeconds}\nYour username: ${username}\n\nNo login or account is needed. Tap Enter Tournament Room below to play. On a different phone or computer, open the invitation link again and enter the same username.`,
-    href: `/tournament-join/${token}/play`,
-    tournamentId: tournament._id.toString(),
-  });
-  setTournamentGuestUsername(cookieStore, token, username, { expiresAt: tournament.externalInvite?.expiresAt });
-  revalidatePath(`/tournament-join/${token}`);
-  redirect(`/tournament-join/${token}/play`);
-}
 
 function guestJoinErrorMessage(code: string) {
   if (code === "human_verification") return "Please complete the human verification check and try again.";
@@ -89,6 +18,16 @@ function guestJoinErrorMessage(code: string) {
   if (code === "username") return "Please choose a username between 3 and 40 characters.";
   if (code === "expired") return "This invitation has expired. Please ask the organizer for a fresh link.";
   if (code === "invalid_invite") return "This invitation link is no longer valid.";
+  if (code === "closed") return "This tournament has ended. New registrations are closed.";
+  if (code === "late_join") return "This tournament has started and late joining is closed. If you already registered, use your original username.";
+  if (code === "pin_required") return "Choose a six-digit Player PIN so you can return to this profile.";
+  if (code === "pin_mismatch") return "This username is already registered. Enter its Player PIN or choose a different username.";
+  if (code === "email") return "Enter a valid contact email or leave the email field blank.";
+  if (code === "email_registered") return "This email is already linked to a player in this tournament. Rejoin with your original username and Player PIN.";
+  if (code === "already_registered") return "This form already registered a player. Rejoin with the original username and Player PIN.";
+  if (code === "rate_limit") return "Too many join attempts. Wait a moment and try again.";
+  if (code === "session") return "The tournament room could not start your session. Please contact the organizer.";
+  if (code === "retry") return "The tournament changed while you were joining. Please try again.";
   return "";
 }
 
@@ -102,16 +41,6 @@ export default async function ExternalTournamentJoinPage({
   await dbConnect();
   const tournament: any = await Tournament.findOne({ "externalInvite.enabled": true, "externalInvite.token": params.token }).lean();
   if (!tournament) notFound();
-  if (tournament.externalInvite?.expiresAt && new Date(tournament.externalInvite.expiresAt).getTime() <= Date.now()) {
-    return (
-      <div className="min-h-screen bg-slate-950 px-4 py-10 text-white">
-        <div className="mx-auto max-w-xl rounded-lg border border-white/10 bg-white p-6 text-slate-950 shadow-2xl">
-          <h1 className="text-2xl font-semibold">Invitation expired</h1>
-          <p className="mt-2 text-sm text-slate-500">This tournament invitation is no longer valid. Please ask the organizer for a new link.</p>
-        </div>
-      </div>
-    );
-  }
   const cookieStore = await cookies();
   const mode = String(tournament.externalInvite?.accessMode || "private");
   const joinedGuest = getTournamentGuestUsername(cookieStore, params.token);
@@ -121,6 +50,7 @@ export default async function ExternalTournamentJoinPage({
   ) {
     redirect(`/tournament-join/${params.token}/play`);
   }
+  const inviteExpired = Boolean(tournament.externalInvite?.expiresAt && new Date(tournament.externalInvite.expiresAt).getTime() <= Date.now());
   const turnstileSiteKey = getTurnstileSiteKey();
   const errorMessage = guestJoinErrorMessage(String(searchParams?.error || ""));
 
@@ -151,17 +81,18 @@ export default async function ExternalTournamentJoinPage({
           </div>
         ) : null}
 
-        {!joinedGuest ? (
-          <p className="mb-4 rounded-md border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
-            No account or login needed. Already registered on another device? Enter the same username to get back to your board.
-          </p>
-        ) : null}
+        <p className="mb-4 rounded-md border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+          {inviteExpired
+            ? "Registration has closed. If you already registered with a Player PIN, use it to return."
+            : "No account needed. If you already registered, use the same username and Player PIN."}
+        </p>
 
         <form action={joinExternalTournament} className="space-y-4">
           <input type="hidden" name="token" value={params.token} />
+          <input type="hidden" name="registrationKey" value={randomUUID()} />
           <label className="block text-sm font-medium">
             Username
-            <input name="username" required defaultValue={joinedGuest} className="mt-1 h-10 w-full rounded-md border border-slate-200 px-3 text-sm" placeholder="Enter your tournament name" />
+            <input name="username" required minLength={3} maxLength={40} className="mt-1 h-10 w-full rounded-md border border-slate-200 px-3 text-sm" placeholder="Enter your tournament name" />
           </label>
           <label className="block text-sm font-medium">
             Display Name
@@ -170,6 +101,10 @@ export default async function ExternalTournamentJoinPage({
           <label className="block text-sm font-medium">
             Email
             <input name="email" type="email" className="mt-1 h-10 w-full rounded-md border border-slate-200 px-3 text-sm" placeholder="Optional contact email" />
+          </label>
+          <label className="block text-sm font-medium">
+            Player PIN
+            <input name="pin" type="password" inputMode="numeric" pattern="[0-9]{6}" maxLength={6} autoComplete="off" className="mt-1 h-10 w-full rounded-md border border-slate-200 px-3 text-sm" placeholder="Choose or enter your six-digit PIN" />
           </label>
           {["password", "entry_code"].includes(mode) ? (
             <label className="block text-sm font-medium">
@@ -185,16 +120,6 @@ export default async function ExternalTournamentJoinPage({
           ) : null}
           <button className="h-10 w-full rounded-md bg-purple-700 px-4 text-sm font-semibold text-white">Join Tournament</button>
         </form>
-
-        {joinedGuest ? (
-          <div className="mt-4 rounded-md border border-purple-200 bg-purple-50 p-4">
-            <div className="text-sm font-semibold text-purple-900">Joined as {joinedGuest}</div>
-            <p className="mt-1 text-sm text-purple-700">You are already registered on this device. Enter the tournament room to receive your board as soon as the event pairs you.</p>
-            <a href={`/tournament-join/${params.token}/play`} className="mt-3 inline-flex h-10 items-center gap-2 rounded-md bg-purple-700 px-4 text-sm font-semibold text-white">
-              Enter Tournament Room <ArrowRight size={15} />
-            </a>
-          </div>
-        ) : null}
 
         {(tournament.externalParticipants || []).length > 0 && (
           <div className="mt-6">

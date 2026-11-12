@@ -232,6 +232,7 @@ export function raiseContactEnquiryTask(message: any) {
 function demoRequestDetails(lead: any) {
   return [
     `WhatsApp: ${[lead?.countryCode, lead?.phone].filter(Boolean).join(" ")} (${lead?.whatsappVerifiedAt ? "verified" : "not verified"})`,
+    `Email: ${lead?.email || "Not given"}`,
     `Child's age: ${demoAgeGroupLabel(lead?.ageGroup)}`,
     `Child's level: ${demoChildLevelLabel(lead?.childLevel)}`,
     `Class preference: ${contactInterestLabel(lead?.interest)}`,
@@ -268,6 +269,11 @@ export async function reassignDemoRequestTask(leadId: unknown, ownerId: unknown)
 /** The lead moved past "new", so somebody has spoken to the family. */
 export function resolveDemoLeadCallTask(leadId: unknown, by?: unknown) {
   return settle("ContactEnquiry", leadId, by, "Lead moved on in the Demo Leads CRM.");
+}
+
+/** The lead was deleted from the Demo Leads CRM, so there is nobody left to call. */
+export function cancelDemoLeadCallTask(leadId: unknown) {
+  return withdraw("ContactEnquiry", leadId, "The lead was deleted from the Demo Leads CRM.");
 }
 
 /**

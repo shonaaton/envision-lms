@@ -315,6 +315,7 @@ export const orderSchema = z.object({
  */
 export const demoRequestSchema = z.object({
   parentName: z.string().trim().min(2, "Please enter your full name.").max(80),
+  email: z.string().trim().toLowerCase().max(120).email("Please enter a valid email address."),
   countryCode: z.string().trim().min(1).max(8),
   phone: z.string().trim().min(6, "Please enter a valid WhatsApp number.").max(40),
   ageGroup: z.enum(DEMO_AGE_GROUP_VALUES, { errorMap: () => ({ message: "Please choose your child's age group." }) }),

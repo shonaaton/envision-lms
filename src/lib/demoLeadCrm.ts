@@ -6,9 +6,10 @@ import { ownerCandidates } from "@/lib/demoLeadOwner";
 import { demoLeadOwnerForTurn, demoLeadRotationNames, resolveDemoLeadRotation } from "@/lib/demoLeadRotation";
 import { DEMO_LEAD_STAGE_VALUES, DEMO_REQUEST_KIND, demoLeadStage, demoLeadStageLabel, type DemoLeadStage } from "@/lib/demoRequest";
 import { demoSlotLabel } from "@/lib/demoRequestSlots";
-import { reassignDemoRequestTask, resolveDemoLeadCallTask } from "@/lib/tasks/taskTriggers";
+import { cancelDemoLeadCallTask, reassignDemoRequestTask, resolveDemoLeadCallTask } from "@/lib/tasks/taskTriggers";
 import { ContactMessage, DemoLeadRotation } from "@/models/ContactMessage";
 import { User } from "@/models/User";
+import { WhatsAppOtp } from "@/models/WhatsAppOtp";
 
 /**
  * The Demo Leads CRM: every request from the free demo form
@@ -118,6 +119,7 @@ export function demoLeadsHref(filters: DemoLeadFilters, change: Partial<DemoLead
 export type DemoLeadRow = {
   id: string;
   name: string;
+  email: string;
   countryCode: string;
   phone: string;
   ageGroup: string;
@@ -157,7 +159,7 @@ export async function getDemoLeads(viewer: DemoLeadViewer, filters: DemoLeadFilt
   if (filters.stage !== "all") where.leadStage = stageMatch(filters.stage);
   if (filters.query) {
     const pattern = new RegExp(filters.query.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i");
-    where.$or = [{ name: pattern }, { phone: pattern }];
+    where.$or = [{ name: pattern }, { phone: pattern }, { email: pattern }];
   }
 
   const [docs, total, grouped, owners] = await Promise.all([
@@ -176,6 +178,7 @@ export async function getDemoLeads(viewer: DemoLeadViewer, filters: DemoLeadFilt
   const rows: DemoLeadRow[] = (docs as any[]).map((doc) => ({
     id: String(doc._id),
     name: String(doc.name || ""),
+    email: String(doc.email || ""),
     countryCode: String(doc.countryCode || ""),
     phone: String(doc.phone || ""),
     ageGroup: String(doc.ageGroup || ""),
@@ -254,4 +257,20 @@ export async function reassignDemoLead(viewer: DemoLeadViewer, leadId: string, o
   if (!result.modifiedCount) return false;
   await reassignDemoRequestTask(leadId, owner.userId);
   return true;
+}
+
+/**
+ * Admins only: removes a lead for good, with its open call task and any unused
+ * WhatsApp code. The rotation counter is left alone, so the next lead still goes
+ * to whoever's turn it is. Returns the deleted lead's name and number for the
+ * activity log, or null when nothing was deleted.
+ */
+export async function deleteDemoLead(viewer: DemoLeadViewer, leadId: string) {
+  if (!viewer.seesAll || !Types.ObjectId.isValid(leadId)) return null;
+  await dbConnect();
+  const deleted: any = await ContactMessage.findOneAndDelete({ _id: leadId, kind: DEMO_REQUEST_KIND }).select("name phone countryCode").lean();
+  if (!deleted) return null;
+  await cancelDemoLeadCallTask(leadId);
+  await WhatsAppOtp.deleteOne({ reference: leadId }).catch(() => undefined);
+  return { name: String(deleted.name || ""), phone: `${deleted.countryCode || ""}${deleted.phone || ""}` };
 }

@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
-import { ChevronDown, Clock3, GraduationCap, Loader2, MessageCircle, UserRound } from "lucide-react";
+import { ChevronDown, Clock3, GraduationCap, Loader2, Mail, MessageCircle, UserRound } from "lucide-react";
 import { contactInterests, ONLINE_INTEREST } from "@/lib/contactEnquiries";
 import { DEMO_AGE_GROUPS, DEMO_CHILD_LEVELS, DEMO_THANKS_PATH, DEMO_THANKS_STORAGE_KEY } from "@/lib/demoRequest";
 import { DIAL_CODES, dialCodeEntry } from "@/lib/phoneCountryCodes";
@@ -13,6 +13,7 @@ const CODE_LENGTH = 6;
 
 const initialForm = {
   parentName: "",
+  email: "",
   countryCode: "+91",
   phone: "",
   ageGroup: "",
@@ -251,6 +252,28 @@ export default function DemoRequestForm({ embedded = false, titleId }: { embedde
               placeholder="Enter your full name"
               value={form.parentName}
               onChange={(event) => update("parentName", event.target.value)}
+            />
+          </div>
+        </div>
+
+        <div className="dform-field">
+          <label htmlFor="demo-email">
+            Email address <span aria-hidden="true">*</span>
+          </label>
+          <div className="dform-input">
+            <Mail size={18} aria-hidden="true" />
+            <input
+              id="demo-email"
+              type="email"
+              required
+              maxLength={120}
+              inputMode="email"
+              autoComplete="email"
+              autoCapitalize="none"
+              spellCheck={false}
+              placeholder="Enter your email address"
+              value={form.email}
+              onChange={(event) => update("email", event.target.value)}
             />
           </div>
         </div>

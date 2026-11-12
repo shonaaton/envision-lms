@@ -33,6 +33,7 @@ export async function announceDemoRequest(leadId: string, request: Request) {
   if (known) return;
   const push = await pushLeadStage({
     name: lead.name,
+    email: lead.email || undefined,
     phone: crmPhoneNumber(lead),
     stage: "DEMO_REQUESTED",
     note: [

@@ -37,6 +37,7 @@ export async function POST(req: Request) {
     const fields = {
       kind: DEMO_REQUEST_KIND,
       name: data.parentName,
+      email: data.email,
       countryCode: data.countryCode,
       phone,
       ageGroup: data.ageGroup,
@@ -45,22 +46,26 @@ export async function POST(req: Request) {
       preferredTime: data.preferredTime,
       sourcePath: data.sourcePath,
     };
-    // Going back to fix a detail updates the same row. A verified request is left
-    // alone, so a second child on one number stays a second request.
+    // One lead per WhatsApp number. A number that already reached sales (verified,
+    // or announced because its code could not be sent) is refused, and the try is
+    // noted on the lead so the salesperson knows the family came back. A number
+    // that never got that far reuses its row, so fixing a detail or coming back
+    // later never makes a second lead.
+    const sameNumber = { kind: DEMO_REQUEST_KIND, countryCode: data.countryCode, phone };
+    const existing: any = await ContactMessage.findOne(sameNumber).sort({ createdAt: -1 }).select("whatsappVerifiedAt announcedAt").lean();
+    if (existing && (existing.whatsappVerifiedAt || existing.announcedAt)) {
+      await ContactMessage.updateOne(
+        { _id: existing._id },
+        { $push: { leadLog: { kind: "stage", text: "The family filled the demo form again with this number", byName: "System", at: new Date() } } },
+      ).catch(() => undefined);
+      return NextResponse.json(
+        { error: "We already have a demo request from this WhatsApp number. Our team will call you shortly, so there is no need to fill the form again." },
+        { status: 409 },
+      );
+    }
     const lead: any =
-      (await ContactMessage.findOneAndUpdate(
-        {
-          kind: DEMO_REQUEST_KIND,
-          countryCode: data.countryCode,
-          phone,
-          status: "new",
-          whatsappVerifiedAt: null,
-          announcedAt: null,
-          createdAt: { $gte: new Date(Date.now() - 24 * 60 * 60 * 1000) },
-        },
-        { $set: fields },
-        { new: true, sort: { createdAt: -1 } },
-      )) || (await ContactMessage.create(fields));
+      (existing && (await ContactMessage.findOneAndUpdate({ _id: existing._id, whatsappVerifiedAt: null, announcedAt: null }, { $set: fields }, { new: true }))) ||
+      (await ContactMessage.create(fields));
     const id = String(lead._id);
     // Owned from the first save, so a family who never enters the code is still
     // somebody's lead. A fault here must not stop the family's submission.

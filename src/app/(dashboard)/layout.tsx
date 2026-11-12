@@ -13,6 +13,9 @@ import { touchLastSeen } from "@/lib/engagement/lastSeen";
 import { branchHomePath, isBranchAllowedPath } from "@/lib/branch/paths";
 import { resolveBranchAccess } from "@/lib/branch/access";
 import { isClassMonitorAudience } from "@/lib/classMonitor/classMonitorAccess";
+import { User } from "@/models/User";
+import { needsStudentDetails, studentDetailsDefaults } from "@/lib/studentDetails";
+import StudentDetailsGate from "@/components/layout/StudentDetailsGate";
 
 export const dynamic = "force-dynamic";
 
@@ -71,6 +74,21 @@ export default async function DashboardLayout({ children }: { children: React.Re
     } catch (error) {
       console.error("Demo classroom lookup failed; continuing without the Classrooms link.", error);
       hasScheduledClassroom = false;
+    }
+  }
+  // A student whose record is missing their details (lib/studentDetails) sees
+  // only the details form - no sidebar, no page, not even a live class - until
+  // it is saved. `children` is never rendered, so no page content reaches them.
+  if (role === "student" && !branch) {
+    let details: any = null;
+    try {
+      await dbConnect();
+      details = await User.findById((session.user as any).id).select("role accountStatus branch name firstName lastName age parentName parentEmail city country countryCode").lean();
+    } catch (error) {
+      console.error("Student details lookup failed; not blocking the portal.", error);
+    }
+    if (details && needsStudentDetails(details)) {
+      return <StudentDetailsGate defaults={studentDetailsDefaults(details)} lockedParent={Boolean(details.parentName?.trim())} />;
     }
   }
   if (!isActive && isInactiveRestrictedPath(pathname)) redirect("/dashboard?inactive=1");

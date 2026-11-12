@@ -41,7 +41,7 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   const actorId = (session!.user as any).id;
   await dbConnect();
   const actorIsSuperAdmin = await isSuperAdminSession(session!.user as any);
-  const target = await User.findById(params.id).select("name email phone role accessRole isSuperAdmin isActive engagementOptOut").lean();
+  const target = await User.findById(params.id).select("name email phone role accessRole isSuperAdmin isActive engagementOptOut age").lean();
   if (!target) return NextResponse.json({ error: "User not found." }, { status: 404 });
   if (!actorIsSuperAdmin && ["admin", "sub-admin"].includes((target as any).role)) return NextResponse.json({ error: "Only Super Admins can change staff accounts." }, { status: 403 });
   if ((target as any)?.isSuperAdmin && !actorIsSuperAdmin) return NextResponse.json({ error: "Only Super Admins can update another Super Admin." }, { status: 403 });
@@ -86,6 +86,29 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   const allowed =["name", "email", "countryCode", "phone", "role", "tags", "batches", "fideId", "rating", "notes", "isActive", "isSuperAdmin"];
   const update: any = {};
   for (const k of allowed) if (k in body) update[k] = body[k];
+  // Profile details. Plain text is trimmed and capped; an empty value clears it.
+  for (const k of ["firstName", "lastName", "parentName", "parentEmail", "city", "country"]) {
+    if (k in body) update[k] = String(body[k] ?? "").trim().slice(0, 120);
+  }
+  if (update.parentEmail) update.parentEmail = update.parentEmail.toLowerCase();
+  // The display name follows the split name, so every other screen keeps working.
+  if ("firstName" in update) {
+    if (!update.firstName) return NextResponse.json({ error: "First name is required." }, { status: 400 });
+    update.name = [update.firstName, update.lastName ?? ""].filter(Boolean).join(" ");
+  }
+  if ("age" in body) {
+    const raw = body.age;
+    if (raw === null || raw === "" || raw === undefined) {
+      update.$unset = { ...(update.$unset || {}), age: 1, ageUpdatedAt: 1 };
+    } else {
+      const age = Number(raw);
+      if (!Number.isInteger(age) || age < 2 || age > 100) return NextResponse.json({ error: "Age must be a whole number between 2 and 100." }, { status: 400 });
+      if (age !== (target as any).age) {
+        update.age = age;
+        update.ageUpdatedAt = new Date();
+      }
+    }
+  }
   // Weekly progress WhatsApp on/off (lib/engagement). Families can also reply STOP.
   // The edit form always posts it, so only an actual change is stamped - an
   // unrelated edit must not turn "the family replied STOP" into "an admin did".
@@ -93,7 +116,7 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     update["engagementOptOut.optedOut"] = body.engagementOptOut;
     update["engagementOptOut.at"] = new Date();
     if (body.engagementOptOut) update["engagementOptOut.via"] = "admin";
-    else update.$unset = { "engagementOptOut.via": 1 };
+    else update.$unset = { ...(update.$unset || {}), "engagementOptOut.via": 1 };
   }
   if (body.role !== undefined && !["student", "instructor", "admin", "sub-admin"].includes(body.role)) return NextResponse.json({ error: "Invalid role." }, { status: 400 });
   if ("accessRole" in body) {

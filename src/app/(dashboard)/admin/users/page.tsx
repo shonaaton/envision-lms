@@ -63,6 +63,14 @@ type AdminUser = {
   pausedUntil?: string;
   lastSeenAt?: string;
   engagementOptOut?: { optedOut?: boolean; via?: "whatsapp_stop" | "admin" };
+  firstName?: string;
+  lastName?: string;
+  age?: number | null;
+  ageUpdatedAt?: string;
+  parentName?: string;
+  parentEmail?: string;
+  city?: string;
+  country?: string;
   duplicateReview?: {
     status?: "pending" | "cleared" | "confirmed";
     reasons?: string[];
@@ -764,6 +772,9 @@ function UserDetailsModal({ user, batches, onClose, onCopy }: { user: AdminUser;
           <InfoRow label="Username" value={user.username || "-"} />
           <InfoRow label="Password" value={user.tempPassword ? "Temporary password available to admin" : passwordStatus(user)} />
           <InfoRow label="Contact No." value={contactNumber(user)} />
+          {user.role === "student" && <InfoRow label="Age" value={user.age ? String(user.age) : "-"} />}
+          {user.role === "student" && <InfoRow label="Parent" value={[user.parentName, user.parentEmail].filter(Boolean).join(" · ") || "-"} />}
+          <InfoRow label="Location" value={[user.city, user.country].filter(Boolean).join(", ") || "-"} />
           <InfoRow label="Status" value={user.isActive ? "Active" : "Inactive"} />
           {user.role === "student" && <InfoRow label="Last seen" value={user.lastSeenAt ? new Intl.DateTimeFormat("en-IN", { day: "numeric", month: "short", year: "numeric" }).format(new Date(user.lastSeenAt)) : "Not yet recorded"} />}
           {user.role === "student" && <InfoRow label="Weekly updates" value={weeklyUpdatesLabel(user)} />}
@@ -839,37 +850,91 @@ function passwordStatus(user: AdminUser) {
   return `${user.passwordChangeSource === "self_reset" ? "Updated by user" : "Updated"} ${changed}`;
 }
 
+/**
+ * First and last name for the form. Older accounts only have `name`, so the
+ * first word becomes the first name and the rest the last name until saved.
+ */
+function splitName(user: AdminUser) {
+  if (user.firstName) return { first: user.firstName, last: user.lastName || "" };
+  const parts = (user.name || "").trim().split(/\s+/);
+  return { first: parts[0] || "", last: parts.slice(1).join(" ") };
+}
+
+function FormField({ label, hint, children, className = "" }: { label: string; hint?: string; children: React.ReactNode; className?: string }) {
+  return (
+    <label className={`grid gap-1 text-sm ${className}`}>
+      <span className="font-medium text-slate-700">{label}</span>
+      {children}
+      {hint && <span className="text-xs text-slate-500">{hint}</span>}
+    </label>
+  );
+}
+
 function EditUserModal({ user, onClose, onSave }: { user: AdminUser; onClose: () => void; onSave: (payload: UserUpdate) => void }) {
   const currentStaffRole = typeof user.accessRole === "object" && user.accessRole ? user.accessRole._id : typeof user.accessRole === "string" ? user.accessRole : user.role;
+  const isStudent = user.role === "student";
+  const { first, last } = splitName(user);
+  const ageHint = user.age && user.ageUpdatedAt
+    ? `Entered ${new Intl.DateTimeFormat("en-IN", { day: "numeric", month: "short", year: "numeric" }).format(new Date(user.ageUpdatedAt))}`
+    : undefined;
+  const text = (fd: FormData, key: string) => String(fd.get(key) || "").trim();
   return (
     <ModalShell title={`Edit ${userRoleLabel(user.role)}`} onClose={onClose}>
       <form className="grid gap-3" onSubmit={(e) => {
         e.preventDefault();
         const fd = new FormData(e.currentTarget);
-        const phone = String(fd.get("phone") || "").trim();
-        const countryCode = String(fd.get("countryCode") || "").trim();
+        const phone = text(fd, "phone");
+        const countryCode = text(fd, "countryCode");
         const staffRole = String(fd.get("staffRole") || "");
+        const firstName = text(fd, "firstName");
+        const lastName = text(fd, "lastName");
+        const age = text(fd, "age");
         onSave({
           ...(staffRole && staffRole !== currentStaffRole ? { role: staffRole === "admin" ? "admin" : "sub-admin", accessRole: ["admin", "sub-admin"].includes(staffRole) ? null : staffRole } : {}),
-          name: String(fd.get("name") || ""),
-          email: String(fd.get("email") || ""),
+          firstName,
+          lastName,
+          name: [firstName, lastName].filter(Boolean).join(" "),
+          email: text(fd, "email"),
           countryCode: phone ? countryCode : "",
           phone,
+          country: text(fd, "country"),
+          city: text(fd, "city"),
           tags: String(fd.get("tags") || "").split(",").map((s) => s.trim()).filter(Boolean),
           notes: String(fd.get("notes") || ""),
           isActive: fd.get("isActive") === "on",
-          ...(user.role === "student" ? { engagementOptOut: fd.get("weeklyUpdates") !== "on" } : {}),
+          ...(isStudent ? {
+            age: age ? Number(age) : null,
+            parentName: text(fd, "parentName"),
+            parentEmail: text(fd, "parentEmail"),
+            engagementOptOut: fd.get("weeklyUpdates") !== "on",
+          } : {}),
         });
       }}>
         {["admin", "sub-admin"].includes(user.role) && <StaffRoleSelect defaultValue={currentStaffRole} />}
-        <input className="input bg-white text-slate-950" name="name" defaultValue={user.name} required />
-        <input className="input bg-white text-slate-950" name="email" type="email" defaultValue={user.email} required />
-        <div className="grid grid-cols-[110px_minmax(0,1fr)] gap-3">
-          <input className="input bg-white text-slate-950" name="countryCode" defaultValue={user.countryCode || ""} placeholder="+91" inputMode="tel" autoComplete="tel-country-code" />
-          <input className="input bg-white text-slate-950" name="phone" defaultValue={user.phone || ""} placeholder="Phone" inputMode="tel" autoComplete="tel-national" />
+        <div className="grid gap-3 sm:grid-cols-2">
+          <FormField label="First name"><input className="input bg-white text-slate-950" name="firstName" defaultValue={first} required autoComplete="off" /></FormField>
+          <FormField label="Last name"><input className="input bg-white text-slate-950" name="lastName" defaultValue={last} autoComplete="off" /></FormField>
         </div>
-        <input className="input bg-white text-slate-950" name="tags" defaultValue={(user.tags || []).join(", ")} />
-        <textarea className="input min-h-24 bg-white text-slate-950" name="notes" defaultValue={user.notes || ""} />
+        {isStudent && (
+          <div className="grid gap-3 sm:grid-cols-[120px_minmax(0,1fr)_minmax(0,1fr)]">
+            <FormField label="Age" hint={ageHint}><input className="input bg-white text-slate-950" name="age" type="number" min={2} max={100} step={1} defaultValue={user.age ?? ""} inputMode="numeric" /></FormField>
+            <FormField label="Parent's name"><input className="input bg-white text-slate-950" name="parentName" defaultValue={user.parentName || ""} autoComplete="off" /></FormField>
+            <FormField label="Parent's email"><input className="input bg-white text-slate-950" name="parentEmail" type="email" defaultValue={user.parentEmail || ""} autoComplete="off" /></FormField>
+          </div>
+        )}
+        <FormField label="Email"><input className="input bg-white text-slate-950" name="email" type="email" defaultValue={user.email} required /></FormField>
+        <FormField label="Phone">
+          <div className="grid grid-cols-[110px_minmax(0,1fr)] gap-3">
+            <input className="input bg-white text-slate-950" name="countryCode" defaultValue={user.countryCode || ""} placeholder="+91" inputMode="tel" autoComplete="tel-country-code" aria-label="Country code" />
+            <input className="input bg-white text-slate-950" name="phone" defaultValue={user.phone || ""} placeholder="Phone" inputMode="tel" autoComplete="tel-national" aria-label="Phone number" />
+          </div>
+        </FormField>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <FormField label="Country"><input className="input bg-white text-slate-950" name="country" defaultValue={user.country || ""} placeholder="India" autoComplete="off" /></FormField>
+          <FormField label="City"><input className="input bg-white text-slate-950" name="city" defaultValue={user.city || ""} placeholder="Kolkata" autoComplete="off" /></FormField>
+        </div>
+        <FormField label="Tags" hint="Separate with commas"><input className="input bg-white text-slate-950" name="tags" defaultValue={(user.tags || []).join(", ")} /></FormField>
+        <FormField label="Notes"><textarea className="input min-h-24 bg-white text-slate-950" name="notes" defaultValue={user.notes || ""} /></FormField>
         <label className="flex items-center gap-2 text-sm"><input type="checkbox" name="isActive" defaultChecked={user.isActive} /> Active</label>
         {user.role === "student" && (
           <label className="flex items-start gap-2 text-sm">

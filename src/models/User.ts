@@ -99,6 +99,16 @@ const UserSchema = new Schema(
       convertedAt: Date,
       convertedBy: { type: Schema.Types.ObjectId, ref: "User" },
     },
+    // Split name, edited from the admin directory. `name` stays the display name
+    // everything else reads; the edit route rebuilds it from these two.
+    firstName: { type: String, trim: true },
+    lastName: { type: String, trim: true },
+    // Age as the family gave it, and when. A stored age goes stale, so
+    // `ageUpdatedAt` lets a reader tell how old the figure is.
+    age: { type: Number, min: 2, max: 100 },
+    ageUpdatedAt: Date,
+    // When the student filled the one-time details form at sign-in (lib/studentDetails).
+    detailsConfirmedAt: Date,
     parentName: { type: String },
     parentEmail: { type: String, lowercase: true, index: true },
     // When this family was last asked for a Google review. A review request is

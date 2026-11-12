@@ -7,8 +7,24 @@ import { demoLeadOwnerForTurn, demoLeadRotationNames, resolveDemoLeadRotation } 
 import { DEMO_LEAD_STAGE_VALUES, DEMO_REQUEST_KIND, SUBMITTED_DEMO_REQUEST, demoLeadStage, demoLeadStageLabel, type DemoLeadStage } from "@/lib/demoRequest";
 import { demoSlotLabel } from "@/lib/demoRequestSlots";
 import { LEAD_CHANNELS, summarizeLeadSource, type LeadChannel, type LeadSourceSummary } from "@/lib/leadSource";
-import { cancelDemoLeadCallTask, reassignDemoRequestTask, resolveDemoLeadCallTask } from "@/lib/tasks/taskTriggers";
+import {
+  REMINDERS_PER_LEAD_MAX,
+  REMINDER_NOTE_MAX,
+  callLogText,
+  checkReminderTime,
+  isDemoLeadCallOutcome,
+} from "@/lib/demoLeadCalls";
+import { formatAcademyDateTime } from "@/lib/academyTime";
+import {
+  cancelDemoLeadCallTask,
+  cancelDemoLeadReminderTask,
+  reassignDemoLeadReminderTasks,
+  reassignDemoRequestTask,
+  resolveDemoLeadCallTask,
+  resolveDemoLeadReminderTasks,
+} from "@/lib/tasks/taskTriggers";
 import { ContactMessage, DemoLeadRotation } from "@/models/ContactMessage";
+import { DemoLeadReminder } from "@/models/DemoLeadReminder";
 import { User } from "@/models/User";
 import { WhatsAppOtp } from "@/models/WhatsAppOtp";
 
@@ -92,7 +108,8 @@ async function assignLeadsWithoutOwner() {
   for (const lead of waiting) await assignDemoLeadOwner(lead._id);
 }
 
-export type DemoLeadFilters = { stage: DemoLeadStage | "all"; owner: string; query: string; channel: LeadChannel | "all" };
+/** `lead` opens one lead on its own: the link in a reminder email and task. */
+export type DemoLeadFilters = { stage: DemoLeadStage | "all"; owner: string; query: string; channel: LeadChannel | "all"; lead: string };
 
 export function parseDemoLeadFilters(params: Record<string, string | string[] | undefined>): DemoLeadFilters {
   const single = (key: string) => {
@@ -102,11 +119,13 @@ export function parseDemoLeadFilters(params: Record<string, string | string[] | 
   const stage = single("stage");
   const owner = single("owner");
   const channel = single("source");
+  const lead = single("lead");
   return {
     stage: (DEMO_LEAD_STAGE_VALUES as readonly string[]).includes(stage) ? (stage as DemoLeadStage) : "all",
     owner: owner === "none" || Types.ObjectId.isValid(owner) ? owner : "all",
     query: single("q").slice(0, 80),
     channel: LEAD_CHANNELS.some((item) => item.value === channel) ? (channel as LeadChannel) : "all",
+    lead: Types.ObjectId.isValid(lead) ? lead : "",
   };
 }
 
@@ -117,6 +136,7 @@ export function demoLeadsHref(filters: DemoLeadFilters, change: Partial<DemoLead
   if (next.owner !== "all") params.set("owner", next.owner);
   if (next.query) params.set("q", next.query);
   if (next.channel !== "all") params.set("source", next.channel);
+  if (next.lead) params.set("lead", next.lead);
   const search = params.toString();
   return search ? `/sales/leads?${search}` : "/sales/leads";
 }
@@ -139,7 +159,9 @@ export type DemoLeadRow = {
   ownerId: string;
   ownerName: string;
   createdAt: string;
-  log: Array<{ kind: string; text: string; byName: string; at: string }>;
+  log: Array<{ kind: string; outcome: string; text: string; byName: string; at: string }>;
+  /** Reminders still waiting to fire ("scheduled") or fired with no call logged since ("sent"), soonest first. */
+  reminders: Array<{ id: string; dueAt: string; note: string; status: "scheduled" | "sent"; forId: string; forName: string; byName: string }>;
 };
 
 /** What the viewer may see, before any filter they chose. */
@@ -163,6 +185,7 @@ export async function getDemoLeads(viewer: DemoLeadViewer, filters: DemoLeadFilt
   if (viewer.seesAll && filters.owner !== "all") scope.salesOwner = filters.owner === "none" ? null : new Types.ObjectId(filters.owner);
 
   const where: Record<string, unknown> = { ...scope };
+  if (filters.lead) where._id = new Types.ObjectId(filters.lead);
   if (filters.stage !== "all") where.leadStage = stageMatch(filters.stage);
   // Leads from before sources were recorded have no channel and count as "Not recorded".
   if (filters.channel !== "all") where.leadChannel = filters.channel === "unknown" ? { $in: ["unknown", null] } : filters.channel;
@@ -191,6 +214,27 @@ export async function getDemoLeads(viewer: DemoLeadViewer, filters: DemoLeadFilt
     stageCounts.all += entry.count;
   }
 
+  const openReminders: any[] = docs.length
+    ? await DemoLeadReminder.find({ lead: { $in: (docs as any[]).map((doc) => doc._id) }, status: { $in: ["scheduled", "sent"] } })
+        .sort({ dueAt: 1 })
+        .lean()
+    : [];
+  const remindersByLead = new Map<string, DemoLeadRow["reminders"]>();
+  for (const reminder of openReminders) {
+    const key = String(reminder.lead);
+    const list = remindersByLead.get(key) || [];
+    list.push({
+      id: String(reminder._id),
+      dueAt: new Date(reminder.dueAt).toISOString(),
+      note: String(reminder.note || ""),
+      status: reminder.status === "sent" ? "sent" : "scheduled",
+      forId: String(reminder.assignedTo || ""),
+      forName: String(reminder.assignedToName || ""),
+      byName: String(reminder.createdByName || ""),
+    });
+    remindersByLead.set(key, list);
+  }
+
   const rows: DemoLeadRow[] = (docs as any[]).map((doc) => ({
     id: String(doc._id),
     name: String(doc.name || ""),
@@ -211,10 +255,12 @@ export async function getDemoLeads(viewer: DemoLeadViewer, filters: DemoLeadFilt
     createdAt: new Date(doc.createdAt).toISOString(),
     log: (doc.leadLog || []).map((entry: any) => ({
       kind: String(entry.kind || "note"),
+      outcome: String(entry.outcome || ""),
       text: String(entry.text || ""),
       byName: String(entry.byName || ""),
       at: new Date(entry.at || doc.createdAt).toISOString(),
     })),
+    reminders: remindersByLead.get(String(doc._id)) || [],
   }));
 
   return {
@@ -257,6 +303,99 @@ export async function addDemoLeadNote(viewer: DemoLeadViewer, leadId: string, te
   return Boolean(result.modifiedCount);
 }
 
+/**
+ * Picked up or Missed, stamped with the server's clock (never a typed time),
+ * with optional remarks. Any reminder that already fired for this lead is
+ * settled, and a picked-up call settles the first "call this parent" task too,
+ * since someone has now spoken to the family. A missed call leaves it open.
+ */
+export async function logDemoLeadCall(viewer: DemoLeadViewer, leadId: string, outcome: string, remarks: string) {
+  const match = ownLead(viewer, leadId);
+  if (!match || !isDemoLeadCallOutcome(outcome)) return false;
+  await dbConnect();
+  const now = new Date();
+  const result = await ContactMessage.updateOne(match, {
+    $push: { leadLog: { kind: "call", outcome, text: callLogText(outcome, remarks), by: viewer.id, byName: viewer.name, at: now } },
+  });
+  if (!result.modifiedCount) return false;
+  await DemoLeadReminder.updateMany({ lead: leadId, status: "sent" }, { $set: { status: "done", doneAt: now } });
+  await resolveDemoLeadReminderTasks(leadId, viewer.id);
+  if (outcome === "picked_up") await resolveDemoLeadCallTask(leadId, viewer.id);
+  return true;
+}
+
+export type ReminderResult = { ok: true } | { ok: false; error: string };
+
+/** A call-back reminder for the viewer themselves: an email and a task at `dueAt`. */
+export async function setDemoLeadReminder(viewer: DemoLeadViewer, leadId: string, dueAt: Date | null, noteText: string): Promise<ReminderResult> {
+  const match = ownLead(viewer, leadId);
+  if (!match) return { ok: false, error: "This lead is not yours to set reminders on." };
+  const time = checkReminderTime(dueAt);
+  if (!time.ok) return time;
+  await dbConnect();
+  const lead: any = await ContactMessage.findOne(match).select("name").lean();
+  if (!lead) return { ok: false, error: "This lead is not yours to set reminders on." };
+  const open = await DemoLeadReminder.countDocuments({ lead: lead._id, assignedTo: viewer.id, status: "scheduled" });
+  if (open >= REMINDERS_PER_LEAD_MAX) return { ok: false, error: `You already have ${REMINDERS_PER_LEAD_MAX} reminders on this lead. Remove one first.` };
+
+  const note = noteText.trim().slice(0, REMINDER_NOTE_MAX);
+  const now = new Date();
+  await DemoLeadReminder.create({
+    lead: lead._id,
+    leadName: lead.name || "",
+    assignedTo: viewer.id,
+    assignedToName: viewer.name,
+    createdBy: viewer.id,
+    createdByName: viewer.name,
+    dueAt: time.at,
+    note,
+  });
+  const label = formatAcademyDateTime(time.at, { timeZoneName: "short" });
+  await ContactMessage.updateOne(match, {
+    $push: { leadLog: { kind: "reminder", text: `Reminder set for ${label}${note ? `: ${note}` : ""}`, by: viewer.id, byName: viewer.name, at: now } },
+  });
+  return { ok: true };
+}
+
+/** The viewer's own open call-backs across every lead, soonest first, for the strip at the top of the page. */
+export async function getMyDemoLeadReminders(viewer: DemoLeadViewer, limit = 20) {
+  if (!Types.ObjectId.isValid(viewer.id)) return [];
+  await dbConnect();
+  const reminders: any[] = await DemoLeadReminder.find({ assignedTo: viewer.id, status: { $in: ["scheduled", "sent"] } })
+    .sort({ dueAt: 1 })
+    .limit(limit)
+    .lean();
+  return reminders.map((reminder) => ({
+    id: String(reminder._id),
+    leadId: String(reminder.lead),
+    leadName: String(reminder.leadName || "A parent"),
+    dueAt: new Date(reminder.dueAt).toISOString(),
+    note: String(reminder.note || ""),
+    due: reminder.status === "sent",
+  }));
+}
+
+/** The person it is for removes it; admins may remove anyone's. Works before or after it fired. */
+export async function cancelDemoLeadReminder(viewer: DemoLeadViewer, reminderId: string) {
+  if (!Types.ObjectId.isValid(reminderId)) return false;
+  await dbConnect();
+  const reminder: any = await DemoLeadReminder.findOne({ _id: reminderId, status: { $in: ["scheduled", "sent"] } }).lean();
+  if (!reminder) return false;
+  if (!viewer.seesAll && String(reminder.assignedTo) !== viewer.id) return false;
+  const match = ownLead(viewer, String(reminder.lead));
+  if (!match || !(await ContactMessage.exists(match))) return false;
+
+  const now = new Date();
+  const result = await DemoLeadReminder.updateOne({ _id: reminder._id, status: reminder.status }, { $set: { status: "cancelled", cancelledAt: now } });
+  if (!result.modifiedCount) return false;
+  await cancelDemoLeadReminderTask(reminder._id, `${viewer.name || "Someone"} removed the reminder.`);
+  const label = formatAcademyDateTime(reminder.dueAt, { timeZoneName: "short" });
+  await ContactMessage.updateOne(match, {
+    $push: { leadLog: { kind: "reminder", text: `Reminder for ${label} removed`, by: viewer.id, byName: viewer.name, at: now } },
+  });
+  return true;
+}
+
 /** Admins only: hand a lead to the other salesperson. Does not move the rotation. */
 export async function reassignDemoLead(viewer: DemoLeadViewer, leadId: string, ownerId: string) {
   if (!viewer.seesAll || !Types.ObjectId.isValid(leadId)) return false;
@@ -264,15 +403,29 @@ export async function reassignDemoLead(viewer: DemoLeadViewer, leadId: string, o
   if (!owner) return false;
   await dbConnect();
   const now = new Date();
-  const result = await ContactMessage.updateOne(
+  const before: any = await ContactMessage.findOneAndUpdate(
     { _id: leadId, kind: DEMO_REQUEST_KIND, salesOwner: { $ne: new Types.ObjectId(ownerId) } },
     {
       $set: { salesOwner: owner.userId, salesOwnerName: owner.name || owner.email, salesAssignedAt: now },
       $push: { leadLog: { kind: "owner", text: `Reassigned to ${owner.name || owner.email}`, by: viewer.id, byName: viewer.name, at: now } },
     },
-  );
-  if (!result.modifiedCount) return false;
+    { new: false },
+  )
+    .select("salesOwner")
+    .lean();
+  if (!before) return false;
   await reassignDemoRequestTask(leadId, owner.userId);
+  // The previous owner's call-backs go with the lead; an admin's own reminders stay theirs.
+  if (before.salesOwner) {
+    const moving: any[] = await DemoLeadReminder.find({ lead: leadId, assignedTo: before.salesOwner, status: { $in: ["scheduled", "sent"] } }).select("_id").lean();
+    if (moving.length) {
+      await DemoLeadReminder.updateMany(
+        { _id: { $in: moving.map((reminder) => reminder._id) } },
+        { $set: { assignedTo: owner.userId, assignedToName: owner.name || owner.email } },
+      );
+      await reassignDemoLeadReminderTasks(moving.map((reminder) => reminder._id), owner.userId);
+    }
+  }
   return true;
 }
 
@@ -291,6 +444,11 @@ export async function deleteDemoLead(viewer: DemoLeadViewer, leadId: string) {
   const deleted: any = await ContactMessage.findOneAndDelete(match).select("name phone countryCode").lean();
   if (!deleted) return null;
   await cancelDemoLeadCallTask(leadId);
+  const reminders: any[] = await DemoLeadReminder.find({ lead: leadId, status: { $in: ["scheduled", "sent"] } }).select("_id").lean();
+  if (reminders.length) {
+    await DemoLeadReminder.updateMany({ _id: { $in: reminders.map((reminder) => reminder._id) } }, { $set: { status: "cancelled", cancelledAt: new Date() } });
+    for (const reminder of reminders) await cancelDemoLeadReminderTask(reminder._id, "The lead was deleted from the Demo Leads CRM.");
+  }
   await WhatsAppOtp.deleteOne({ reference: leadId }).catch(() => undefined);
   return { name: String(deleted.name || ""), phone: `${deleted.countryCode || ""}${deleted.phone || ""}` };
 }

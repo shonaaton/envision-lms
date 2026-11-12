@@ -1,18 +1,24 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
-import { Handshake, Search } from "lucide-react";
-import { DemoLeadsSheet, type DemoLeadSheetRow } from "@/components/sales/DemoLeadsSheet";
+import { AlarmClock, Handshake, Search } from "lucide-react";
+import { DemoLeadsSheet, type DemoLeadSheetRow, type ReminderFormState } from "@/components/sales/DemoLeadsSheet";
 import { NoCopyShell, SalesDataNotice } from "@/components/sales/NoCopyShell";
+import { academyDateKey, academyDateTime, academyDateTimeLocalInput, parseAcademyDateTimeLocal } from "@/lib/academyTime";
 import { contactDisplayPhone, contactInterestLabel, whatsappDigits } from "@/lib/contactEnquiries";
+import { demoLeadCallOutcomeLabel, reminderPresets } from "@/lib/demoLeadCalls";
 import {
   addDemoLeadNote,
+  cancelDemoLeadReminder,
   deleteDemoLead,
   demoLeadViewer,
   demoLeadsHref,
   getDemoLeads,
+  getMyDemoLeadReminders,
+  logDemoLeadCall,
   parseDemoLeadFilters,
   reassignDemoLead,
+  setDemoLeadReminder,
   setDemoLeadStage,
 } from "@/lib/demoLeadCrm";
 import { DEMO_LEAD_STAGES, demoAgeGroupLabel, demoChildLevelLabel, demoLeadStageLabel } from "@/lib/demoRequest";
@@ -55,6 +61,45 @@ async function addNote(formData: FormData) {
   revalidatePath("/sales/leads");
 }
 
+/** Picked up or Missed: the time is the server's clock when the button was pressed. */
+async function logCall(formData: FormData) {
+  "use server";
+  const viewer = await crmViewer();
+  if (!viewer?.canManage) throw new Error("Forbidden");
+  const lead = String(formData.get("lead") || "");
+  const outcome = String(formData.get("outcome") || "");
+  if (await logDemoLeadCall(viewer.lead, lead, outcome, String(formData.get("remarks") || ""))) {
+    logSalesAction(viewer.sales, `${viewer.sales.name} logged a ${demoLeadCallOutcomeLabel(outcome).toLowerCase()} call on a demo lead`, { lead, outcome });
+  }
+  revalidatePath("/sales/leads");
+}
+
+/** The time box is a datetime-local in academy (IST) wall-clock time, read back the same way. */
+async function setReminder(previous: ReminderFormState, formData: FormData): Promise<ReminderFormState> {
+  "use server";
+  const viewer = await crmViewer();
+  if (!viewer?.canManage) return { ...previous, error: "You do not have permission to set reminders." };
+  const lead = String(formData.get("lead") || "");
+  const raw = String(formData.get("dueAt") || "").trim();
+  const dueAt = raw ? parseAcademyDateTimeLocal(raw) : null;
+  const result = await setDemoLeadReminder(viewer.lead, lead, dueAt, String(formData.get("note") || ""));
+  if (!result.ok) return { ...previous, error: result.error };
+  logSalesAction(viewer.sales, `${viewer.sales.name} set a call reminder on a demo lead`, { lead, dueAt: dueAt?.toISOString() });
+  revalidatePath("/sales/leads");
+  return { error: "", saved: previous.saved + 1 };
+}
+
+async function cancelReminder(formData: FormData) {
+  "use server";
+  const viewer = await crmViewer();
+  if (!viewer?.canManage) throw new Error("Forbidden");
+  const reminder = String(formData.get("reminder") || "");
+  if (await cancelDemoLeadReminder(viewer.lead, reminder)) {
+    logSalesAction(viewer.sales, `${viewer.sales.name} removed a call reminder on a demo lead`, { reminder });
+  }
+  revalidatePath("/sales/leads");
+}
+
 async function changeOwner(formData: FormData) {
   "use server";
   const viewer = await crmViewer();
@@ -87,15 +132,24 @@ export default async function DemoLeadsPage({ searchParams }: { searchParams: Re
   if (!viewer) redirect("/dashboard");
 
   const filters = parseDemoLeadFilters(searchParams);
-  const data = await getDemoLeads(viewer.lead, filters);
+  const [data, myReminders] = await Promise.all([getDemoLeads(viewer.lead, filters), getMyDemoLeadReminders(viewer.lead)]);
   logSalesView(viewer.sales, "contactEnquiries", { surface: "demoLeads", stage: filters.stage, results: data.rows.length });
 
   const { seesAll } = viewer.lead;
-  const filtered = Boolean(filters.query) || filters.owner !== "all" || filters.channel !== "all";
+  const filtered = Boolean(filters.query) || filters.owner !== "all" || filters.channel !== "all" || Boolean(filters.lead);
+
+  // Reminder quick picks and the earliest time the box accepts, in IST like everything else here.
+  const now = new Date();
+  const presets = reminderPresets(now, academyDateTime, academyDateKey(now), academyDateKey(new Date(now.getTime() + 24 * 3600_000))).map((preset) => ({
+    label: preset.label,
+    value: academyDateTimeLocalInput(preset.at),
+  }));
 
   // Labels and IST dates are made here, on the server, so the sheet has nothing to format.
   const sheetRows: DemoLeadSheetRow[] = data.rows.map((row) => {
     const wa = whatsappDigits(row.countryCode, row.phone);
+    const calls = row.log.filter((entry) => entry.kind === "call");
+    const lastCall = calls[calls.length - 1];
     return {
       id: row.id,
       name: row.name,
@@ -115,7 +169,19 @@ export default async function DemoLeadsPage({ searchParams }: { searchParams: Re
       ownerId: row.ownerId,
       ownerName: row.ownerName,
       noteCount: row.log.filter((entry) => entry.kind === "note").length,
-      log: row.log.map((entry) => ({ ...entry, at: when(entry.at) })),
+      callCount: calls.length,
+      lastCall: lastCall ? { outcome: lastCall.outcome, label: demoLeadCallOutcomeLabel(lastCall.outcome), at: when(lastCall.at) } : null,
+      reminders: row.reminders.map((reminder) => ({
+        id: reminder.id,
+        dueLabel: when(reminder.dueAt),
+        note: reminder.note,
+        status: reminder.status,
+        forName: reminder.forName,
+        mine: reminder.forId === viewer.lead.id,
+        canCancel: viewer.canManage && (seesAll || reminder.forId === viewer.lead.id),
+      })),
+      // Newest first, so the latest call and its remarks are at the top.
+      log: row.log.map((entry) => ({ ...entry, at: when(entry.at) })).reverse(),
     };
   });
 
@@ -135,12 +201,34 @@ export default async function DemoLeadsPage({ searchParams }: { searchParams: Re
           </p>
         </header>
 
+        {myReminders.length ? (
+          <section aria-label="Your call-backs" className="rounded-2xl border border-amber-200 bg-amber-50 p-4">
+            <h2 className="flex items-center gap-2 text-xs font-black uppercase tracking-[0.12em] text-amber-800">
+              <AlarmClock size={14} aria-hidden="true" /> Your call-backs
+            </h2>
+            <ul className="mt-2 flex flex-wrap gap-2">
+              {myReminders.map((reminder) => (
+                <li key={reminder.id}>
+                  <Link
+                    href={demoLeadsHref({ stage: "all", owner: "all", query: "", channel: "all", lead: reminder.leadId })}
+                    title={reminder.note || undefined}
+                    className={`block rounded-lg border px-3 py-1.5 text-xs ${reminder.due ? "border-rose-300 bg-white text-rose-800" : "border-amber-200 bg-white text-slate-800"} hover:border-brand`}
+                  >
+                    <span className="font-black">{reminder.leadName}</span>
+                    <span className="ml-1.5">{reminder.due ? `Due now (${when(reminder.dueAt)})` : when(reminder.dueAt)}</span>
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          </section>
+        ) : null}
+
         <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
           <nav aria-label="Filter by stage" className="flex flex-wrap gap-2">
             {(["all", ...DEMO_LEAD_STAGES.map((stage) => stage.value)] as const).map((stage) => (
               <Link
                 key={stage}
-                href={demoLeadsHref(filters, { stage })}
+                href={demoLeadsHref(filters, { stage, lead: "" })}
                 className={`rounded-full px-3.5 py-1.5 text-xs font-black uppercase tracking-[0.1em] transition ${
                   filters.stage === stage ? "bg-brand text-white" : "bg-slate-100 text-slate-600 hover:bg-slate-200"
                 }`}
@@ -195,7 +283,7 @@ export default async function DemoLeadsPage({ searchParams }: { searchParams: Re
             {filters.stage !== "all" ? <input type="hidden" name="stage" value={filters.stage} /> : null}
             <button type="submit" className="btn-primary h-11">Apply</button>
             {filtered ? (
-              <Link href={demoLeadsHref(filters, { query: "", owner: "all", channel: "all" })} className="btn-outline h-11">Clear</Link>
+              <Link href={demoLeadsHref(filters, { query: "", owner: "all", channel: "all", lead: "" })} className="btn-outline h-11">Clear</Link>
             ) : null}
           </form>
         </section>
@@ -222,6 +310,12 @@ export default async function DemoLeadsPage({ searchParams }: { searchParams: Re
               addNote={addNote}
               changeOwner={changeOwner}
               deleteLead={deleteLead}
+              logCall={logCall}
+              setReminder={setReminder}
+              cancelReminder={cancelReminder}
+              reminderMin={academyDateTimeLocalInput(now)}
+              reminderPresets={presets}
+              initialOpen={filters.lead || (sheetRows.length === 1 ? sheetRows[0].id : null)}
             />
           ) : null}
 

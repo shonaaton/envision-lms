@@ -34,6 +34,7 @@ export async function register() {
   const { processBranchFeeJobs } = await import("@/lib/branch/feeJobs");
   const { processBranchMonthlyReports } = await import("@/lib/branch/reports");
   const { canAccessFeature } = await import("@/lib/featureAccess");
+  const { processDueDemoLeadReminders } = await import("@/lib/demoLeadReminders");
 
   installRuntimeProcessLogging();
   installRuntimeStderrCapture();
@@ -117,6 +118,16 @@ export async function register() {
         await processDueAskCoachWhatsAppReminders();
         await processAskCoachNightlyDigest();
       },
+    },
+    {
+      /**
+       * Demo Leads CRM call-backs: at the time a salesperson chose, a task,
+       * a bell notice and an email. Every minute, so "remind me at 4:30" is
+       * not a reminder at 4:44. Each reminder is claimed before it is sent.
+       */
+      name: "demo_lead_call_reminders",
+      intervalMs: 60_000,
+      run: () => processDueDemoLeadReminders(),
     },
     {
       name: "homework_email_reminders",

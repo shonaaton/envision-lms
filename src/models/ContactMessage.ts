@@ -89,11 +89,17 @@ const ContactMessageSchema = new Schema(
     /** One of DEMO_LEAD_STAGES. Absent on requests older than the CRM, which read as "new". */
     leadStage: { type: String, trim: true, index: true },
     leadStageAt: Date,
-    /** Notes and stage moves, oldest first. */
+    /**
+     * Notes, calls, reminders, stage and owner moves, oldest first. A call's
+     * `at` is the server's clock when the salesperson pressed Picked up or
+     * Missed, and its remarks are in `text` after the first line.
+     */
     leadLog: [
       {
         _id: false,
-        kind: { type: String, enum: ["note", "stage", "owner"], default: "note" },
+        kind: { type: String, enum: ["note", "stage", "owner", "call", "reminder"], default: "note" },
+        /** Calls only: one of DEMO_LEAD_CALL_OUTCOMES. */
+        outcome: { type: String, trim: true },
         text: { type: String, trim: true },
         by: { type: Schema.Types.ObjectId, ref: "User" },
         byName: { type: String, trim: true },

@@ -279,6 +279,54 @@ export function cancelDemoLeadCallTask(leadId: unknown) {
 }
 
 /**
+ * A call-back reminder a salesperson set in the Demo Leads CRM has come due.
+ * Raised quietly: the reminder sweep sends its own email and bell notice,
+ * worded as a reminder rather than "new task". Settled when a call is logged on
+ * the lead, or by hand in Tasks.
+ */
+export function raiseDemoLeadReminderTask(reminder: any, lead: any) {
+  const leadId = idOf(reminder?.lead);
+  const phone = [lead?.countryCode, lead?.phone].filter(Boolean).join(" ");
+  return raise({
+    kind: "demo_lead_reminder",
+    referenceType: "DemoLeadReminder",
+    referenceId: idOf(reminder),
+    title: `Reminder: call ${nameOf(lead, reminder?.leadName || "the parent")}${phone ? ` (${phone})` : ""}`,
+    details: [
+      `You asked to be reminded at ${when(reminder?.dueAt)}.`,
+      reminder?.note ? `Your note: ${reminder.note}` : "",
+      "Log the call as Picked up or Missed in the Demo Leads CRM and this task closes on its own.",
+    ]
+      .filter(Boolean)
+      .join("\n"),
+    assignedTo: reminder?.assignedTo,
+    pool: "sales",
+    priority: "high",
+    dueAt: reminder?.dueAt ? new Date(reminder.dueAt) : null,
+    actionHref: `/sales/leads?lead=${leadId}`,
+    metadata: { leadId, reminderId: idOf(reminder) },
+    notify: false,
+  });
+}
+
+/** A call was logged on the lead: every reminder task that already fired for it is done. */
+export function resolveDemoLeadReminderTasks(leadId: unknown, by?: unknown) {
+  return settleWhere("demo_lead_reminder", { leadId: idOf(leadId) }, by, "A call was logged in the Demo Leads CRM.");
+}
+
+export function cancelDemoLeadReminderTask(reminderId: unknown, reason: string) {
+  return withdraw("DemoLeadReminder", reminderId, reason);
+}
+
+export async function reassignDemoLeadReminderTasks(reminderIds: unknown[], ownerId: unknown) {
+  try {
+    await reassignAutoTasks("DemoLeadReminder", reminderIds, ownerId, "Lead owner change");
+  } catch (error) {
+    console.error("[tasks] could not reassign the demo lead reminder tasks", error);
+  }
+}
+
+/**
  * The family picks a demo slot on the thank-you page, after the task above has
  * usually been raised, so the open task is rewritten to carry it.
  */

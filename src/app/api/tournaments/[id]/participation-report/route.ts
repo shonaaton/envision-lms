@@ -6,7 +6,12 @@ import { Tournament } from "@/models/Tournament";
 export const dynamic = "force-dynamic";
 
 function csv(rows: Array<Array<string | number | boolean | null | undefined>>) {
-  return rows.map((row) => row.map((cell) => `"${String(cell ?? "").replace(/"/g, '""')}"`).join(",")).join("\n");
+  // Guests type their own names: a leading = + - @ would run as a formula in Excel.
+  const safe = (cell: unknown) => {
+    const text = String(cell ?? "");
+    return /^[=+\-@]/.test(text) ? `'${text}` : text;
+  };
+  return rows.map((row) => row.map((cell) => `"${safe(cell).replace(/"/g, '""')}"`).join(",")).join("\n");
 }
 
 function performance(entry: any, tournament: any) {
@@ -23,15 +28,22 @@ export async function GET(_: Request, { params }: { params: { id: string } }) {
   const tournament: any = await Tournament.findById(params.id).lean();
   if (!tournament) return NextResponse.json({ error: "Tournament not found" }, { status: 404 });
   const states = new Map((tournament.participantStates || []).map((entry: any) => [entry.playerKey, entry]));
+  const guests = new Map<string, any>(
+    (tournament.externalParticipants || []).map((guest: any) => [`external:${String(guest.username || "").trim().toLowerCase()}`, guest])
+  );
   const standings = Array.isArray(tournament.standings) ? tournament.standings : [];
   const body = csv([
-    ["Rank", "Player", "Player Key", "Rating", "Games", "Wins", "Draws", "Losses", "Byes", "Points", "Buchholz", "Performance", "Status", "Joined At", "Last Seen At"],
+    ["Rank", "Player", "Player Key", "Type", "Username", "Email", "WhatsApp", "Rating", "Games", "Wins", "Draws", "Losses", "Byes", "Points", "Buchholz", "Performance", "Status", "Joined At", "Last Seen At"],
     ...standings.map((entry: any, index: number) => {
       const state: any = states.get(entry.playerKey);
       return [
         index + 1,
         entry.displayName || "",
         entry.playerKey || "",
+        guests.has(entry.playerKey) ? "Guest" : "Member",
+        guests.get(entry.playerKey)?.username || "",
+        guests.get(entry.playerKey)?.email || "",
+        guests.get(entry.playerKey)?.phone || "",
         entry.rating || "",
         entry.gamesPlayed || 0,
         entry.wins || 0,

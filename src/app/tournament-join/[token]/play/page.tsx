@@ -7,7 +7,7 @@ import { getTournamentGuestUsername } from "@/lib/tournamentGuests";
 
 export const dynamic = "force-dynamic";
 
-export default async function ExternalTournamentPlayPage({ params }: { params: { token: string } }) {
+export default async function ExternalTournamentPlayPage({ params, searchParams }: { params: { token: string }; searchParams?: { registered?: string } }) {
   await dbConnect();
   const tournament: any = await Tournament.findOne({ "externalInvite.enabled": true, "externalInvite.token": params.token }).lean();
   if (!tournament) notFound();
@@ -26,6 +26,11 @@ export default async function ExternalTournamentPlayPage({ params }: { params: {
       backLabel="Back to invite"
       guestLabel={username}
       publicRoom
+      initialNotice={
+        searchParams?.registered
+          ? "You're registered. A confirmation is on its way to your email (and WhatsApp, if you gave a number), and we will remind you 30 and 10 minutes before the start. Keep this page open at the start time: your board appears automatically."
+          : ""
+      }
     />
   );
 }

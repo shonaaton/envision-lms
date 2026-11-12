@@ -1,9 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import {
+  CheckCircle2,
   Clock3,
   Crown,
   Eye,
@@ -14,6 +15,7 @@ import {
   Timer,
   Trophy,
   Users,
+  X,
 } from "lucide-react";
 import { useTournamentSocket } from "@/lib/useTournamentSocket";
 import { applyLeaderboardRows, findMyPairing, rankOf } from "@/lib/tournament/leaderboard";
@@ -22,6 +24,8 @@ import { useNow } from "@/lib/useLiveClock";
 import { formatAcademyDateTime } from "@/lib/academyTime";
 import { useViewerTimeZone, zoneAbbreviation } from "@/lib/viewerTime";
 import { TournamentAdminPanel } from "./TournamentAdminPanel";
+import { TournamentRules } from "./TournamentRules";
+import { tournamentRuleSections, type RuleSection } from "@/lib/tournament/rules";
 
 const LOBBY_REFRESH_SPACING_MS = 3_000;
 
@@ -87,6 +91,10 @@ export function TournamentDetailClient({
   const [state, setState] = useState<DetailState>(initialState);
   const [error, setError] = useState("");
   const [chatMessage, setChatMessage] = useState("");
+  const [registerOpen, setRegisterOpen] = useState(false);
+  const [justRegistered, setJustRegistered] = useState(false);
+  const searchParams = useSearchParams();
+  const autoOpenedRegisterRef = useRef(false);
   const [pending, startTransition] = useTransition();
   const autoOpenedGameRef = useRef("");
   const now = useNow(1000);
@@ -261,6 +269,28 @@ export function TournamentDetailClient({
     [tournamentId, tournament.status, tournament.type, tournament.lateJoiningAllowed, state, now]
   );
 
+  const rules = useMemo(() => tournamentRuleSections(tournament), [tournament]);
+
+  // Arriving from the login pop-up (?register=1): open the registration dialog once.
+  useEffect(() => {
+    if (autoOpenedRegisterRef.current || action.kind !== "join" || !searchParams?.get("register")) return;
+    autoOpenedRegisterRef.current = true;
+    setRegisterOpen(true);
+  }, [action.kind, searchParams]);
+
+  async function register() {
+    setError("");
+    const response = await fetch(`/api/tournaments/${tournamentId}/join`, { method: "POST" });
+    const payload = await response.json().catch(() => null);
+    setRegisterOpen(false);
+    if (!response.ok) {
+      setError(payload?.error || "Could not register you for this tournament.");
+      return;
+    }
+    setJustRegistered(true);
+    await refresh();
+  }
+
   const arenaMsLeft = state.arenaEndsAt && isPlaying ? Math.max(0, new Date(state.arenaEndsAt).getTime() - now) : 0;
   const startsIn = !isPlaying && !isFinished && tournament.startAt ? new Date(tournament.startAt).getTime() - now : 0;
 
@@ -270,6 +300,30 @@ export function TournamentDetailClient({
         <div role="alert" className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
           {error}
         </div>
+      ) : null}
+
+      {justRegistered ? (
+        <div role="status" className="flex items-start gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2.5 text-sm text-emerald-800">
+          <CheckCircle2 size={16} className="mt-0.5 shrink-0" aria-hidden />
+          <span className="flex-1">
+            You are registered. A confirmation with the rules is on its way by email and WhatsApp, and we will remind you 30 and 10 minutes before the
+            start. Keep this page open at the start time: your board appears automatically.
+          </span>
+          <button type="button" onClick={() => setJustRegistered(false)} aria-label="Dismiss" className="text-emerald-700/60 hover:text-emerald-900">
+            <X size={14} aria-hidden />
+          </button>
+        </div>
+      ) : null}
+
+      {registerOpen ? (
+        <RegisterDialog
+          name={tournament.name || "Tournament"}
+          late={isPlaying}
+          rules={rules}
+          pending={pending}
+          onCancel={() => setRegisterOpen(false)}
+          onConfirm={() => startTransition(register)}
+        />
       ) : null}
 
       {/* 1. Status. What is this event, and where is it up to. */}
@@ -339,7 +393,7 @@ export function TournamentDetailClient({
 
         <div className="flex flex-wrap gap-2">
           {action.kind === "join" ? (
-            <button type="button" disabled={pending} onClick={() => runAction(`/api/tournaments/${tournamentId}/join`)} className="btn-primary min-h-11">
+            <button type="button" disabled={pending} onClick={() => setRegisterOpen(true)} className="btn-primary min-h-11">
               <Trophy size={15} aria-hidden /> {action.label}
             </button>
           ) : action.href ? (
@@ -518,25 +572,14 @@ export function TournamentDetailClient({
 
           <section className="card">
             <h2 className="mb-2 flex items-center gap-1.5 font-semibold text-slate-950">
-              <Info size={15} className="text-slate-400" aria-hidden /> How this event works
+              <Info size={15} className="text-slate-400" aria-hidden /> Rules
             </h2>
-            <ul className="space-y-1.5 text-sm text-slate-600">
-              <li>
-                {tournament.type === "arena"
-                  ? "Arena: you are paired again as soon as each game ends, for the whole duration. Win two in a row and the games after that score double."
-                  : `Swiss: ${tournament.rounds || 0} rounds, everyone plays once per round, and the next round starts when every board has finished.`}
-              </li>
-              <li>Win 1, draw &frac12;, loss 0{tournament.type === "arena" ? ", doubled for Arena points." : "."}</li>
-              {tieBreak ? <li>Ties are broken on {tieBreak.label}.</li> : null}
-              {tournament.allowBerserk && tournament.type === "arena" ? <li>Berserk is on: halve your clock before your first move for an extra point if you win.</li> : null}
-              {tournament.lateJoiningAllowed === false ? <li>Late entry is not allowed once the tournament starts.</li> : null}
-              {state.maxRounds && tournament.rounds > state.maxRounds ? (
-                <li className="text-amber-700">
-                  Scheduled for {tournament.rounds} rounds, but {summary.participants} players can only fill {state.maxRounds} without a repeat pairing.
-                </li>
-              ) : null}
-              {tournament.entryRestrictions ? <li>{tournament.entryRestrictions}</li> : null}
-            </ul>
+            {state.maxRounds && tournament.rounds > state.maxRounds ? (
+              <p className="mb-3 rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-800">
+                Scheduled for {tournament.rounds} rounds, but {summary.participants} players can only fill {state.maxRounds} without a repeat pairing.
+              </p>
+            ) : null}
+            <TournamentRules sections={rules} compact />
           </section>
         </aside>
       </div>
@@ -592,5 +635,79 @@ function Podium({ standings }: { standings: any[] }) {
         ))}
       </ol>
     </section>
+  );
+}
+
+/** Registration from the portal: the rules first, then one tick and one button. */
+function RegisterDialog({
+  name,
+  late,
+  rules,
+  pending,
+  onCancel,
+  onConfirm,
+}: {
+  name: string;
+  late: boolean;
+  rules: RuleSection[];
+  pending: boolean;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  const [accepted, setAccepted] = useState(false);
+
+  useEffect(() => {
+    const closeOnEscape = (event: KeyboardEvent) => event.key === "Escape" && onCancel();
+    window.addEventListener("keydown", closeOnEscape);
+    return () => window.removeEventListener("keydown", closeOnEscape);
+  }, [onCancel]);
+
+  return (
+    <div
+      className="fixed inset-0 z-[70] flex items-end justify-center bg-slate-950/45 backdrop-blur-sm sm:items-center sm:p-4"
+      onMouseDown={(event) => event.target === event.currentTarget && onCancel()}
+    >
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="register-dialog-title"
+        className="flex max-h-[92vh] w-full max-w-lg flex-col overflow-hidden rounded-t-2xl bg-white shadow-2xl sm:rounded-2xl"
+      >
+        <div className="flex items-start justify-between gap-3 border-b border-slate-100 px-5 py-4">
+          <div className="min-w-0">
+            <p className="text-xs font-bold uppercase tracking-[0.12em] text-slate-500">{late ? "Join now" : "Register"}</p>
+            <h2 id="register-dialog-title" className="mt-0.5 break-words text-lg font-semibold text-slate-950">
+              {name}
+            </h2>
+          </div>
+          <button type="button" onClick={onCancel} className="rounded-full p-1.5 text-slate-500 hover:bg-slate-100" aria-label="Close">
+            <X size={16} aria-hidden />
+          </button>
+        </div>
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 py-4">
+          <p className="mb-3 text-sm text-slate-600">Please read the rules before you register.</p>
+          <TournamentRules sections={rules} compact />
+        </div>
+        <div className="space-y-3 border-t border-slate-100 px-5 py-4">
+          <label className="flex items-start gap-2.5 text-sm text-slate-700">
+            <input
+              type="checkbox"
+              checked={accepted}
+              onChange={(event) => setAccepted(event.target.checked)}
+              className="mt-0.5 h-4 w-4 shrink-0 accent-brand"
+            />
+            I have read the rules and agree to play by them.
+          </label>
+          <div className="flex flex-wrap justify-end gap-2">
+            <button type="button" onClick={onCancel} className="btn border border-slate-200 bg-white text-slate-700">
+              Not now
+            </button>
+            <button type="button" disabled={!accepted || pending} onClick={onConfirm} className="btn-primary">
+              <Trophy size={15} aria-hidden /> {pending ? "Registering..." : late ? "Join now" : "Register"}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
   );
 }

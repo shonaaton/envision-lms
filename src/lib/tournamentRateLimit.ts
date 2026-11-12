@@ -24,6 +24,11 @@ export const TOURNAMENT_LIMITS = {
   /** The heaviest read in the app, so the most worth protecting. */
   state: { capacity: 30, refillPerSecond: 1 },
   guestJoin: { capacity: 30, refillPerSecond: 0.5 },
+  /**
+   * "I have already registered": the email or phone is the proof, so guessing
+   * is throttled hard - ten tries, then one every ten seconds.
+   */
+  guestReturn: { capacity: 10, refillPerSecond: 0.1 },
 } as const;
 
 export type LimitName = keyof typeof TOURNAMENT_LIMITS;

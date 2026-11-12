@@ -2,6 +2,7 @@ import { Chess } from "chess.js";
 import mongoose from "mongoose";
 import { TournamentGame } from "@/models/TournamentGame";
 import { Tournament } from "@/models/Tournament";
+import { User } from "@/models/User";
 import {
   notifyExternalTournamentParticipant,
   notifyExternalTournamentParticipants,
@@ -172,6 +173,27 @@ export function ensureTournamentStandings(tournament: TournamentLike) {
   return tournament.standings;
 }
 
+/**
+ * Portal participants are stored as bare ids, so the standings had nothing to
+ * name them with and every student showed as "Student" in the table and the
+ * pairings (all three in the 7 Oct 2026 event). Look the names up once; after
+ * that the standing keeps it.
+ */
+async function nameMemberStandings(tournament: TournamentLike) {
+  const unnamed = (tournament.standings || []).filter(
+    (entry: any) => String(entry.playerKey || "").startsWith("user:") && (!entry.displayName || entry.displayName === "Student")
+  );
+  if (!unnamed.length) return;
+  const ids = unnamed.map((entry: any) => String(entry.playerKey).slice("user:".length)).filter((id: string) => mongoose.isValidObjectId(id));
+  if (!ids.length) return;
+  const users: any[] = await User.find({ _id: { $in: ids } }).select("name username").lean();
+  const names = new Map(users.map((user) => [String(user._id), String(user.name || user.username || "").trim()]));
+  for (const entry of unnamed) {
+    const name = names.get(String(entry.playerKey).slice("user:".length));
+    if (name) entry.displayName = name;
+  }
+}
+
 function participantStateMap(tournament: TournamentLike) {
   return new Map<string, any>((tournament.participantStates || []).map((entry: any) => [entry.playerKey, entry]));
 }
@@ -281,6 +303,7 @@ export function scoringOptionsFor(tournament: TournamentLike): ScoringOptions {
  */
 export async function recalculateTournamentStandings(tournament: TournamentLike) {
   ensureTournamentStandings(tournament);
+  await nameMemberStandings(tournament);
   const games = await TournamentGame.find(
     { tournament: tournament._id, status: "completed" },
     "source status result termination whiteKey blackKey ply moveHistorySAN berserkWhite berserkBlack endedAt createdAt updatedAt"
@@ -862,7 +885,14 @@ export async function generateSwissRound(tournamentId: string, options: { force?
         lastFloat: lastFloat.get(entry.playerKey) ?? null,
       }));
 
-    if (!field.length) return { created: false, roundNumber: expectedCurrentRound, skipped: "no_players" as const };
+    // A round needs two players. One available player on their own would be
+    // handed a bye every round and could "win" a five-round event alone in a
+    // few ticks while everyone else is sitting out; an empty field once
+    // committed a round with no boards that could never finish (28 Oct 2026).
+    // The round waits instead, and pairs as soon as a second player returns.
+    if (field.length < 2) {
+      return { created: false, roundNumber: expectedCurrentRound, skipped: field.length ? ("waiting_for_players" as const) : ("no_players" as const) };
+    }
 
     const result = pairSwissRound(field, {
       allowRepeats: options.allowRepeats,

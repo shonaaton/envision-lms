@@ -16,7 +16,9 @@ import {
   syncSwissRoundState,
   withVersionRetry,
 } from "@/lib/tournamentEngine";
-import { notifyExternalTournamentParticipants, notifyTournamentUsers } from "@/lib/tournamentNotifications";
+import { notifyTournamentUsers } from "@/lib/tournamentNotifications";
+import { sendTournamentReminder } from "@/lib/tournamentReminders";
+import { dueTournamentReminder } from "@/lib/tournament/reminderSchedule";
 import { emitRoundCompleted, emitTournamentEnded, emitTournamentStatus, flushStandings } from "@/lib/tournamentSocketServer";
 
 /**
@@ -38,6 +40,7 @@ const ACTIVE_STATUSES = [...PENDING_STATUSES, "live", "playing"];
 export type TickSummary = {
   checked: number;
   startingSoon: number;
+  reminders: number;
   started: number;
   paired: number;
   roundsAdvanced: number;
@@ -45,30 +48,38 @@ export type TickSummary = {
   finalized: number;
 };
 
-async function announceStartingSoon(tournament: any) {
-  const already = (tournament.adminActions || []).some((action: any) => action.action === "notification.starting_soon");
-  if (!already) {
-    tournament.adminActions = [
-      ...(tournament.adminActions || []),
-      { action: "notification.starting_soon", note: "Starting-soon notification queued by lifecycle worker.", createdAt: new Date() },
-    ];
-  }
-  await tournament.save();
-  if (already) return;
-
-  void Promise.all([
-    notifyTournamentUsers(tournament, {
-      type: "tournament.starting_soon",
-      title: "Tournament starting soon",
-      message: `${tournament.name} starts in less than 15 minutes.`,
-      href: `/tournaments/${tournament._id}`,
-    }),
-    notifyExternalTournamentParticipants(tournament, {
-      subject: `Starting soon: ${tournament.name}`,
-      message: (participant) =>
-        `Hello ${participant.displayName || participant.username},\n\n${tournament.name} starts in less than 15 minutes. Open your tournament link to enter the lobby.`,
-    }),
-  ]).catch((error) => console.error("Tournament reminder failed", error));
+/**
+ * Send the 30- or 10-minute start reminder if one is due. Claimed with a
+ * guarded $addToSet before anything is sent, so two ticks (the scheduler and
+ * the cron endpoint) cannot both send it.
+ */
+async function sendDueReminder(tournament: any, now: number) {
+  const sent = new Set((tournament.remindersSent || []).map((value: any) => Number(value)));
+  const due = dueTournamentReminder(tournament.startAt, now, (minutes) => sent.has(minutes));
+  if (!due) return false;
+  const claimed = await Tournament.updateOne(
+    { _id: tournament._id, remindersSent: { $ne: due }, status: { $in: PENDING_STATUSES } },
+    { $addToSet: { remindersSent: due } }
+  );
+  if (!claimed.modifiedCount) return false;
+  void sendTournamentReminder(tournament, due)
+    .then((reached) =>
+      Tournament.updateOne(
+        { _id: tournament._id },
+        {
+          $push: {
+            adminActions: {
+              action: `notification.reminder_${due}`,
+              note: `${due}-minute start reminder sent to ${reached.members} member(s) and ${reached.guests} guest(s).`,
+              metadata: reached,
+              createdAt: new Date(),
+            },
+          },
+        }
+      )
+    )
+    .catch((error) => console.error(`Tournament ${due}-minute reminder failed`, error));
+  return true;
 }
 
 export function isDueToStart(tournament: any, at: number = Date.now()) {
@@ -156,6 +167,19 @@ export async function advanceSwiss(tournament: any, options: { force?: boolean }
 
   try {
     const result = await generateSwissRound(String(tournament._id), { force: options.force });
+    if (!result.created && (result.skipped === "waiting_for_players" || result.skipped === "no_players")) {
+      const idleSince = lastEndedAt || (tournament.startedAt ? new Date(tournament.startedAt).getTime() : Date.now());
+      // Never on an admin's "next round": that click should explain, not end the event.
+      if (!options.force && Date.now() - idleSince >= SWISS_IDLE_FINISH_MS) {
+        const finished = await finishSwissEarly(String(tournament._id), {
+          action: "tournament.finished_no_players",
+          note: `Finished after round ${tournament.currentRound}: fewer than two players were available for ${Math.round(SWISS_IDLE_FINISH_MS / 60000)} minutes.`,
+          message: (fresh) => `${fresh.name} finished after ${fresh.currentRound} rounds: not enough players were left to pair another round.`,
+        });
+        return { advanced: false, finished };
+      }
+      return { advanced: false, waiting: true };
+    }
     return { advanced: Boolean(result.created), roundNumber: result.roundNumber };
   } catch (error) {
     if (error instanceof SwissExhaustedError) {
@@ -163,35 +187,53 @@ export async function advanceSwiss(tournament: any, options: { force?: boolean }
       // is over on its own terms: it is finished, not broken, so it is
       // finalised with the rounds it did play rather than left hanging or
       // silently replaying fixtures.
-      const fresh: any = await Tournament.findById(tournament._id);
-      if (!fresh || isFinishedStatus(fresh.status)) return { advanced: false };
-      fresh.status = "finished";
-      fresh.endedAt = fresh.endedAt || new Date();
-      fresh.adminActions = [
-        ...(fresh.adminActions || []),
-        {
-          action: "tournament.pairings_exhausted",
-          note: `Finished after round ${fresh.currentRound}: no further pairing is possible without repeating a game.`,
-          metadata: { roundsPlayed: Number(fresh.currentRound || 0), roundsScheduled: Number(fresh.rounds || 0) },
-          createdAt: new Date(),
-        },
-      ];
-      await recalculateTournamentStandings(fresh);
-      await freezeTournamentResults(fresh);
-      await fresh.save();
-      publishStandings(fresh);
-      flushStandings(String(fresh._id));
-      emitTournamentEnded(String(fresh._id));
-      await notifyTournamentUsers(fresh, {
-        type: "tournament.completed",
-        title: "Tournament finished",
-        message: `${fresh.name} finished after ${fresh.currentRound} rounds: no further pairings were possible.`,
-        href: `/tournaments/${fresh._id}`,
+      const finished = await finishSwissEarly(String(tournament._id), {
+        action: "tournament.pairings_exhausted",
+        note: `Finished after round ${tournament.currentRound}: no further pairing is possible without repeating a game.`,
+        message: (fresh) => `${fresh.name} finished after ${fresh.currentRound} rounds: no further pairings were possible.`,
       });
-      return { advanced: false, finished: true, exhausted: true };
+      return { advanced: false, finished, exhausted: true };
     }
     throw error;
   }
+}
+
+/**
+ * How long a Swiss event may sit with fewer than two players to pair before it
+ * finishes on the rounds it played. Long enough for a player who missed a
+ * board to come back; short enough that nobody finds a "live" event from last
+ * night (28 Oct 2026 stayed live for 22 hours).
+ */
+export const SWISS_IDLE_FINISH_MS = 30 * 60 * 1000;
+
+/** Finish a Swiss event before its scheduled rounds, recording why. */
+async function finishSwissEarly(tournamentId: string, reason: { action: string; note: string; message: (fresh: any) => string }) {
+  const fresh: any = await Tournament.findById(tournamentId);
+  if (!fresh || isFinishedStatus(fresh.status) || fresh.status === "cancelled") return false;
+  fresh.status = "finished";
+  fresh.endedAt = fresh.endedAt || new Date();
+  fresh.adminActions = [
+    ...(fresh.adminActions || []),
+    {
+      action: reason.action,
+      note: reason.note,
+      metadata: { roundsPlayed: Number(fresh.currentRound || 0), roundsScheduled: Number(fresh.rounds || 0) },
+      createdAt: new Date(),
+    },
+  ];
+  await recalculateTournamentStandings(fresh);
+  await freezeTournamentResults(fresh);
+  await fresh.save();
+  publishStandings(fresh);
+  flushStandings(String(fresh._id));
+  emitTournamentEnded(String(fresh._id));
+  await notifyTournamentUsers(fresh, {
+    type: "tournament.completed",
+    title: "Tournament finished",
+    message: reason.message(fresh),
+    href: `/tournaments/${fresh._id}`,
+  });
+  return true;
 }
 
 /**
@@ -203,20 +245,26 @@ export async function processTournament(tournamentId: string, options: { force?:
 }
 
 async function processTournamentOnce(tournamentId: string, options: { force?: boolean }) {
-  const summary = { startingSoon: 0, started: 0, paired: 0, roundsAdvanced: 0, gamesEnded: 0, finalized: 0 };
+  const summary = { startingSoon: 0, reminders: 0, started: 0, paired: 0, roundsAdvanced: 0, gamesEnded: 0, finalized: 0 };
   let tournament: any = await Tournament.findById(tournamentId);
   if (!tournament) return summary;
 
   const now = Date.now();
   const startsIn = new Date(tournament.startAt || 0).getTime() - now;
 
-  if (PENDING_STATUSES.includes(String(tournament.status)) && startsIn > 0 && startsIn <= STARTING_SOON_WINDOW_MS) {
-    if (tournament.status !== "starting_soon") {
-      tournament.status = "starting_soon";
-      emitTournamentStatus(String(tournament._id), "starting_soon", { startAt: tournament.startAt });
-    }
-    await announceStartingSoon(tournament);
+  if (PENDING_STATUSES.includes(String(tournament.status)) && startsIn > 0 && startsIn <= STARTING_SOON_WINDOW_MS && tournament.status !== "starting_soon") {
+    tournament.status = "starting_soon";
+    await tournament.save();
+    emitTournamentStatus(String(tournament._id), "starting_soon", { startAt: tournament.startAt });
     summary.startingSoon += 1;
+  }
+
+  // After the save above, and followed by a fresh load: the claim is written
+  // straight to the database, which the in-memory copy does not know about.
+  if (PENDING_STATUSES.includes(String(tournament.status)) && (await sendDueReminder(tournament, now))) {
+    summary.reminders += 1;
+    tournament = await Tournament.findById(tournamentId);
+    if (!tournament) return summary;
   }
 
   if (isDueToStart(tournament, now)) {
@@ -271,6 +319,7 @@ export async function runTournamentTick(): Promise<TickSummary> {
   const summary: TickSummary = {
     checked: tournaments.length,
     startingSoon: 0,
+    reminders: 0,
     started: 0,
     paired: 0,
     roundsAdvanced: 0,
@@ -282,6 +331,7 @@ export async function runTournamentTick(): Promise<TickSummary> {
     try {
       const one = await processTournament(String(tournament._id));
       summary.startingSoon += one.startingSoon;
+      summary.reminders += one.reminders;
       summary.started += one.started;
       summary.paired += one.paired;
       summary.roundsAdvanced += one.roundsAdvanced;

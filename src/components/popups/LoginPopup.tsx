@@ -2,9 +2,9 @@
 
 import { useEffect, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
-import { Award, BookOpenCheck, CalendarCheck, FileText, Megaphone, X } from "lucide-react";
+import { Award, BookOpenCheck, CalendarCheck, FileText, Megaphone, Trophy, X } from "lucide-react";
 
-export type PopupKind = "campaign_high" | "feedback" | "badge" | "homework" | "recap" | "campaign";
+export type PopupKind = "tournament" | "campaign_high" | "feedback" | "badge" | "homework" | "recap" | "campaign";
 export type PopupPayload = { key: string; kind: PopupKind; title: string; body: string; imageUrl?: string; ctaLabel?: string; ctaHref?: string };
 
 // Asked once per browser session, so moving between pages never pops it again.
@@ -13,6 +13,7 @@ const CHECKED_KEY = "lms-popup-checked";
 let shownPopup: PopupPayload | null = null;
 
 const ICONS: Record<PopupKind, typeof Megaphone> = {
+  tournament: Trophy,
   campaign_high: Megaphone,
   campaign: Megaphone,
   feedback: FileText,
@@ -125,6 +126,8 @@ export function PopupCard({ popup, onDismiss, onAction }: { popup: PopupPayload;
 
 function kindLabel(kind: PopupKind) {
   switch (kind) {
+    case "tournament":
+      return "Tournament";
     case "feedback":
       return "Progress report";
     case "badge":

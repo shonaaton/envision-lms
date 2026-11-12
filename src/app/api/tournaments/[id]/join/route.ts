@@ -6,7 +6,8 @@ import { User } from "@/models/User";
 import { cookies } from "next/headers";
 import { getTournamentGuestUsername } from "@/lib/tournamentGuests";
 import { playerKeyForExternal, playerKeyForUser, recalculateTournamentStandings, setTournamentPlayerState, syncArenaPairings } from "@/lib/tournamentEngine";
-import { notifyAdmins, notifyTournamentUsers } from "@/lib/tournamentNotifications";
+import { notifyAdmins } from "@/lib/tournamentNotifications";
+import { sendTournamentRegistrationConfirmation } from "@/lib/tournamentReminders";
 import { recordActivity } from "@/lib/activity";
 import { inactiveStudentMessage } from "@/lib/studentAccess";
 import { emitTournamentUpdate } from "@/lib/tournamentSocketServer";
@@ -38,6 +39,8 @@ export async function POST(_: Request, { params }: { params: { id: string } }) {
     : false;
 
   let playerKey = "";
+  // This route also brings a paused player back; only a first entry is a registration.
+  let newlyRegistered = false;
   if (session) {
     const role = (session.user as any).role;
     const userId = String((session.user as any).id);
@@ -56,6 +59,7 @@ export async function POST(_: Request, { params }: { params: { id: string } }) {
     if (!eligible) return NextResponse.json({ error: "You are not eligible for this tournament." }, { status: 403 });
     if (!(tournament.participants || []).some((player: any) => objectId(player) === userId)) {
       tournament.participants.push(userId);
+      newlyRegistered = true;
     }
     playerKey = playerKeyForUser(userId);
   } else if (guestJoined) {
@@ -79,13 +83,9 @@ export async function POST(_: Request, { params }: { params: { id: string } }) {
   // save, so nothing here can overwrite what it commits.
   if (queued) await syncArenaPairings(String(tournament._id));
   if (session) {
-    await notifyTournamentUsers(tournament, {
-      users: [String((session.user as any).id)],
-      type: "tournament.registration",
-      title: "Tournament registration successful",
-      message: `You joined ${tournament.name}.`,
-      href: `/tournaments/${tournament._id}`,
-    });
+    if (newlyRegistered) {
+      void sendTournamentRegistrationConfirmation(tournament, { userId: String((session.user as any).id) });
+    }
   } else {
     await notifyAdmins({
       type: "tournament.external_join",
@@ -105,5 +105,5 @@ export async function POST(_: Request, { params }: { params: { id: string } }) {
   });
   emitTournamentUpdate(tournament._id.toString(), "join");
 
-  return NextResponse.json({ ok: true });
+  return NextResponse.json({ ok: true, registered: newlyRegistered });
 }

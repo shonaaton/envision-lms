@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { joinExternalTournament } from "@/app/tournament-join/[token]/actions";
+import { registerGuestForTournament, returnGuestToTournament } from "@/app/tournament-join/[token]/actions";
 import { applyGameMove, startTournament } from "@/lib/tournamentEngine";
 import { GET as getTournamentState } from "@/app/api/tournaments/[id]/state/route";
 
@@ -32,6 +32,7 @@ vi.mock("@/lib/auth", () => ({ auth: mocks.auth }));
 vi.mock("@/lib/db", () => ({ dbConnect: vi.fn() }));
 vi.mock("@/lib/studentAccess", () => ({ isCurrentStudent: vi.fn() }));
 vi.mock("@/lib/humanVerification", () => ({ isTurnstileEnabled: () => false }));
+vi.mock("@/lib/tournamentReminders", () => ({ sendTournamentRegistrationConfirmation: vi.fn() }));
 vi.mock("@/lib/tournamentNotifications", () => ({
   notifyAdmins: mocks.notifyAdmins,
   notifyExternalTournamentParticipant: vi.fn(),
@@ -72,11 +73,30 @@ function lean(value: unknown) {
 
 function form(overrides: Record<string, string> = {}) {
   const input = new FormData();
-  for (const [key, value] of Object.entries({ token: "event", username: "GuestOne", pin: "375282", registrationKey, ...overrides })) {
+  const fields = {
+    token: "event",
+    displayName: "Guest One",
+    username: "GuestOne",
+    email: "guest@example.com",
+    countryCode: "+91",
+    phone: "",
+    acceptRules: "yes",
+    registrationKey,
+    ...overrides,
+  };
+  for (const [key, value] of Object.entries(fields)) input.set(key, value);
+  return input;
+}
+
+function back(overrides: Record<string, string> = {}) {
+  const input = new FormData();
+  for (const [key, value] of Object.entries({ token: "event", contact: "guest@example.com", username: "GuestOne", ...overrides })) {
     input.set(key, value);
   }
   return input;
 }
+
+const EMPTY = { error: "" };
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -88,8 +108,15 @@ describe("external registration", () => {
   it("does not create a second profile for an already registered browser", async () => {
     mocks.guestUsername = "GUESTONE";
     mocks.findTournament.mockReturnValue(lean(invite({ externalParticipants: [{ username: "GuestOne" }] })));
-    await expect(joinExternalTournament(form({ username: "GuestTwo" }))).rejects.toThrow("/tournament-join/event/play");
+    await expect(registerGuestForTournament(EMPTY, form({ username: "GuestTwo", email: "two@example.com" }))).rejects.toThrow("/tournament-join/event/play");
     expect(mocks.updateTournament).not.toHaveBeenCalled();
+  });
+
+  it("asks for the rules to be accepted and an email, before touching the database", async () => {
+    expect(await registerGuestForTournament(EMPTY, form({ acceptRules: "" }))).toMatchObject({ field: "rules" });
+    expect(await registerGuestForTournament(EMPTY, form({ email: "" }))).toMatchObject({ field: "email" });
+    expect(await registerGuestForTournament(EMPTY, form({ phone: "12345" }))).toMatchObject({ field: "phone" });
+    expect(mocks.findTournament).not.toHaveBeenCalled();
   });
 
   it("rechecks uniqueness after losing a concurrent registration write", async () => {
@@ -98,38 +125,47 @@ describe("external registration", () => {
       .mockReturnValueOnce(lean(invite({ __v: 1, externalParticipants: [{ username: "GuestTwo", email: "guest@example.com" }] })));
     mocks.updateTournament.mockResolvedValue({ modifiedCount: 0 });
 
-    await expect(joinExternalTournament(form({ email: "GUEST@example.com" }))).rejects.toThrow("error=email_registered");
+    const state = await registerGuestForTournament(EMPTY, form({ email: "GUEST@example.com" }));
+    expect(state).toMatchObject({ field: "email" });
+    expect(state.error).toMatch(/already registered/);
     expect(mocks.updateTournament).toHaveBeenCalledTimes(1);
     expect(mocks.updateTournament.mock.calls[0][0]).toMatchObject({ __v: 0, status: "registration_open" });
     expect(mocks.setCookie).not.toHaveBeenCalled();
   });
 
-  it("blocks new late entries but lets a previously registered guest recover their seat", async () => {
+  it("refuses a username someone else holds, whatever its case", async () => {
+    mocks.findTournament.mockReturnValue(lean(invite({ externalParticipants: [{ username: "GuestOne", email: "first@example.com" }] })));
+    expect(await registerGuestForTournament(EMPTY, form({ username: "guestone", email: "second@example.com" }))).toMatchObject({ field: "username" });
+    expect(mocks.updateTournament).not.toHaveBeenCalled();
+  });
+
+  it("blocks new late entries but lets a registered guest back in with email and username", async () => {
     mocks.findTournament.mockReturnValue(lean(invite({
       status: "playing",
       lateJoiningAllowed: false,
-      externalParticipants: [{ username: "GuestOne" }],
+      externalParticipants: [{ username: "GuestOne", email: "guest@example.com" }],
     })));
-    await expect(joinExternalTournament(form({ username: "GuestTwo" }))).rejects.toThrow("error=late_join");
-    await expect(joinExternalTournament(form({ username: "guestone" }))).rejects.toThrow("/tournament-join/event/play");
+    expect((await registerGuestForTournament(EMPTY, form({ username: "GuestTwo", email: "two@example.com" }))).error).toMatch(/late entry is closed/);
+    await expect(returnGuestToTournament(EMPTY, back({ username: "guestone", contact: "Guest@Example.com" }))).rejects.toThrow("/tournament-join/event/play");
     expect(mocks.setCookie).toHaveBeenCalledWith(undefined, "event", "GuestOne");
     expect(mocks.updateTournament).not.toHaveBeenCalled();
   });
 
-  it("requires the original PIN for cross-device recovery of a new guest profile", async () => {
+  it("registers a guest with a WhatsApp number, who can come back with the number alone", async () => {
     mocks.findTournament.mockReturnValue(lean(invite({ type: "arena", status: "playing" })));
     mocks.updateTournament.mockResolvedValue({ modifiedCount: 1 });
-    await expect(joinExternalTournament(form())).rejects.toThrow("/tournament-join/event/play");
+    await expect(registerGuestForTournament(EMPTY, form({ phone: "98765 43210" }))).rejects.toThrow("/tournament-join/event/play?registered=1");
     const write = mocks.updateTournament.mock.calls[0][1].$push;
     expect(write.participantStates).toMatchObject({ playerKey: "external:guestone", status: "queued" });
-    expect(write.externalParticipants.pinHash).not.toBe("375282");
-    expect(write.externalParticipants.pinHash).toBeTruthy();
+    expect(write.externalParticipants).toMatchObject({ username: "GuestOne", email: "guest@example.com", phone: "919876543210", countryCode: "+91" });
+    expect(write.externalParticipants.rulesAcceptedAt).toBeInstanceOf(Date);
 
     mocks.findTournament.mockReturnValue(lean(invite({ externalParticipants: [write.externalParticipants] })));
     mocks.setCookie.mockClear();
-    await expect(joinExternalTournament(form({ pin: "000000" }))).rejects.toThrow("error=pin_mismatch");
+    expect(await returnGuestToTournament(EMPTY, back({ contact: "someone@else.com" }))).toMatchObject({ error: expect.stringMatching(/could not find/) });
+    expect(await returnGuestToTournament(EMPTY, back({ username: "GuestTwo", contact: "9876543210" }))).toMatchObject({ error: expect.stringMatching(/could not find/) });
     expect(mocks.setCookie).not.toHaveBeenCalled();
-    await expect(joinExternalTournament(form({ username: "GUESTONE" }))).rejects.toThrow("/tournament-join/event/play");
+    await expect(returnGuestToTournament(EMPTY, back({ username: "GUESTONE", contact: "9876543210" }))).rejects.toThrow("/tournament-join/event/play");
     expect(mocks.setCookie).toHaveBeenCalledWith(undefined, "event", "GuestOne");
     expect(mocks.updateTournament).toHaveBeenCalledTimes(1);
   });

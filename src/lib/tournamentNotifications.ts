@@ -11,9 +11,12 @@ function objectId(value: any) {
 function tournamentTemplateForType(type: string) {
   const clean = String(type || "").toLowerCase();
   if (clean.includes("complete") || clean.includes("finish") || clean.includes("result")) return "tournament_completed";
-  if (clean.includes("start")) return "tournament_started";
+  // "soon" before "start": "tournament.starting_soon" contains "start", and
+  // checking that first sent players "has started" 15 minutes early.
   if (clean.includes("soon")) return "tournament_starting_soon";
-  if (clean.includes("register") || clean.includes("join")) return "tournament_registration_confirmed";
+  if (clean.includes("start")) return "tournament_started";
+  // Registration confirmations and start reminders have their own sender
+  // (lib/tournamentReminders.ts); mapping them here as well would send two.
   return "";
 }
 
@@ -47,7 +50,7 @@ export async function notifyTournamentUsers(tournament: any, input: {
       await sendWhatsAppAutomationTemplates(recipients.map((recipient) => ({
         user: recipient,
         templateName,
-        bodyParameters: templateName === "tournament_registration_confirmed" || templateName === "tournament_starting_soon"
+        bodyParameters: templateName === "tournament_starting_soon"
           ? [recipient.name || recipient.username || "there", tournament.name || tournament.title || "Tournament", tournament.startAt ? `${formatAcademyDateTime(tournament.startAt)} IST` : "the scheduled time"]
           : [recipient.name || recipient.username || "there", tournament.name || tournament.title || "Tournament"],
         metadata: { kind: "tournament_notification", tournament: objectId(tournament), href: input.href || `/tournaments/${objectId(tournament)}` },

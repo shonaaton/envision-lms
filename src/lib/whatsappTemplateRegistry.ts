@@ -1720,6 +1720,32 @@ export const WHATSAPP_TEMPLATE_DEFINITIONS = [
     ]
   },
   {
+    "name": "tournament_registered",
+    "language": "en",
+    "sourceAutomation": "tournamentReminders.sendTournamentRegistrationConfirmation",
+    "body": "Hello {{1}}, you are registered for the chess tournament “{{2}}”.\n\nStarts: {{3}}\nFormat: {{4}}\n\nThe rules and your tournament room are on this page: {{5}}\n\nWe will remind you 30 minutes and 10 minutes before the start.\n\nTeam Envision Chess Academy",
+    "variables": [
+      { "position": 1, "key": "participant_name", "sample": "Aarav" },
+      { "position": 2, "key": "tournament_name", "sample": "ECA Wednesday Rapid" },
+      { "position": 3, "key": "start_time", "sample": "18 Nov 2026, 8:00 pm IST" },
+      { "position": 4, "key": "format", "sample": "Swiss, 5 rounds, 10+0" },
+      { "position": 5, "key": "tournament_link", "sample": "https://envisionchessacademy.com/tournaments/6ae1af638b56ba0f5db8235f" }
+    ]
+  },
+  {
+    "name": "tournament_reminder",
+    "language": "en",
+    "sourceAutomation": "tournamentReminders.sendTournamentReminder (30 and 10 minutes before the start)",
+    "body": "Hello {{1}}, a reminder that the chess tournament “{{2}}” starts in {{3}} minutes, at {{4}}.\n\nPlease open the tournament room now and keep it open. Your first game appears automatically when the tournament begins: {{5}}\n\nTeam Envision Chess Academy",
+    "variables": [
+      { "position": 1, "key": "participant_name", "sample": "Aarav" },
+      { "position": 2, "key": "tournament_name", "sample": "ECA Wednesday Rapid" },
+      { "position": 3, "key": "minutes", "sample": "30" },
+      { "position": 4, "key": "start_time", "sample": "18 Nov 2026, 8:00 pm IST" },
+      { "position": 5, "key": "tournament_link", "sample": "https://envisionchessacademy.com/tournaments/6ae1af638b56ba0f5db8235f" }
+    ]
+  },
+  {
     "name": "course_assigned",
     "language": "en",
     "sourceAutomation": "New Course / Level Assigned",

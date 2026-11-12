@@ -38,6 +38,14 @@ describe("choosePopup", () => {
     expect(choosePopup([candidate("auto:recap:w", "recap")], views)).toBeNull();
   });
 
+  it("puts an open tournament first, and brings it back on every visit until the student registers", () => {
+    const invite = candidate("auto:tournament:t", "tournament");
+    const views = new Map<string, any>([["auto:tournament:t", { seenCount: 4, dismissedAt: new Date(), clickedAt: new Date() }]]);
+    expect(choosePopup([...all, invite], new Map())?.key).toBe("auto:tournament:t");
+    expect(choosePopup([...all, invite], views)?.key).toBe("auto:tournament:t");
+    expect(isHandled(invite, views.get("auto:tournament:t"))).toBe(false);
+  });
+
   it("a click counts as handled", () => {
     expect(isHandled({ kind: "campaign" }, { clickedAt: new Date() })).toBe(true);
   });

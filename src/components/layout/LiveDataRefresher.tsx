@@ -38,6 +38,8 @@ const quietMutationPatterns = [
   /^\/api\/classrooms\/[^/]+\/live\/chat$/,
   /^\/api\/classrooms\/[^/]+\/live\/responses$/,
   /^\/api\/tournaments\/games\/[^/]+\/move$/,
+  // The registration dialog shows its own confirmation; a remount would wipe it.
+  /^\/api\/tournaments\/[^/]+\/join$/,
   // Monthly feedback updates its own list after every action. A router refresh
   // remounts the page mid-flow, closing the coach's "Submit & next" drawer and
   // resetting the admin's filters.

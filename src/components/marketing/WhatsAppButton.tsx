@@ -30,6 +30,9 @@ export default function WhatsAppButton() {
   const [hydrated, setHydrated] = useState(false);
   useEffect(() => setHydrated(true), []);
   if (!isMarketingPath(pathname)) return null;
+  // Not on the free demo campaign (landing page, form, thank-you page): the
+  // only next step there is the demo form, and a chat button is a way out of it.
+  if (pathname === "/book-free-demo-class" || pathname?.startsWith("/book-free-demo-class/")) return null;
 
   return (
     <a

@@ -26,6 +26,9 @@ import { MonthlyFeedback } from "@/models/MonthlyFeedback";
 import { Popup, PopupView } from "@/models/Popup";
 import { User } from "@/models/User";
 import { BranchStudent } from "@/models/Branch";
+import { Tournament } from "@/models/Tournament";
+import { formatAcademyDateTime } from "@/lib/academyTime";
+import { formatTimeControl, resolveTimeControl } from "@/lib/tournament/timeControl";
 
 const DAY = 86_400_000;
 const KEY_PATTERN = /^(campaign:[a-f0-9]{24}|auto:[a-z_]+:[A-Za-z0-9_-]+)$/;
@@ -49,7 +52,7 @@ export async function nextPopupFor(userId: string, now = new Date()): Promise<Po
   const views = await readViews(user._id);
   const isDemo = user.accountStatus === "demo";
 
-  const candidates: PopupCandidate[] = [...(await campaignCandidates(user, now))];
+  const candidates: PopupCandidate[] = [...(await tournamentCandidates(user, now)), ...(await campaignCandidates(user, now))];
   if (!isDemo) {
     candidates.push(...(await feedbackCandidate(user._id, now)), ...(await badgeCandidate(user._id, now)));
   }
@@ -62,6 +65,54 @@ export async function nextPopupFor(userId: string, now = new Date()): Promise<Po
   await markSeen(user._id, chosen, now);
   const { createdAt: _createdAt, ...payload } = chosen;
   return payload;
+}
+
+const OPEN_TOURNAMENT_STATUSES = ["created", "registration_open", "starting_soon", "upcoming"];
+const LIVE_TOURNAMENT_STATUSES = ["live", "playing"];
+const TOURNAMENT_LOOKAHEAD_DAYS = 30;
+
+/**
+ * The next tournament this student can enter and has not: an upcoming one, or
+ * one already running that still takes late entries. Uses the same audience
+ * as the tournaments page. Demo accounts only see one they were invited to by
+ * name.
+ */
+async function tournamentCandidates(user: any, now: Date): Promise<PopupCandidate[]> {
+  const audience = user.accountStatus === "demo"
+    ? [{ "access.users": user._id }]
+    : [{ "access.users": user._id }, { "access.allActiveStudents": true }];
+  const rows: any[] = await Tournament.find({
+    status: { $in: [...OPEN_TOURNAMENT_STATUSES, ...LIVE_TOURNAMENT_STATUSES] },
+    participants: { $ne: user._id },
+    startAt: { $lte: new Date(now.getTime() + TOURNAMENT_LOOKAHEAD_DAYS * DAY) },
+    $or: audience,
+  })
+    .select("name type status startAt rounds arenaDurationMinutes arenaEndsAt initialClockSeconds timeControlMinutes incrementSeconds lateJoiningAllowed pausedByAdmin")
+    .sort({ startAt: 1 })
+    .limit(10)
+    .lean();
+  const open = rows.find((row) => {
+    if (LIVE_TOURNAMENT_STATUSES.includes(row.status)) {
+      if (row.lateJoiningAllowed === false || row.pausedByAdmin) return false;
+      return !(row.type === "arena" && row.arenaEndsAt && new Date(row.arenaEndsAt) <= now);
+    }
+    return new Date(row.startAt) > now;
+  });
+  if (!open) return [];
+  const live = LIVE_TOURNAMENT_STATUSES.includes(open.status);
+  const format = open.type === "arena" ? `Arena, ${Number(open.arenaDurationMinutes || 0)} minutes` : `Swiss, ${Number(open.rounds || 0)} rounds`;
+  const control = formatTimeControl(resolveTimeControl(open));
+  return [{
+    key: `auto:tournament:${idOf(open)}`,
+    kind: "tournament",
+    title: live ? `${open.name} is live - join now` : `Tournament: ${open.name}`,
+    body: live
+      ? `${format}, time control ${control}. It started at ${formatAcademyDateTime(open.startAt)} IST and you can still join.\n\nYou will see the rules before you confirm.`
+      : `${format}, time control ${control}.\nStarts ${formatAcademyDateTime(open.startAt)} IST.\n\nRegister now to get your place. You will see the rules before you confirm, and we will remind you 30 and 10 minutes before the start.`,
+    ctaLabel: live ? "Join now" : "Register now",
+    ctaHref: `/tournaments/${idOf(open)}?register=1`,
+    createdAt: open.startAt,
+  }];
 }
 
 async function readViews(userId: any) {

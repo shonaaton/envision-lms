@@ -95,12 +95,15 @@ export function TournamentPlayClient({
   backLabel,
   guestLabel,
   publicRoom = false,
+  initialNotice = "",
 }: {
   tournamentId: string;
   backHref?: string;
   backLabel?: string;
   guestLabel?: string;
   publicRoom?: boolean;
+  /** Shown once on arrival, e.g. "You're registered" straight after the invite form. */
+  initialNotice?: string;
 }) {
   const tabIdRef = useRef("");
   const myPlayerKeyRef = useRef("");
@@ -108,7 +111,7 @@ export function TournamentPlayClient({
   const [game, setGame] = useState<any>(null);
   const [clockBaseline, setClockBaseline] = useState<ClockBaseline | null>(null);
   const [error, setError] = useState("");
-  const [notice, setNotice] = useState("");
+  const [notice, setNotice] = useState(initialNotice);
   const [selectedSquare, setSelectedSquare] = useState<string | null>(null);
   const [premove, setPremove] = useState<Premove | null>(null);
   const [pendingPromotion, setPendingPromotion] = useState<PendingPromotion | null>(null);

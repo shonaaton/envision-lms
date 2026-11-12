@@ -59,6 +59,12 @@ export async function POST(req: Request, { params }: { params: { id: string } })
   for (const game of unfinished) await abortGame(game, "manual");
 
   const result = await advanceSwiss(tournament, { force: true });
+  if ((result as any).waiting) {
+    return NextResponse.json(
+      { error: "Fewer than two players are available to pair. Players who missed a game are sitting out until they reopen the tournament room." },
+      { status: 409 }
+    );
+  }
   if (!result.advanced) {
     return NextResponse.json({ error: "The next round could not be created. It may already be starting." }, { status: 409 });
   }

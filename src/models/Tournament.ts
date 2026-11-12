@@ -44,6 +44,12 @@ const TournamentSchema = new Schema(
     },
     /** Last time the lifecycle worker processed this tournament. */
     lifecycleAt: Date,
+    /**
+     * Start reminders already sent, in minutes before the start (30, 10).
+     * Its own field, claimed with $addToSet, so no whole-document save can
+     * wipe it and send a reminder twice.
+     */
+    remindersSent: [{ type: Number }],
     startAt: { type: Date, required: true, index: true },
     repeat: {
       enabled: { type: Boolean, default: false },
@@ -92,6 +98,11 @@ const TournamentSchema = new Schema(
       username: { type: String, required: true },
       displayName: String,
       email: String,
+      /** WhatsApp number, digits with the dialling code. Never sent to players. */
+      phone: String,
+      countryCode: String,
+      rulesAcceptedAt: Date,
+      /** Legacy: guests registered before 12 Nov 2026 returned with a PIN. */
       pinHash: { type: String, select: false },
       registrationKey: { type: String, select: false },
       entryCode: String,

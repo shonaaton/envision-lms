@@ -39,7 +39,15 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   for (const field of editableFields) {
     if (Object.prototype.hasOwnProperty.call(body, field)) tournament[field] = body[field];
   }
-  if (body.startAt) tournament.startAt = new Date(body.startAt);
+  if (body.startAt) {
+    const next = new Date(body.startAt);
+    // A new start time gets its own 30- and 10-minute reminders.
+    if (!Number.isNaN(next.getTime()) && next.getTime() !== new Date(tournament.startAt || 0).getTime()) {
+      tournament.startAt = next;
+      tournament.remindersSent = [];
+      if (tournament.status === "starting_soon" && next.getTime() - Date.now() > 15 * 60 * 1000) tournament.status = "upcoming";
+    }
+  }
   if (body.startingPosition) tournament.startingPosition = body.startingPosition;
   if (body.externalInvite) {
     const current = tournament.externalInvite || {};

@@ -2,6 +2,8 @@
  * Which pop-up a student sees when they open the portal. Pure; the loading
  * lives in popupService.ts. At most one pop-up per visit, in this order:
  *
+ *   0. a tournament the student can still register for (every visit until
+ *      they register or it can no longer be joined)
  *   1. a high-priority admin pop-up
  *   2. the monthly report is ready
  *   3. a new badge
@@ -10,7 +12,7 @@
  *   6. any other admin pop-up
  */
 
-export const POPUP_KINDS = ["campaign_high", "feedback", "badge", "homework", "recap", "campaign"] as const;
+export const POPUP_KINDS = ["tournament", "campaign_high", "feedback", "badge", "homework", "recap", "campaign"] as const;
 export type PopupKind = (typeof POPUP_KINDS)[number];
 
 export const HOMEWORK_DUE_WINDOW_MS = 48 * 60 * 60_000;
@@ -36,6 +38,9 @@ export type PopupViewState = { seenCount?: number; dismissedAt?: Date | null; cl
  * so having seen it once is enough.
  */
 export function isHandled(candidate: Pick<PopupCandidate, "kind">, view?: PopupViewState | null) {
+  // A tournament invitation comes back on every visit: it is only offered
+  // while the student is not registered, and registering is what ends it.
+  if (candidate.kind === "tournament") return false;
   if (!view) return false;
   if (view.dismissedAt || view.clickedAt) return true;
   return candidate.kind === "recap" && Number(view.seenCount || 0) > 0;

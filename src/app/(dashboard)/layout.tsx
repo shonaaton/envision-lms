@@ -15,7 +15,6 @@ import { resolveBranchAccess } from "@/lib/branch/access";
 import { isClassMonitorAudience } from "@/lib/classMonitor/classMonitorAccess";
 import { User } from "@/models/User";
 import { needsStudentDetails, studentDetailsDefaults } from "@/lib/studentDetails";
-import StudentDetailsGate from "@/components/layout/StudentDetailsGate";
 
 export const dynamic = "force-dynamic";
 
@@ -76,19 +75,17 @@ export default async function DashboardLayout({ children }: { children: React.Re
       hasScheduledClassroom = false;
     }
   }
-  // A student whose record is missing their details (lib/studentDetails) sees
-  // only the details form - no sidebar, no page, not even a live class - until
-  // it is saved. `children` is never rendered, so no page content reaches them.
+  // A student whose record is missing their details (lib/studentDetails) is
+  // asked for them in a pop-up on the dashboard. It never blocks the portal:
+  // they can close it and carry on.
+  let studentDetails: { defaults: ReturnType<typeof studentDetailsDefaults>; lockedParent: boolean } | null = null;
   if (role === "student" && !branch) {
-    let details: any = null;
     try {
       await dbConnect();
-      details = await User.findById((session.user as any).id).select("role accountStatus branch name firstName lastName age parentName parentEmail city country countryCode").lean();
+      const details: any = await User.findById((session.user as any).id).select("role accountStatus branch name firstName lastName age parentName parentEmail city country countryCode").lean();
+      if (details && needsStudentDetails(details)) studentDetails = { defaults: studentDetailsDefaults(details), lockedParent: Boolean(details.parentName?.trim()) };
     } catch (error) {
-      console.error("Student details lookup failed; not blocking the portal.", error);
-    }
-    if (details && needsStudentDetails(details)) {
-      return <StudentDetailsGate defaults={studentDetailsDefaults(details)} lockedParent={Boolean(details.parentName?.trim())} />;
+      console.error("Student details lookup failed; skipping the details pop-up.", error);
     }
   }
   if (!isActive && isInactiveRestrictedPath(pathname)) redirect("/dashboard?inactive=1");
@@ -101,7 +98,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
     redirect("/dashboard?restricted=1");
   }
   return (
-    <DashboardFrame role={role} accountStatus={accountStatus} isSuperAdmin={isSuperAdmin} featureState={featureState} hasCreditPlan={hasCreditPlan} hasScheduledClassroom={hasScheduledClassroom} canLearnChess={canLearnChess} branch={branch} branchRole={(session.user as any).branchRole} branchCan={branchCan} user={{ name: session.user.name, role: (session.user as any).roleName || role, isActive, isPaused }}>
+    <DashboardFrame role={role} accountStatus={accountStatus} isSuperAdmin={isSuperAdmin} featureState={featureState} hasCreditPlan={hasCreditPlan} hasScheduledClassroom={hasScheduledClassroom} canLearnChess={canLearnChess} branch={branch} branchRole={(session.user as any).branchRole} branchCan={branchCan} user={{ name: session.user.name, role: (session.user as any).roleName || role, isActive, isPaused }} studentDetails={studentDetails}>
       {children}
     </DashboardFrame>
   );

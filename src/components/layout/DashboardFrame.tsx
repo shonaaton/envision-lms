@@ -1,6 +1,7 @@
 "use client";
 
-import type { ReactNode } from "react";
+import type { ComponentProps, ReactNode } from "react";
+import StudentDetailsPopup from "@/components/layout/StudentDetailsPopup";
 import { Suspense, useEffect, useState } from "react";
 import { Menu } from "lucide-react";
 import { usePathname } from "next/navigation";
@@ -24,8 +25,10 @@ export default function DashboardFrame({
   branchRole,
   branchCan,
   user,
+  studentDetails,
   children,
 }: {
+  studentDetails?: ComponentProps<typeof StudentDetailsPopup> | null;
   role: Role;
   accountStatus?: AccountStatus;
   isSuperAdmin?: boolean;
@@ -105,7 +108,8 @@ export default function DashboardFrame({
         </main>
       </div>
       <LiveDataRefresher />
-      {role === "student" && <LoginPopup />}
+      {/* One pop-up at a time: the details form first, the usual login pop-up once details are in. */}
+      {role === "student" && (studentDetails ? <StudentDetailsPopup {...studentDetails} /> : <LoginPopup />)}
     </div>
   );
 }

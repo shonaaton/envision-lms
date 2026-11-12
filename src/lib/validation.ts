@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { COURSE_TIER_ENUM, COURSE_TIER_ENUM_WITH_MIXED_AND_BLANK } from "@/lib/courseTiers";
 import { phoneNumberProblem } from "@/lib/phoneCountryCodes";
-import { CONTACT_INTEREST_VALUES } from "@/lib/contactEnquiries";
+import { CONTACT_INTEREST_VALUES, ONLINE_INTEREST } from "@/lib/contactEnquiries";
 import { DEMO_AGE_GROUP_VALUES, DEMO_CHILD_LEVEL_VALUES } from "@/lib/demoRequest";
 
 const optionalText = (max: number) => z.preprocess((value) => (value == null || value === "" ? undefined : value), z.string().max(max).optional());
@@ -320,8 +320,10 @@ export const demoRequestSchema = z.object({
   phone: z.string().trim().min(6, "Please enter a valid WhatsApp number.").max(40),
   ageGroup: z.enum(DEMO_AGE_GROUP_VALUES, { errorMap: () => ({ message: "Please choose your child's age group." }) }),
   childLevel: z.enum(DEMO_CHILD_LEVEL_VALUES, { errorMap: () => ({ message: "Please choose your child's level." }) }),
-  interest: z.enum(CONTACT_INTEREST_VALUES as [string, ...string[]], {
-    errorMap: () => ({ message: "Please choose a class preference." }),
+  // The free demo campaign is for online classes only. The parent has to tick
+  // it themselves, so nobody books expecting a Kolkata centre.
+  interest: z.literal(ONLINE_INTEREST, {
+    errorMap: () => ({ message: "Please confirm online classes. This free demo is for online classes only." }),
   }),
   preferredTime: z.string().trim().min(2, "Please tell us a convenient time to connect.").max(80),
   sourcePath: optionalText(200),

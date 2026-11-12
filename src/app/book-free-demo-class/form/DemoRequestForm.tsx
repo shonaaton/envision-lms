@@ -2,8 +2,8 @@
 
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
-import { ChevronDown, Clock3, GraduationCap, Loader2, Mail, MessageCircle, UserRound } from "lucide-react";
-import { contactInterests, ONLINE_INTEREST } from "@/lib/contactEnquiries";
+import { ChevronDown, Clock3, Loader2, Mail, MessageCircle, UserRound } from "lucide-react";
+import { ONLINE_INTEREST } from "@/lib/contactEnquiries";
 import { DEMO_AGE_GROUPS, DEMO_CHILD_LEVELS, DEMO_THANKS_PATH, DEMO_THANKS_STORAGE_KEY } from "@/lib/demoRequest";
 import { DIAL_CODES, dialCodeEntry } from "@/lib/phoneCountryCodes";
 import { LEGAL_LINKS } from "@/lib/publicLinks";
@@ -18,7 +18,7 @@ const initialForm = {
   phone: "",
   ageGroup: "",
   childLevel: "",
-  interest: ONLINE_INTEREST,
+  interest: "",
   preferredTime: "",
   website: "",
 };
@@ -341,22 +341,27 @@ export default function DemoRequestForm({ embedded = false, titleId }: { embedde
           </div>
         </fieldset>
 
-        <div className="dform-field">
-          <label htmlFor="demo-interest">
+        {/* One choice, and it starts unticked: choosing it is how a parent
+            confirms this free demo is for online classes. */}
+        <fieldset className="dform-field">
+          <legend>
             Class preference <span aria-hidden="true">*</span>
-          </label>
-          <div className="dform-input dform-select">
-            <GraduationCap size={18} aria-hidden="true" />
-            <select id="demo-interest" required value={form.interest} onChange={(event) => update("interest", event.target.value)}>
-              {contactInterests.map((interest) => (
-                <option key={interest.value} value={interest.value}>
-                  {interest.label}
-                </option>
-              ))}
-            </select>
-            <ChevronDown size={16} aria-hidden="true" />
+          </legend>
+          <div className="dform-chips">
+            <label className="dform-chip">
+              <input
+                type="radio"
+                name="interest"
+                required
+                value={ONLINE_INTEREST}
+                checked={form.interest === ONLINE_INTEREST}
+                onChange={() => update("interest", ONLINE_INTEREST)}
+              />
+              <span>Online classes</span>
+            </label>
           </div>
-        </div>
+          <small>This free demo is for online classes only.</small>
+        </fieldset>
 
         <div className="dform-field">
           <label htmlFor="demo-time">

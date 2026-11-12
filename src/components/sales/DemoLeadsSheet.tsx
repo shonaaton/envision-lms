@@ -61,23 +61,37 @@ const VERIFICATION: Record<DemoLeadSheetRow["verification"], { label: string; st
   unverified: { label: "Not verified", style: "bg-rose-100 text-rose-800" },
 };
 
-const TH = "border-b border-r border-slate-200 bg-slate-100 px-3 py-2 text-left text-[11px] font-black uppercase tracking-[0.08em] text-slate-600 last:border-r-0";
-const TD = "border-b border-r border-slate-200 px-3 py-2 align-middle last:border-r-0";
+const TH = "border-b border-r border-slate-200 bg-slate-100 px-2 py-2 text-left text-[10px] font-black uppercase tracking-[0.04em] text-slate-600 last:border-r-0";
+const TD = "break-words border-b border-r border-slate-200 px-2 py-2 align-middle last:border-r-0";
 
 export function DemoLeadsSheet({ rows, stages, owners, canManage, seesAll, moveStage, addNote, changeOwner, deleteLead }: Props) {
   const [open, setOpen] = useState<string | null>(null);
-  const columns = 10 + (seesAll ? 2 : 0);
+  const columns = seesAll ? 12 : 10;
 
   return (
     <div className="overflow-x-auto rounded-2xl border border-slate-200 bg-white shadow-sm">
-      <table className="w-full min-w-[1180px] border-collapse whitespace-nowrap text-sm text-slate-800">
+      {/* Fixed column shares and wrapping cells: every column, the delete button included, is on screen without scrolling sideways. */}
+      <table className="w-full min-w-[860px] table-fixed border-collapse text-xs text-slate-800">
+        <colgroup>
+          <col style={{ width: "8%" }} />
+          <col style={{ width: "14%" }} />
+          <col style={{ width: "12%" }} />
+          <col style={{ width: "6%" }} />
+          <col style={{ width: "8%" }} />
+          <col style={{ width: "8%" }} />
+          <col style={{ width: "7%" }} />
+          <col style={{ width: "9%" }} />
+          <col style={{ width: "10%" }} />
+          {seesAll ? <col style={{ width: "10%" }} /> : null}
+          <col style={{ width: "5%" }} />
+          {seesAll ? <col style={{ width: "3%" }} /> : null}
+        </colgroup>
         <thead>
           <tr>
             <th className={TH}>Received</th>
             <th className={TH}>Parent</th>
             <th className={TH}>WhatsApp</th>
-            <th className={TH}>Number</th>
-            <th className={TH}>Child&apos;s age</th>
+            <th className={TH}>Age</th>
             <th className={TH}>Level</th>
             <th className={TH}>Class</th>
             <th className={TH}>Time to call</th>
@@ -95,17 +109,17 @@ export function DemoLeadsSheet({ rows, stages, owners, canManage, seesAll, moveS
             return (
               <Fragment key={row.id}>
                 <tr className={index % 2 ? "bg-slate-50/60" : "bg-white"}>
-                  <td className={`${TD} text-xs text-slate-600`}>{row.received}</td>
+                  <td className={`${TD} text-[11px] text-slate-600`}>{row.received}</td>
                   <td className={TD}>
                     <span className="block font-bold text-slate-950">{row.name}</span>
                     {row.email ? (
-                      <a href={`mailto:${row.email}`} className="block break-all text-xs font-semibold text-brand hover:underline">
+                      <a href={`mailto:${row.email}`} className="block break-all text-[11px] font-semibold text-brand hover:underline">
                         {row.email}
                       </a>
                     ) : null}
                   </td>
                   <td className={TD}>
-                    <a href={row.telHref} className="font-bold text-brand hover:underline">{row.phoneLabel}</a>
+                    <a href={row.telHref} className="whitespace-nowrap font-bold text-brand hover:underline">{row.phoneLabel}</a>
                     {row.whatsappHref ? (
                       <a
                         href={row.whatsappHref}
@@ -113,14 +127,12 @@ export function DemoLeadsSheet({ rows, stages, owners, canManage, seesAll, moveS
                         rel="noreferrer"
                         aria-label={`WhatsApp ${row.name}`}
                         title="Open WhatsApp chat"
-                        className="ml-2 inline-flex align-middle text-emerald-700 hover:text-emerald-900"
+                        className="ml-1 inline-flex align-middle text-emerald-700 hover:text-emerald-900"
                       >
                         <MessageCircle size={15} />
                       </a>
                     ) : null}
-                  </td>
-                  <td className={TD}>
-                    <span className={`rounded-full px-2 py-0.5 text-[11px] font-black uppercase tracking-[0.06em] ${verification.style}`}>{verification.label}</span>
+                    <span className={`mt-1 block w-fit rounded-full px-1.5 py-0.5 text-[10px] font-black uppercase tracking-[0.04em] ${verification.style}`}>{verification.label}</span>
                   </td>
                   <td className={TD}>{row.age}</td>
                   <td className={TD}>{row.level}</td>
@@ -137,7 +149,7 @@ export function DemoLeadsSheet({ rows, stages, owners, canManage, seesAll, moveS
                           defaultValue={row.stage}
                           aria-label={`Stage for ${row.name}`}
                           onChange={(event) => event.currentTarget.form?.requestSubmit()}
-                          className={`h-8 cursor-pointer rounded-md border border-transparent px-2 text-xs font-black outline-none focus:border-brand ${STAGE_STYLES[row.stage] || ""}`}
+                          className={`h-8 w-full cursor-pointer rounded-md border border-transparent px-1 text-xs font-black outline-none focus:border-brand ${STAGE_STYLES[row.stage] || ""}`}
                         >
                           {stages.map((stage) => (
                             <option key={stage.value} value={stage.value}>{stage.label}</option>
@@ -161,7 +173,7 @@ export function DemoLeadsSheet({ rows, stages, owners, canManage, seesAll, moveS
                             defaultValue={row.ownerId}
                             aria-label={`Salesperson for ${row.name}`}
                             onChange={(event) => event.currentTarget.form?.requestSubmit()}
-                            className="h-8 cursor-pointer rounded-md border border-slate-200 bg-white px-2 text-xs font-bold text-slate-900 outline-none focus:border-brand"
+                            className="h-8 w-full cursor-pointer rounded-md border border-slate-200 bg-white px-1 text-xs font-bold text-slate-900 outline-none focus:border-brand"
                           >
                             {row.ownerId && !owners.some((owner) => owner.id === row.ownerId) ? <option value={row.ownerId}>{row.ownerName}</option> : null}
                             {!row.ownerId ? <option value="">Unassigned</option> : null}
@@ -186,7 +198,7 @@ export function DemoLeadsSheet({ rows, stages, owners, canManage, seesAll, moveS
                     </button>
                   </td>
                   {seesAll ? (
-                    <td className={`${TD} text-center`}>
+                    <td className={`${TD} !px-0 text-center`}>
                       <form
                         action={deleteLead}
                         onSubmit={(event) => {
@@ -196,7 +208,7 @@ export function DemoLeadsSheet({ rows, stages, owners, canManage, seesAll, moveS
                         }}
                       >
                         <input type="hidden" name="lead" value={row.id} />
-                        <button aria-label={`Delete the lead for ${row.name}`} title="Delete lead" className="rounded-md p-1.5 text-rose-600 hover:bg-rose-50 hover:text-rose-800">
+                        <button aria-label={`Delete the lead for ${row.name}`} title="Delete lead" className="rounded-md p-1 text-rose-600 hover:bg-rose-50 hover:text-rose-800">
                           <Trash2 size={15} />
                         </button>
                       </form>
@@ -206,7 +218,7 @@ export function DemoLeadsSheet({ rows, stages, owners, canManage, seesAll, moveS
 
                 {expanded ? (
                   <tr className="bg-slate-50">
-                    <td colSpan={columns + 1} className="whitespace-normal border-b border-slate-200 px-4 py-3">
+                    <td colSpan={columns} className="whitespace-normal border-b border-slate-200 px-4 py-3">
                       <div className="max-w-3xl">
                         {row.log.length ? (
                           <ul className="space-y-2">

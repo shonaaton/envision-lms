@@ -1,5 +1,6 @@
 import "server-only";
 
+import { isAccountsAdmin } from "@/lib/accounts/accessRule";
 import { auth } from "@/lib/auth";
 import { canAccessFeature, getFeaturePermissionState } from "@/lib/featureAccess";
 
@@ -13,6 +14,7 @@ export type CoachPayViewer = {
   role: string;
   /** True when this viewer may see the whole academy's cost, not just their own. */
   canViewAll: boolean;
+  canViewProfitability: boolean;
   canManageRates: boolean;
   canRule: boolean;
   canExport: boolean;
@@ -41,6 +43,7 @@ export async function resolveCoachPayViewer(): Promise<CoachPayViewer | null> {
     name: user.name || "",
     role: String(user.role || ""),
     canViewAll,
+    canViewProfitability: canViewAll && isAccountsAdmin(user),
     canManageRates: Boolean(permissions.manage_rates),
     canRule: Boolean(permissions.rule),
     canExport: Boolean(permissions.export),

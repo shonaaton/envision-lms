@@ -4,7 +4,11 @@
  * collected through Razorpay: payment links, reminder links and portal checkout.
  * Accepts an invoice (`invoiceMode`) or a fee plan (`gstMode`).
  */
-export function collectsThroughRazorpay(record: { invoiceMode?: string | null; gstMode?: string | null; gstPercentage?: number | null } | null | undefined) {
+export function collectsThroughRazorpay(record: { invoiceMode?: string | null; gstMode?: string | null; gstPercentage?: number | null; exportSupply?: { currency?: string | null } | null; exportPricing?: { currency?: string | null } | null } | null | undefined) {
+  // Exports under LUT are the LLP's own zero-rated supplies: billed from the GST
+  // registration and paid into the GST account through Razorpay, in the
+  // client's currency (user, 2026-11-14).
+  if (record?.exportSupply?.currency || record?.exportPricing?.currency) return true;
   const mode = String(record?.invoiceMode ?? record?.gstMode ?? "non_gst");
   return (mode === "included" || mode === "excluded") && Number(record?.gstPercentage || 0) > 0;
 }

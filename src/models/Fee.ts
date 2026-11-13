@@ -55,6 +55,20 @@ const FeePlanSchema = new Schema(
     lateFeeAmount: { type: Number, default: 50000 },
     lateFeeAfterDays: { type: Number, default: 10 },
     creditValidityDays: { type: Number, default: 0 },
+    // Priced in a foreign currency for clients abroad (export under LUT, no GST).
+    // amount stays INR paise at exchangeRate, so every report keeps adding up
+    // rupees; invoices from the plan become export invoices (lib/fees createInvoice).
+    exportPricing: {
+      type: new Schema(
+        {
+          currency: { type: String, required: true },
+          foreignAmount: { type: Number, required: true },
+          exchangeRate: { type: Number, required: true },
+        },
+        { _id: false },
+      ),
+      default: undefined,
+    },
     isActive: { type: Boolean, default: true, index: true },
   },
   { timestamps: true }
@@ -71,6 +85,11 @@ const FeeAssignmentSchema = new Schema(
     totalCreditsPurchased: { type: Number, default: 0 },
     totalCreditsConsumed: { type: Number, default: 0 },
     deletedMonthlyDueDates: [{ type: Date }],
+    // Standing discount in paise, taken off the plan price on every invoice
+    // raised for this student (monthly and credit recharge alike). Set from
+    // the payment window ("keep this discount") or the Student Records table.
+    discountAmount: { type: Number, default: 0, min: 0 },
+    discountNote: String,
     lastCreditReminderAt: Date,
     lastCreditReminderTo: String,
     lastCreditReminderStatus: { type: String, enum: ["sent", "failed", "skipped", "missing_email", "not_configured"], default: undefined },
@@ -150,7 +169,9 @@ const InvoiceSchema = new Schema(
     razorpayLink: {
       id: { type: String, index: true },
       shortUrl: String,
+      // In `currency` (1/100 units): the foreign total for an export invoice.
       amount: Number,
+      currency: { type: String, default: "INR" },
       referenceId: String,
       status: { type: String, enum: ["active", "paid", "cancelled"] },
       createdAt: Date,

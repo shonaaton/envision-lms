@@ -3,6 +3,7 @@ import { dbConnect } from "@/lib/db";
 import { ensureMonthlyInvoices } from "@/lib/fees";
 import { getFeesAnalytics, resolveRange } from "@/lib/feesAnalytics";
 import { formatINR } from "@/lib/utils";
+import { invoiceAmountLabel } from "@/lib/exportInvoice";
 import { CreditLedger, FeeAssignment, Invoice } from "@/models/Fee";
 import Link from "next/link";
 import { AlertTriangle, Banknote, CalendarClock, Download, Receipt, WalletCards } from "lucide-react";
@@ -117,7 +118,7 @@ export default async function FeesDashboardPage() {
       <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
         <Card label="Credit Balance" value={creditAssignment ? creditAssignment.creditBalance : "-"} note={creditAssignment ? `${creditAssignment.totalCreditsConsumed || 0} credits used` : "No credit plan assigned"} icon={WalletCards} />
         <Card label="Monthly Plan" value={monthlyAssignment?.plan?.name || "-"} note={nextDueDate ? `Next due ${nextDueDate.toLocaleDateString("en-IN")}` : "No monthly plan assigned"} icon={CalendarClock} />
-        <Card label="Unpaid Invoices" value={unpaidInvoices.length} note={unpaidInvoices[0] ? `${formatINR(unpaidInvoices[0].totalAmount)} next payment` : "No pending invoices"} icon={AlertTriangle} />
+        <Card label="Unpaid Invoices" value={unpaidInvoices.length} note={unpaidInvoices[0] ? `${invoiceAmountLabel(unpaidInvoices[0])} next payment` : "No pending invoices"} icon={AlertTriangle} />
         <Card label="Paid Invoices" value={paidInvoices.length} note="Payment history" icon={Banknote} />
       </div>
 
@@ -180,7 +181,7 @@ export default async function FeesDashboardPage() {
                 </div>
                 <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
                   <InfoBox label="Due" value={new Date(invoice.dueDate).toLocaleDateString("en-IN")} />
-                  <InfoBox label="Amount" value={formatINR(invoice.totalAmount)} />
+                  <InfoBox label="Amount" value={invoiceAmountLabel(invoice)} />
                 </div>
                 <a href={`/api/fees/invoices/${invoice._id}/pdf`} target="_blank" className="mt-3 inline-flex h-10 w-full items-center justify-center gap-1 rounded-lg border border-slate-200 bg-white px-3 text-xs font-bold text-brand">
                   <Download size={14} /> PDF
@@ -209,7 +210,7 @@ export default async function FeesDashboardPage() {
                       <div className="text-xs text-slate-500">{invoice.title}</div>
                     </td>
                     <td className="px-3 py-3">{new Date(invoice.dueDate).toLocaleDateString("en-IN")}</td>
-                    <td className="px-3 py-3 font-bold">{formatINR(invoice.totalAmount)}</td>
+                    <td className="px-3 py-3 font-bold">{invoiceAmountLabel(invoice)}</td>
                     <td className="px-3 py-3"><span className={`rounded-full px-2.5 py-1 text-xs font-bold ${statusTone(invoice.status)}`}>{invoice.status}</span></td>
                     <td className="px-3 py-3">
                       <a href={`/api/fees/invoices/${invoice._id}/pdf`} target="_blank" className="inline-flex h-9 items-center gap-1 rounded-xl border border-slate-200 px-3 text-xs font-bold text-brand">

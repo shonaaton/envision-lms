@@ -18,8 +18,12 @@ const SalesPaymentLinkSchema = new Schema(
     email: { type: String, trim: true, lowercase: true },
     feePlan: { type: Schema.Types.ObjectId, ref: "FeePlan" },
     feePlanName: { type: String, trim: true },
-    /** Paise; the total the family pays, GST included. */
+    /**
+     * What the family pays, in 1/100 units of `currency`: rupee paise (GST
+     * included) for an INR link, cents/pence for a foreign one (export, no GST).
+     */
     amount: { type: Number, required: true },
+    currency: { type: String, default: "INR" },
     description: { type: String, required: true, trim: true },
     /**
      * The demo account sales picked when sending the link. A payment is then
@@ -33,7 +37,10 @@ const SalesPaymentLinkSchema = new Schema(
     referenceId: String,
     status: { type: String, enum: SALES_PAYMENT_LINK_STATUSES, default: "created", index: true },
     paidAt: Date,
+    /** In `currency`, like amount. */
     amountPaid: Number,
+    /** Rupee paise the payment settled as: Razorpay's base_amount for a foreign payment. */
+    amountPaidInr: Number,
     razorpayPaymentId: { type: String, index: true },
     method: String,
     /** Paise Razorpay kept from the payment, GST on the fee included; razorpayTax is that GST. */

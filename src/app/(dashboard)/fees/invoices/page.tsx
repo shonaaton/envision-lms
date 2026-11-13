@@ -76,7 +76,7 @@ async function markInvoicePaid(formData: FormData) {
   const invoiceId = String(formData.get("invoice") || "");
   const returnStudent = String(formData.get("studentFilter") || "");
   const returnPath = `/fees/invoices${returnStudent ? `?student=${encodeURIComponent(returnStudent)}&` : "?"}`;
-  const invoice: any = await Invoice.findById(invoiceId).select("type amount lateFee totalAmount invoiceMode gstPercentage").lean();
+  const invoice: any = await Invoice.findById(invoiceId).select("type amount lateFee totalAmount invoiceMode gstPercentage discountAmount").lean();
   if (invoice?.type === "credits" && !(await canAccessFeature("invoices", session.user as any, "credit"))) {
     throw new Error("Forbidden");
   }
@@ -120,18 +120,20 @@ async function markInvoicePaid(formData: FormData) {
   const waiveLateFee = String(formData.get("waiveLateFee") || "") === "on";
   const discountAmount = paise(formData.get("discountAmount"));
   const adjustmentNote = String(formData.get("paymentAdjustmentNote") || "").trim();
+  const keepDiscount = String(formData.get("keepDiscount") || "") === "on";
   const adjusted = adjustedInvoicePayment({
     amount: Number(invoice?.amount || 0),
     lateFee: Number(invoice?.lateFee || 0),
     totalAmount: Number(invoice?.totalAmount || 0),
     invoiceMode: invoice?.invoiceMode || "non_gst",
     gstPercentage: Number(invoice?.gstPercentage || 0),
+    discountAmount: Number(invoice?.discountAmount || 0),
   }, { waiveLateFee, discountAmount, note: adjustmentNote });
   const totalPaid = transactions.reduce((sum, transaction) => sum + transaction.amount, 0);
   if (!transactions.length || totalPaid !== Number(adjusted.totalAmount || 0)) {
     redirect(`${returnPath}payment=amount-mismatch`);
   }
-  await applyInvoicePayment(invoiceId, undefined, { actor: (session.user as any).id, source: "manual_admin" }, transactions, { waiveLateFee, discountAmount, note: adjustmentNote });
+  await applyInvoicePayment(invoiceId, undefined, { actor: (session.user as any).id, source: "manual_admin" }, transactions, { waiveLateFee, discountAmount, note: adjustmentNote, keepDiscount });
   await afterManualInvoicePayment(invoiceId, transactions);
   revalidatePath("/fees/invoices");
   revalidatePath("/fees/student-fees");
@@ -876,7 +878,9 @@ export default async function FeeInvoicesPage({ searchParams }: { searchParams?:
                       <IconAction href={pdfHref} title="View invoice" icon={<Eye size={14} />} tone="brand" />
                       <IconAction href={pdfHref} title="Download PDF" icon={<Download size={14} />} download />
                       <IconAction href={pdfHref} title="Print invoice" icon={<Printer size={14} />} />
-                      {!manager && invoice.status !== "paid" && invoice.status !== "cancelled" && (collectsThroughRazorpay(invoice)
+                      {!manager && invoice.status !== "paid" && invoice.status !== "cancelled" && (isExportInvoice(invoice)
+                        ? <a href={`/api/fees/invoices/${invoiceId}/pay`} className="inline-flex h-8 items-center rounded-lg bg-brand px-3 text-xs font-bold text-white shadow-sm hover:bg-brand-700">Pay {invoiceAmountLabel(invoice)}</a>
+                        : collectsThroughRazorpay(invoice)
                         ? <PayButton amount={invoice.totalAmount} purpose="invoice" refId={invoiceId} label="Pay" />
                         : upiPayPageUrl(invoiceId) && <a href={upiPayPageUrl(invoiceId)} className="inline-flex h-8 items-center rounded-lg bg-brand px-3 text-xs font-bold text-white shadow-sm hover:bg-brand-700">Pay by UPI</a>)}
                       {manager && permissions.invoice && (
@@ -910,6 +914,8 @@ export default async function FeeInvoicesPage({ searchParams }: { searchParams?:
                           totalAmount={invoice.totalAmount || 0}
                           invoiceMode={invoice.invoiceMode || "non_gst"}
                           gstPercentage={invoice.gstPercentage || 0}
+                          existingDiscount={invoice.discountAmount || 0}
+                          canKeepDiscount={Boolean(invoice.assignment) && (invoice.type === "monthly" || invoice.type === "credits")}
                           studentFilter={selectedStudent}
                           action={markInvoicePaid}
                         />

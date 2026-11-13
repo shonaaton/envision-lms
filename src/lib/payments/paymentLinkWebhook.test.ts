@@ -54,6 +54,21 @@ describe("payment_link.paid for an invoice", () => {
     expect(mocks.markInvoicePaid).toHaveBeenCalledWith(INVOICE, "payment1", expect.objectContaining({ source: "razorpay_payment_link" }));
   });
 
+  it("records a USD payment as the rupees Razorpay converted it into", async () => {
+    mocks.paymentExists.mockResolvedValue(null);
+    mocks.invoiceFindById.mockReturnValue(lean({ ...invoice("unpaid"), totalAmount: 1901250, exportSupply: { currency: "USD", foreignAmount: 22500, exchangeRate: 84.5 } }));
+    await handlePaymentLinkPaid({ ...link, amount_paid: 22500, currency: "USD" }, { ...payment, amount: 22500, currency: "USD", base_amount: 1893000, base_currency: "INR" });
+    expect(mocks.paymentCreate).toHaveBeenCalledWith(expect.objectContaining({ amount: 1893000, foreignCurrency: "USD", foreignAmount: 22500 }));
+    expect(mocks.markInvoicePaid).toHaveBeenCalledTimes(1);
+  });
+
+  it("falls back to the invoice's rate when Razorpay gives no rupee amount", async () => {
+    mocks.paymentExists.mockResolvedValue(null);
+    mocks.invoiceFindById.mockReturnValue(lean({ ...invoice("unpaid"), totalAmount: 1901250, exportSupply: { currency: "USD", foreignAmount: 22500, exchangeRate: 84.5 } }));
+    await handlePaymentLinkPaid({ ...link, amount_paid: 22500, currency: "USD" }, { ...payment, amount: 22500, currency: "USD" });
+    expect(mocks.paymentCreate).toHaveBeenCalledWith(expect.objectContaining({ amount: 1901250, foreignCurrency: "USD" }));
+  });
+
   it("keeps Razorpay's fee and the GST on it", async () => {
     mocks.paymentExists.mockResolvedValue(null);
     mocks.invoiceFindById.mockReturnValue(lean(invoice("overdue")));

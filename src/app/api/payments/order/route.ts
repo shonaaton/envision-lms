@@ -7,6 +7,7 @@ import { rzp } from "@/lib/payments/razorpay";
 import { Invoice } from "@/models/Fee";
 import { recordActivity } from "@/lib/activity";
 import { collectsThroughRazorpay, NON_GST_RAZORPAY_MESSAGE } from "@/lib/payments/gstAccount";
+import { isExportInvoice } from "@/lib/exportInvoice";
 
 export const dynamic = "force-dynamic";
 
@@ -27,6 +28,9 @@ export async function POST(req: Request) {
       }
       if (invoice.status === "paid") return NextResponse.json({ error: "Invoice already paid" }, { status: 400 });
       if (!collectsThroughRazorpay(invoice)) return NextResponse.json({ error: NON_GST_RAZORPAY_MESSAGE }, { status: 400 });
+      // Checkout here is in rupees; an export invoice is paid in the client's
+      // currency through its payment link (/api/fees/invoices/<id>/pay).
+      if (isExportInvoice(invoice)) return NextResponse.json({ error: "This invoice is billed in a foreign currency. Use its Pay link to pay in that currency." }, { status: 400 });
       amount = invoice.totalAmount;
       invoiceNumber = invoice.invoiceNumber;
     }

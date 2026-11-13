@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { Field, Modal } from "@/components/common/Modal";
 import { formatAcademyDateTime } from "@/lib/academyTime";
 import { cn, formatINR } from "@/lib/utils";
+import { EXPORT_CURRENCIES, moneyIn } from "@/lib/exportInvoice";
 
 type LinkRow = {
   id: string;
@@ -16,12 +17,16 @@ type LinkRow = {
   email: string;
   feePlanName: string;
   amount: number;
+  /** INR, or the client's currency for a link to a family abroad. */
+  currency: string;
   description: string;
   createdByName: string;
   shortUrl: string;
   status: "created" | "paid" | "cancelled" | "expired";
   paidAt: string | null;
   amountPaid: number;
+  /** Rupees the payment settled as (Razorpay's conversion for a foreign payment). */
+  amountPaidInr: number;
   method: string;
   whatsappStatus: "" | "sent" | "failed" | "not_configured";
   accountName: string;
@@ -32,7 +37,7 @@ type LinkRow = {
 
 type DemoAccount = { id: string; name: string; parentName: string; email: string; phone: string; countryCode: string };
 
-type Plan = { id: string; name: string; type: string; credits: number; total: number };
+type Plan = { id: string; name: string; type: string; credits: number; total: number; currency: string };
 type Permissions = Partial<Record<"view" | "create" | "cancel" | "attach", boolean>>;
 type Student = { id: string; name: string; email: string; phone: string; accountStatus: string };
 
@@ -75,7 +80,7 @@ async function copyLink(url: string) {
   }
 }
 
-const emptyForm = { customerName: "", studentName: "", phone: "", countryCode: "+91", email: "", feePlanId: "", amountRupees: "", description: "" };
+const emptyForm = { customerName: "", studentName: "", phone: "", countryCode: "+91", email: "", feePlanId: "", amountRupees: "", currency: "INR", description: "" };
 
 /**
  * Picks the demo account the link is for. Choosing one fills in the family's
@@ -155,6 +160,9 @@ function CreateLinkModal({ plans, onClose, onCreated }: { plans: Plan[]; onClose
   const [saving, setSaving] = useState(false);
   const plan = plans.find((item) => item.id === form.feePlanId);
   const total = plan ? plan.total : Math.round(Number(form.amountRupees || 0) * 100);
+  // A plan priced abroad fixes the currency; a custom amount takes the one picked.
+  const linkCurrency = plan ? plan.currency || "INR" : form.currency;
+  const foreign = linkCurrency !== "INR";
   const set = (key: keyof typeof emptyForm) => (event: { target: { value: string } }) => setForm((current) => ({ ...current, [key]: event.target.value }));
 
   async function submit(event: React.FormEvent) {
@@ -212,23 +220,29 @@ function CreateLinkModal({ plans, onClose, onCreated }: { plans: Plan[]; onClose
           </Field>
         </div>
         <div className="grid gap-3 sm:grid-cols-2">
-          <Field label="Fee plan" hint="GST plans only; non-GST fees go to the other account">
+          <Field label="Fee plan" hint="GST plans and plans priced abroad; non-GST fees go to the other account">
             <select className="input" value={form.feePlanId} onChange={set("feePlanId")}>
               <option value="">Custom amount</option>
               {plans.map((item) => (
                 <option key={item.id} value={item.id}>
-                  {item.name} - {formatINR(item.total)}
+                  {item.name} - {moneyIn(item.total, item.currency)}
                 </option>
               ))}
             </select>
           </Field>
           {form.feePlanId ? (
-            <Field label="Amount" hint="From the plan, GST included">
-              <div className="input flex items-center bg-slate-50 font-bold">{formatINR(total)}</div>
+            <Field label="Amount" hint={foreign ? "From the plan, in the client's currency (export, no GST)" : "From the plan, GST included"}>
+              <div className="input flex items-center bg-slate-50 font-bold">{moneyIn(total, linkCurrency)}</div>
             </Field>
           ) : (
-            <Field label="Amount (₹)" hint="What the family pays, GST included (this is a GST payment)">
-              <input className="input" type="number" min="1" step="0.01" value={form.amountRupees} onChange={set("amountRupees")} required />
+            <Field label={`Amount (${foreign ? form.currency : "₹"})`} hint={foreign ? "Client abroad: export under LUT, no GST" : "What the family pays, GST included (this is a GST payment)"}>
+              <div className="flex gap-2">
+                <select className="input w-24 shrink-0" value={form.currency} onChange={set("currency")} aria-label="Currency">
+                  <option value="INR">INR</option>
+                  {EXPORT_CURRENCIES.map((item) => <option key={item.code} value={item.code}>{item.code}</option>)}
+                </select>
+                <input className="input min-w-0 flex-1" type="number" min="1" step="0.01" value={form.amountRupees} onChange={set("amountRupees")} required />
+              </div>
             </Field>
           )}
         </div>
@@ -237,7 +251,8 @@ function CreateLinkModal({ plans, onClose, onCreated }: { plans: Plan[]; onClose
         </Field>
         <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 pt-4">
           <p className="text-sm text-slate-600">
-            Parent pays <span className="font-black text-slate-950">{total >= 100 ? formatINR(total) : "-"}</span>
+            Parent pays <span className="font-black text-slate-950">{total >= 100 ? moneyIn(total, linkCurrency) : "-"}</span>
+            {foreign ? <span className="block text-xs text-slate-500">Paid by card in {linkCurrency}; Razorpay converts it to rupees. Needs international payments on in Razorpay.</span> : null}
           </p>
           <div className="flex gap-2">
             <button type="button" className="btn-outline" onClick={onClose}>Cancel</button>
@@ -292,7 +307,7 @@ function AttachModal({ link, onClose, onAttached }: { link: LinkRow; onClose: ()
   }
 
   return (
-    <Modal title="Attach payment to a student" subtitle={`${link.customerName} paid ${formatINR(link.amountPaid || link.amount)}. This raises a paid invoice on the student's account; no message is sent to the family.`} onClose={onClose}>
+    <Modal title="Attach payment to a student" subtitle={`${link.customerName} paid ${moneyIn(link.amountPaid || link.amount, link.currency)}. This raises a paid ${link.currency && link.currency !== "INR" ? "export (LUT) " : ""}invoice on the student's account; no message is sent to the family.`} onClose={onClose}>
       <label className="relative block">
         <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
         <input className="input pl-9" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Student name, parent name, email or phone" autoFocus />
@@ -348,7 +363,7 @@ export default function PaymentLinksClient() {
   const replace = (link: LinkRow) => setLinks((current) => current.map((item) => (item.id === link.id ? link : item)));
 
   async function act(link: LinkRow, action: "resend" | "cancel") {
-    if (action === "cancel" && !window.confirm(`Cancel the ${formatINR(link.amount)} link for ${link.customerName}? The parent will no longer be able to pay with it.`)) return;
+    if (action === "cancel" && !window.confirm(`Cancel the ${moneyIn(link.amount, link.currency)} link for ${link.customerName}? The parent will no longer be able to pay with it.`)) return;
     setBusy(`${link.id}:${action}`);
     try {
       const data = await readJson(await fetch(`/api/sales/payment-links/${link.id}`, {
@@ -371,7 +386,8 @@ export default function PaymentLinksClient() {
     return {
       open: links.filter((link) => link.status === "created").length,
       paid: paid.length,
-      collected: paid.reduce((sum, link) => sum + (link.amountPaid || link.amount), 0),
+      // Rupees: a foreign link counts at what Razorpay converted it into.
+      collected: paid.reduce((sum, link) => sum + ((link.currency || "INR") === "INR" ? link.amountPaid || link.amount : link.amountPaidInr || 0), 0),
       unattached: paid.filter((link) => !link.attachedInvoiceNumber).length,
     };
   }, [links]);
@@ -445,7 +461,7 @@ export default function PaymentLinksClient() {
                     <span className={cn("rounded-full px-2 py-0.5 text-[11px] font-bold", statusStyle[link.status])}>{statusLabel[link.status]}</span>
                   </div>
                   <p className="text-sm text-slate-700">
-                    <span className="font-bold">{formatINR(link.amount)}</span> · {link.description}
+                    <span className="font-bold">{moneyIn(link.amount, link.currency)}</span>{link.currency && link.currency !== "INR" && link.amountPaidInr ? <span className="text-slate-500"> ({formatINR(link.amountPaidInr)})</span> : null} · {link.description}
                   </p>
                   <p className="text-xs text-slate-500">
                     {link.countryCode} {link.phone} · Sent {when(link.createdAt)}{link.createdByName ? ` by ${link.createdByName}` : ""}

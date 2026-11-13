@@ -21,8 +21,8 @@ import {
 import { invoiceBreakup, type InvoiceTaxMode } from "@/lib/invoiceMath";
 import { EXPORT_CURRENCIES, formatForeign, inrPaiseFor, lutCovers, lutDateLabel, lutValidUntil } from "@/lib/exportInvoice";
 
-type StudentOption = { id: string; name: string; username?: string; isActive?: boolean };
-type PlanOption = { id: string; name: string; type: "monthly" | "credits"; amount: number; credits: number; gstMode?: InvoiceTaxMode; gstPercentage?: number };
+type StudentOption = { id: string; name: string; username?: string; isActive?: boolean; country?: string };
+type PlanOption = { id: string; name: string; type: "monthly" | "credits"; amount: number; credits: number; gstMode?: InvoiceTaxMode; gstPercentage?: number; exportPricing?: { currency: string; foreignAmount: number; exchangeRate: number } | null };
 type AssignmentOption = { studentId: string; planId: string };
 
 export type CreatedInvoiceSummary = {
@@ -246,13 +246,19 @@ export function InvoiceCreationForm({
   const [studentId, setStudentId] = useState(startStudent);
   const [source, setSource] = useState<Source>(startPlans.length > 0 ? "plan" : "custom");
   const [planId, setPlanId] = useState(startPlan?.id || "");
-  const [amount, setAmount] = useState(startPlan ? String(startPlan.amount / 100) : "");
-  const [taxMode, setTaxMode] = useState<TaxChoice>(startPlan ? startPlan.gstMode || "non_gst" : "included");
+  const startExport = startPlan?.exportPricing || null;
+  const [amount, setAmount] = useState(startPlan ? String((startExport ? startExport.foreignAmount : startPlan.amount) / 100) : "");
+  const [taxMode, setTaxMode] = useState<TaxChoice>(startExport ? "export" : startPlan ? startPlan.gstMode || "non_gst" : "included");
   const [gstRate, setGstRate] = useState(startPlan ? String(startPlan.gstPercentage || 18) : "18");
   const [customTitle, setCustomTitle] = useState<string | null>(null);
-  const [currencyCode, setCurrencyCode] = useState<string>("USD");
-  const [exchangeRate, setExchangeRate] = useState("");
-  const [country, setCountry] = useState("");
+  const [currencyCode, setCurrencyCode] = useState<string>(startExport?.currency || "USD");
+  const [exchangeRate, setExchangeRate] = useState(startExport ? String(startExport.exchangeRate) : "");
+  // An export invoice names the client's country: start from the student's profile.
+  const profileCountry = (id: string) => {
+    const value = String(students.find((item) => item.id === id)?.country || "").trim();
+    return /^india$/i.test(value) ? "" : value;
+  };
+  const [country, setCountry] = useState(() => profileCountry(startStudent));
   const [clientAddress, setClientAddress] = useState("");
   const [invoiceDate, setInvoiceDate] = useState(today);
   const [dueDate, setDueDate] = useState(addDays(today, 7));
@@ -322,6 +328,7 @@ export function InvoiceCreationForm({
   function selectStudent(next: StudentOption | undefined) {
     clearFeedback();
     setStudentId(next?.id || "");
+    setCountry(next ? profileCountry(next.id) : "");
     setCustomTitle(null);
     const nextPlans = next ? plansFor(next.id) : [];
     setSource(nextPlans.length > 0 ? "plan" : "custom");
@@ -341,6 +348,15 @@ export function InvoiceCreationForm({
   function choosePlan(next: PlanOption) {
     clearFeedback();
     setPlanId(next.id);
+    if (next.exportPricing) {
+      // Priced abroad: an export invoice in the plan's currency, at its rate.
+      setTaxMode("export");
+      setCurrencyCode(next.exportPricing.currency);
+      setAmount(String(next.exportPricing.foreignAmount / 100));
+      setExchangeRate(String(next.exportPricing.exchangeRate));
+      setCustomTitle(null);
+      return;
+    }
     setAmount(String(next.amount / 100));
     setTaxMode(next.gstMode || "non_gst");
     setGstRate(String(next.gstPercentage || 18));
@@ -518,8 +534,8 @@ export function InvoiceCreationForm({
                       </div>
                       <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-[11px] font-bold">
                         <span className="rounded-full bg-slate-100 px-2 py-0.5 text-slate-600">{item.type === "monthly" ? "Monthly" : `${item.credits} credits`}</span>
-                        <span className="rounded-full bg-slate-100 px-2 py-0.5 text-slate-600">{taxModeLabel(item.gstMode)}{item.gstMode && item.gstMode !== "non_gst" ? ` ${item.gstPercentage || 0}%` : ""}</span>
-                        <span className="ml-auto text-sm font-black text-slate-950">{currency(planTotal)}</span>
+                        <span className="rounded-full bg-slate-100 px-2 py-0.5 text-slate-600">{item.exportPricing ? "Export under LUT" : taxModeLabel(item.gstMode)}{!item.exportPricing && item.gstMode && item.gstMode !== "non_gst" ? ` ${item.gstPercentage || 0}%` : ""}</span>
+                        <span className="ml-auto text-sm font-black text-slate-950">{item.exportPricing ? formatForeign(item.exportPricing.foreignAmount, item.exportPricing.currency) : currency(planTotal)}</span>
                       </div>
                     </button>
                   );

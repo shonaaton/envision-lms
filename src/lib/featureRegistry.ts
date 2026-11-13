@@ -406,7 +406,7 @@ export const FEATURE_DEFINITIONS: FeatureDefinition[] = [
     label: "Coach Pay",
     category: "Payments",
     description: "Coach rate cards, teaching cost dashboard, no-show rulings, and each coach's own earnings.",
-    routes: ["/coach-pay", "/coach-pay/rates", "/coach-pay/reviews", "/coach-pay/substitutions", "/coach-pay/proposals", "/coach-pay/profile"],
+    routes: ["/coach-pay", "/coach-pay/profitability", "/coach-pay/rates", "/coach-pay/reviews", "/coach-pay/substitutions", "/coach-pay/proposals", "/coach-pay/profile"],
     apiPrefixes: ["/api/coach-pay"],
     // `view` only opens the area - for a coach that means their own lines and
     // nothing else. `view_all` is the separate grant that turns it into the

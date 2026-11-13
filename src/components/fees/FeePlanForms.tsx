@@ -3,9 +3,12 @@
 import { useEffect, useState } from "react";
 import { Archive, ArrowLeft, Banknote, CheckCircle2, CreditCard, Eye, FilePenLine, Plus, Save, Settings2, Trash2 } from "lucide-react";
 import { toast } from "sonner";
+import { EXPORT_CURRENCIES, formatForeign } from "@/lib/exportInvoice";
 
 type PlanType = "monthly" | "credits";
-type GstMode = "included" | "excluded" | "non_gst";
+/** The three GST modes, plus "export": priced in a foreign currency for clients abroad, no GST under LUT. */
+type GstMode = "included" | "excluded" | "non_gst" | "export";
+type ExportPricing = { currency: string; foreignAmount: number; exchangeRate: number };
 type FeePlanView = {
   id: string;
   name: string;
@@ -13,6 +16,7 @@ type FeePlanView = {
   amount: number;
   gstMode: GstMode;
   gstPercentage: number;
+  exportPricing: ExportPricing | null;
   credits: number;
   lateFeeAmount: number;
   lateFeeAfterDays: number;
@@ -27,6 +31,7 @@ function rupees(value: number) {
 }
 
 function gstLabel(mode: GstMode) {
+  if (mode === "export") return "Export (LUT)";
   if (mode === "included") return "GST included";
   if (mode === "excluded") return "GST excluded";
   return "Non-GST";
@@ -51,7 +56,7 @@ function Input(props: React.InputHTMLAttributes<HTMLInputElement>) {
 function GstPercentageInput({ gstMode, initialValue = 18 }: { gstMode: GstMode; initialValue?: number }) {
   const normalizedInitial = Number.isFinite(Number(initialValue)) && Number(initialValue) > 0 ? Number(initialValue) : 18;
   const [value, setValue] = useState(String(normalizedInitial));
-  const isNonGst = gstMode === "non_gst";
+  const isNonGst = gstMode === "non_gst" || gstMode === "export";
 
   return (
     <>
@@ -68,6 +73,38 @@ function GstPercentageInput({ gstMode, initialValue = 18 }: { gstMode: GstMode; 
           aria-label="GST Percentage"
         />
       </Field>
+    </>
+  );
+}
+
+/**
+ * The plan's price. For an export plan it is typed in the client's currency,
+ * with the rate that turns it into rupees for the books (rupees for 1 unit).
+ */
+function PlanAmountFields({ label, gstMode, plan }: { label: string; gstMode: GstMode; plan?: FeePlanView }) {
+  const pricing = plan?.exportPricing;
+  const [currency, setCurrency] = useState(pricing?.currency || "USD");
+  const [amount, setAmount] = useState(pricing ? String(pricing.foreignAmount / 100) : plan ? String(plan.amount / 100) : "");
+  const [rate, setRate] = useState(pricing ? String(pricing.exchangeRate) : "");
+  const isExport = gstMode === "export";
+  const inr = isExport && Number(amount) > 0 && Number(rate) > 0 ? Math.round(Number(amount) * 100 * Number(rate)) : 0;
+  return (
+    <>
+      <Field label={isExport ? `${label} (${currency})` : label} hint={isExport && inr ? `= ${rupees(inr)}` : undefined}>
+        <Input name="amount" type="number" min="0" step="0.01" required value={amount} onChange={(event) => setAmount(event.target.value)} placeholder={isExport ? `Amount in ${currency}` : "Amount in rupees"} />
+      </Field>
+      {isExport ? (
+        <>
+          <Field label="Currency">
+            <select name="currency" value={currency} onChange={(event) => setCurrency(event.target.value)} className="h-11 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-950 shadow-sm outline-none focus:border-brand focus:ring-4 focus:ring-brand/10">
+              {EXPORT_CURRENCIES.map((item) => <option key={item.code} value={item.code}>{item.code} · {item.name}</option>)}
+            </select>
+          </Field>
+          <Field label={`Rupees for 1 ${currency}`} hint="update when the rate moves">
+            <Input name="exchangeRate" type="number" min="0" step="0.0001" required value={rate} onChange={(event) => setRate(event.target.value)} placeholder="e.g. 84.50" />
+          </Field>
+        </>
+      ) : null}
     </>
   );
 }
@@ -94,11 +131,12 @@ function TypeControl({ value, onChange }: { value: PlanType; onChange: (value: P
 
 function GstControl({ value, onChange }: { value: GstMode; onChange: (value: GstMode) => void }) {
   return (
-    <div className="grid grid-cols-1 gap-1 rounded-lg border border-slate-200 bg-slate-100 p-1 shadow-inner md:grid-cols-3">
+    <div className="grid grid-cols-2 gap-1 rounded-lg border border-slate-200 bg-slate-100 p-1 shadow-inner md:grid-cols-4">
       {[
         ["included", "GST Included"],
         ["excluded", "GST Excluded"],
         ["non_gst", "Non-GST Plan"],
+        ["export", "Export (LUT)"],
       ].map(([mode, label]) => (
         <button
           key={mode}
@@ -135,15 +173,13 @@ export function CreateFeePlanForm({ action }: { action: ServerAction }) {
         </StepPanel>
       </div>
 
-      <StepPanel step="3" title="Plan Details" description={type === "monthly" ? "Set the recurring amount and late-fee rules." : "Set credits, amount, and tax percentage."}>
+      <StepPanel step="3" title="Plan Details" description={gstMode === "export" ? "Price it in the client's currency. Invoices from this plan are export invoices under your LUT, with no GST, and its payment links collect in that currency." : type === "monthly" ? "Set the recurring amount and late-fee rules." : "Set credits, amount, and tax percentage."}>
         {type === "monthly" ? (
           <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
             <Field label="Plan Name">
               <Input name="name" required placeholder="Monthly Regular" />
             </Field>
-            <Field label="Monthly Fee Amount">
-              <Input name="amount" type="number" min="0" required placeholder="Amount in rupees" />
-            </Field>
+            <PlanAmountFields label="Monthly Fee Amount" gstMode={gstMode} />
             <Field label="Billing Cycle">
               <Input value="30 days" readOnly className="bg-slate-50 text-slate-500" />
             </Field>
@@ -164,9 +200,7 @@ export function CreateFeePlanForm({ action }: { action: ServerAction }) {
             <Field label="Credits">
               <Input name="credits" type="number" min="1" required placeholder="Number of credits" />
             </Field>
-            <Field label="Fee Amount">
-              <Input name="amount" type="number" min="0" required placeholder="Amount in rupees" />
-            </Field>
+            <PlanAmountFields label="Fee Amount" gstMode={gstMode} />
             <Field label="Validity">
               <Input value="Unlimited until credits are used" readOnly className="bg-slate-50 text-slate-500" />
             </Field>
@@ -185,7 +219,7 @@ export function CreateFeePlanForm({ action }: { action: ServerAction }) {
 }
 
 export function FeePlanEditor({ plan, updateAction, archiveAction, deleteAction }: { plan: FeePlanView; updateAction: ServerAction; archiveAction: ServerAction; deleteAction: ServerAction }) {
-  const [gstMode, setGstMode] = useState<GstMode>(plan.gstMode);
+  const [gstMode, setGstMode] = useState<GstMode>(plan.exportPricing ? "export" : plan.gstMode);
 
   return (
     <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm shadow-brand-900/5">
@@ -197,7 +231,7 @@ export function FeePlanEditor({ plan, updateAction, archiveAction, deleteAction 
               {plan.type === "monthly" ? "Monthly plan" : "Credit-based plan"}
             </span>
             <span className="rounded-full bg-slate-100 px-2 py-1 text-slate-600">
-              {plan.gstMode === "included" ? "GST included" : plan.gstMode === "excluded" ? "GST excluded" : "Non-GST"}
+              {plan.exportPricing ? `Export (LUT) · ${plan.exportPricing.currency}` : plan.gstMode === "included" ? "GST included" : plan.gstMode === "excluded" ? "GST excluded" : "Non-GST"}
             </span>
           </div>
         </div>
@@ -218,7 +252,7 @@ export function FeePlanEditor({ plan, updateAction, archiveAction, deleteAction 
         {plan.type === "monthly" ? (
           <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
             <Field label="Plan Name"><Input name="name" defaultValue={plan.name} /></Field>
-            <Field label="Monthly Fee"><Input name="amount" type="number" defaultValue={plan.amount / 100} /></Field>
+            <PlanAmountFields label="Monthly Fee" gstMode={gstMode} plan={plan} />
             <Field label="Late Fee After"><Input name="lateFeeAfterDays" type="number" min="0" max="7" defaultValue={Math.min(plan.lateFeeAfterDays || 7, 7)} /></Field>
             <Field label="Late Fee Amount"><Input name="lateFeeAmount" type="number" defaultValue={(plan.lateFeeAmount || 50000) / 100} /></Field>
             <GstPercentageInput gstMode={gstMode} initialValue={plan.gstPercentage} />
@@ -228,7 +262,7 @@ export function FeePlanEditor({ plan, updateAction, archiveAction, deleteAction 
           <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
             <Field label="Plan Name"><Input name="name" defaultValue={plan.name} /></Field>
             <Field label="Credits"><Input name="credits" type="number" defaultValue={plan.credits || 0} /></Field>
-            <Field label="Fee Amount"><Input name="amount" type="number" defaultValue={plan.amount / 100} /></Field>
+            <PlanAmountFields label="Fee Amount" gstMode={gstMode} plan={plan} />
             <GstPercentageInput gstMode={gstMode} initialValue={plan.gstPercentage} />
             <input type="hidden" name="lateFeeAfterDays" value="0" />
             <input type="hidden" name="lateFeeAmount" value="0" />
@@ -324,14 +358,15 @@ function PlanSummaryCard({
           </div>
           <div className="mt-2 flex flex-wrap gap-2 text-xs font-semibold">
             <span className="rounded-full bg-brand/10 px-2.5 py-1 text-brand">{plan.type === "monthly" ? "Monthly" : "Credit-based"}</span>
-            <span className="rounded-full bg-slate-100 px-2.5 py-1 text-slate-600">{gstLabel(plan.gstMode)}</span>
+            <span className={`rounded-full px-2.5 py-1 ${plan.exportPricing ? "bg-sky-50 text-sky-700" : "bg-slate-100 text-slate-600"}`}>{plan.exportPricing ? `Export (LUT) · ${plan.exportPricing.currency}` : gstLabel(plan.gstMode)}</span>
             {plan.type === "credits" && <span className="rounded-full bg-slate-100 px-2.5 py-1 text-slate-600">{plan.credits} credits</span>}
           </div>
         </div>
         <div className="flex shrink-0 items-center gap-2">
           <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-right">
             <div className="text-[11px] font-bold uppercase tracking-[0.12em] text-slate-500">Amount</div>
-            <div className="text-sm font-bold text-slate-950">{rupees(plan.amount)}</div>
+            <div className="text-sm font-bold text-slate-950">{plan.exportPricing ? formatForeign(plan.exportPricing.foreignAmount, plan.exportPricing.currency) : rupees(plan.amount)}</div>
+            {plan.exportPricing ? <div className="text-[11px] text-slate-500">{rupees(plan.amount)} at ₹{plan.exportPricing.exchangeRate}</div> : null}
           </div>
           <button type="button" onClick={onEdit} className="inline-flex h-10 items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 text-sm font-bold text-slate-800 hover:border-brand/30 hover:text-brand">
             <FilePenLine size={15} />

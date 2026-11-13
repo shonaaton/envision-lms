@@ -1,5 +1,5 @@
 import mongoose, { Types } from "mongoose";
-import { AcademySettings, CreditLedger, FeeAssignment, Invoice, Notification } from "@/models/Fee";
+import { AcademySettings, CreditLedger, FeeAssignment, FeePlan, Invoice, Notification } from "@/models/Fee";
 import { Attendance } from "@/models/Attendance";
 import { Classroom } from "@/models/Classroom";
 import { Payment } from "@/models/Payment";
@@ -11,6 +11,7 @@ import { resolvePublicAppUrl } from "@/lib/appUrl";
 import { ACADEMY_DEFAULTS, ACADEMY_FAVICON_URL, ACADEMY_LOGO_URL, ACADEMY_SIGNATURE_URL } from "@/lib/branding";
 import { recordActivity } from "@/lib/activity";
 import { formatINR } from "@/lib/utils";
+import { invoiceAmountLabel } from "@/lib/exportInvoice";
 import { monthlyDueDate, nextMonthlyDueDate } from "@/lib/feesMetrics";
 import { createHash, randomBytes } from "crypto";
 import { invoiceStaffRecipients } from "@/lib/demoNotificationRecipients";
@@ -18,6 +19,8 @@ import { sendWhatsAppAutomationTemplate, sendWhatsAppAutomationTemplates, whatsa
 import { raiseCreditsExhaustedTask, resolveInvoiceTasks } from "@/lib/tasks/taskTriggers";
 import { retireInvoicePaymentLink } from "@/lib/payments/invoicePaymentLink";
 import { invoiceBreakup, overdueInvoiceUpdate } from "@/lib/invoiceMath";
+import { exportCountryFor, exportSupplyFromPlan, isExportPlan } from "@/lib/exportInvoice";
+import { dialCodeEntry } from "@/lib/phoneCountryCodes";
 import { creditSourceForPayment, type CreditSource } from "@/lib/creditMovementSource";
 
 const DAY = 24 * 60 * 60 * 1000;
@@ -145,6 +148,8 @@ export async function createInvoice(input: {
   gstPercentage?: number;
   creationKey?: string;
   exportSupply?: import("@/lib/exportInvoice").ExportSupply;
+  /** Already taken off `amount`; recorded so the invoice shows what was given away. */
+  discountAmount?: number;
   activity?: {
     actor?: string;
     source?: "manual_admin" | "plan_assignment" | "monthly_system" | "backend";
@@ -152,6 +157,21 @@ export async function createInvoice(input: {
   };
 }) {
   const settings = await getAcademySettings();
+  // A plan priced in a foreign currency bills clients abroad: every invoice it
+  // raises (monthly, recharge, pause, import) is an export invoice under LUT,
+  // whichever caller made it.
+  if (!input.exportSupply && input.plan) {
+    const plan: any = await FeePlan.findById(input.plan).select("amount exportPricing").lean().catch(() => null);
+    if (isExportPlan(plan)) {
+      const student: any = await User.findById(input.student).select("country countryCode").lean().catch(() => null);
+      const exportSupply = exportSupplyFromPlan(plan, input.amount, exportCountryFor(student, dialCodeEntry(student?.countryCode)?.country), {
+        lutArn: (settings as any).lutArn || ACADEMY_DEFAULTS.lutArn,
+        lutFiledOn: (settings as any).lutFiledOn || ACADEMY_DEFAULTS.lutFiledOn,
+      });
+      if (exportSupply) input = { ...input, exportSupply, invoiceMode: "non_gst", gstPercentage: 0 };
+    }
+  }
+  if (input.exportSupply) input = { ...input, invoiceMode: "non_gst", gstPercentage: 0 };
   const breakup = invoiceBreakup(input.amount, 0, settings, {
     gstMode: input.invoiceMode,
     gstPercentage: input.gstPercentage,
@@ -218,6 +238,86 @@ export async function createInvoice(input: {
   return invoice;
 }
 
+/**
+ * What a new invoice for this student charges: the plan price less the
+ * standing discount kept on their fee assignment. Every path that raises a
+ * plan invoice (monthly sweep, next month after payment, credit recharge,
+ * plan assignment, restart after a pause) goes through this, so a discount
+ * given once is not lost on the next invoice.
+ */
+export function planPriceForAssignment(plan: any, assignment: any) {
+  const planAmount = Math.max(0, Number(plan?.amount || 0));
+  const discountAmount = Math.min(planAmount, Math.max(0, Number(assignment?.discountAmount || 0)));
+  return { amount: planAmount - discountAmount, discountAmount };
+}
+
+const REPRICEABLE_INVOICE_STATUSES = ["draft", "unpaid", "overdue"];
+
+/**
+ * Sets (or clears, with 0) a student's standing discount and re-prices their
+ * open plan invoices to match, so the next reminder carries the discounted
+ * total. The invoice the discount was given on is left as it was paid.
+ */
+export async function setStandingDiscount(input: {
+  assignmentId: string;
+  discountAmount: number;
+  note?: string;
+  actor?: string;
+  exceptInvoiceId?: string;
+}) {
+  const assignment: any = await FeeAssignment.findById(input.assignmentId).populate("plan").lean();
+  if (!assignment) return null;
+  const discountAmount = Math.max(0, Math.round(Number(input.discountAmount || 0)));
+  const previous = Math.max(0, Number(assignment.discountAmount || 0));
+  const note = input.note?.trim() || "";
+  await FeeAssignment.findByIdAndUpdate(assignment._id, {
+    $set: { discountAmount, discountNote: discountAmount ? note || undefined : undefined },
+    $push: {
+      history: `${new Date().toISOString()} | ${assignment.plan?.name || "Plan"} | ${assignment.type} | Standing discount ${formatINR(previous)} -> ${formatINR(discountAmount)}${note ? ` (${note})` : ""}`,
+    },
+  });
+
+  const openInvoices: any[] = await Invoice.find({
+    assignment: assignment._id,
+    type: { $in: ["monthly", "credits"] },
+    status: { $in: REPRICEABLE_INVOICE_STATUSES },
+    ...(input.exceptInvoiceId && Types.ObjectId.isValid(input.exceptInvoiceId) ? { _id: { $ne: new Types.ObjectId(input.exceptInvoiceId) } } : {}),
+  });
+  let repriced = 0;
+  for (const invoice of openInvoices) {
+    // An export invoice is priced in the client's currency; leave it to be edited by hand.
+    if (invoice.exportSupply?.currency) continue;
+    const listAmount = Number(invoice.amount || 0) + Number(invoice.discountAmount || 0);
+    const invoiceDiscount = Math.min(listAmount, discountAmount);
+    const amount = listAmount - invoiceDiscount;
+    if (amount === Number(invoice.amount || 0) && invoiceDiscount === Number(invoice.discountAmount || 0)) continue;
+    const breakup = invoiceBreakup(amount, Number(invoice.lateFee || 0), {}, {
+      gstMode: invoice.invoiceMode || "non_gst",
+      gstPercentage: Number(invoice.gstPercentage || 0),
+    });
+    // The exact-amount payment link from an earlier reminder would collect the old total.
+    await retireInvoicePaymentLink(invoice);
+    await Invoice.updateOne(
+      { _id: invoice._id },
+      { $set: { amount, discountAmount: invoiceDiscount, ...breakup } }
+    );
+    repriced += 1;
+  }
+
+  await recordActivity({
+    actor: input.actor,
+    targetUser: objectId(assignment.student),
+    type: "fees.assignment.discount",
+    label: discountAmount
+      ? `Set a standing discount of ${formatINR(discountAmount)} per invoice`
+      : `Removed the standing discount of ${formatINR(previous)}`,
+    entityType: "FeeAssignment",
+    entityId: assignment._id.toString(),
+    metadata: { previous, discountAmount, note, repricedInvoices: repriced, sourceInvoice: input.exceptInvoiceId || "" },
+  });
+  return { discountAmount, previous, repriced };
+}
+
 export async function ensureMonthlyInvoices(now = new Date()) {
   const monthlyAssignments = await FeeAssignment.find({ type: "monthly" }).populate("plan student").lean();
   const horizon = new Date(now.getTime() + 3 * DAY);
@@ -251,7 +351,7 @@ export async function ensureMonthlyInvoices(now = new Date()) {
           assignment: assignment._id.toString(),
           type: "monthly",
           title: `${assignment.plan.name} - ${dueDate.toLocaleString("en-IN", { month: "long", year: "numeric" })}`,
-          amount: assignment.plan.amount,
+          ...planPriceForAssignment(assignment.plan, assignment),
           issueDate: dueDate,
           dueDate,
           invoiceMode: assignment.plan.gstMode || "non_gst",
@@ -275,6 +375,8 @@ type InvoicePaymentAdjustment = {
   waiveLateFee?: boolean;
   discountAmount?: number;
   note?: string;
+  /** Make this invoice's discount the student's standing discount for every later invoice. */
+  keepDiscount?: boolean;
 };
 
 export function adjustedInvoicePayment(input: {
@@ -283,11 +385,14 @@ export function adjustedInvoicePayment(input: {
   totalAmount: number;
   invoiceMode?: "included" | "excluded" | "non_gst";
   gstPercentage?: number;
+  /** Discount already taken off `amount` (a standing discount), kept in the paid record. */
+  discountAmount?: number;
 }, adjustment: InvoicePaymentAdjustment = {}) {
   const lateFee = Math.max(0, Number(input.lateFee || 0));
-  const discountAmount = Math.max(0, Number(adjustment.discountAmount || 0));
+  const newDiscount = Math.max(0, Number(adjustment.discountAmount || 0));
+  const discountAmount = Math.max(0, Number(input.discountAmount || 0)) + newDiscount;
   const lateFeeWaivedAmount = adjustment.waiveLateFee ? lateFee : 0;
-  const taxableBaseAmount = Math.max(0, Number(input.amount || 0) - discountAmount);
+  const taxableBaseAmount = Math.max(0, Number(input.amount || 0) - newDiscount);
   const settings = {
     invoiceMode: input.invoiceMode === "non_gst" ? "non_gst" : "gst",
     gstPercentage: Number(input.gstPercentage || 0),
@@ -326,6 +431,7 @@ export async function markInvoicePaid(
     totalAmount: existing.totalAmount,
     invoiceMode: existing.invoiceMode,
     gstPercentage: existing.gstPercentage,
+    discountAmount: existing.discountAmount,
   }, adjustment);
   const paymentTotal = transactions.reduce((sum, transaction) => sum + Number(transaction.amount || 0), 0);
   if (transactions.length && paymentTotal !== Number(adjusted.totalAmount || 0)) {
@@ -375,6 +481,16 @@ export async function markInvoicePaid(
     { new: true }
   );
   if (!invoice) return invoice;
+  // Before the follow-up raises next month's invoice, so that one carries the discount too.
+  if (adjustment.keepDiscount && Number(adjustment.discountAmount || 0) > 0 && existing.assignment && ["monthly", "credits"].includes(existing.type)) {
+    await setStandingDiscount({
+      assignmentId: objectId(existing.assignment),
+      discountAmount: adjusted.discountAmount,
+      note: adjustment.note || `Given on ${existing.invoiceNumber}`,
+      actor: activity?.actor,
+      exceptInvoiceId: invoiceId,
+    });
+  }
   // Settled another way: the link from an earlier reminder must not take a second payment.
   if (activity?.source !== "razorpay_payment_link") await retireInvoicePaymentLink(existing);
   await resolveInvoiceTasks(invoice, activity?.actor);
@@ -406,7 +522,7 @@ export async function markInvoicePaid(
       templateName: "payment_recorded_student",
       bodyParameters: [
         whatsappRecipientName(studentForPayment || {}),
-        formatINR(invoice.totalAmount),
+        invoiceAmountLabel(invoice),
         invoice.invoiceNumber,
         finalPaymentId || transactions.map((transaction) => transaction.referenceNumber).filter(Boolean).join(", ") || "Recorded",
       ],
@@ -492,7 +608,7 @@ export async function createNextMonthlyInvoiceAfterPayment(invoiceId: string) {
     assignment: invoice.assignment._id.toString(),
     type: "monthly",
     title: `${invoice.plan.name} - ${dueDate.toLocaleString("en-IN", { month: "long", year: "numeric" })}`,
-    amount: invoice.plan.amount,
+    ...planPriceForAssignment(invoice.plan, invoice.assignment),
     issueDate: dueDate,
     dueDate,
     invoiceMode: invoice.plan.gstMode || "non_gst",
@@ -575,7 +691,7 @@ async function notifyCreditRechargeInvoice(input: {
     input.created
       ? `A new recharge invoice ${input.invoice.invoiceNumber} has been generated.`
       : `Recharge invoice ${input.invoice.invoiceNumber} is already pending.`,
-    `Amount: ${formatINR(input.invoice.totalAmount)}.`,
+    `Amount: ${invoiceAmountLabel(input.invoice)}.`,
     `Due date: ${dueDateText}.`,
     `Next class: ${nextClassText}`,
     input.invoiceUrl ? `Invoice link: ${input.invoiceUrl}` : "Please log in to your student portal to view and pay the invoice.",
@@ -620,7 +736,7 @@ async function notifyCreditRechargeInvoice(input: {
       whatsappRecipientName(input.student),
       input.invoice.invoiceNumber,
       input.invoice.title || "Credit recharge",
-      formatINR(input.invoice.totalAmount),
+      invoiceAmountLabel(input.invoice),
       dueDateText,
     ],
     metadata: { kind: "credit_recharge_invoice", invoiceId: input.invoice._id.toString(), invoiceNumber: input.invoice.invoiceNumber, invoiceUrl: input.invoiceUrl, href: "/fees/invoices" },
@@ -634,7 +750,7 @@ async function notifyCreditRechargeInvoice(input: {
       input.created
         ? `A new recharge invoice ${input.invoice.invoiceNumber} has been generated.`
         : `Recharge invoice ${input.invoice.invoiceNumber} is already pending.`,
-      `Amount: ${formatINR(input.invoice.totalAmount)}.`,
+      `Amount: ${invoiceAmountLabel(input.invoice)}.`,
       `Due date: ${dueDateText}.`,
       `Next class: ${nextClassText}`,
       input.invoiceUrl ? `Invoice link: ${input.invoiceUrl}` : "",
@@ -658,7 +774,7 @@ async function notifyCreditRechargeInvoice(input: {
     await sendWhatsAppAutomationTemplate({
       user: subAdmin,
       templateName: "invoice_due_admin_alert",
-      bodyParameters: [subAdmin.name || "Admin", input.invoice.invoiceNumber, input.student.name || "Student", "credit recharge needed", formatINR(input.invoice.totalAmount)],
+      bodyParameters: [subAdmin.name || "Admin", input.invoice.invoiceNumber, input.student.name || "Student", "credit recharge needed", invoiceAmountLabel(input.invoice)],
       metadata: { kind: "credit_recharge_invoice_admin", studentId: input.student._id.toString(), invoiceId: input.invoice._id.toString(), invoiceNumber: input.invoice.invoiceNumber, href: "/fees/invoices" },
     });
   }));
@@ -669,11 +785,12 @@ async function createCreditRechargeInvoiceIfNeeded(input: {
   assignment: any;
   attendanceId: string;
 }) {
-  const [student, plan, attendance]: any[] = await Promise.all([
+  const [student, freshAssignment, attendance]: any[] = await Promise.all([
     User.findById(input.studentId).select("name email phone countryCode parentName parentEmail role isActive isPaused").lean(),
-    input.assignment?.plan ? FeeAssignment.findById(input.assignment._id).populate("plan").then((item: any) => item?.plan || null) : null,
+    input.assignment?.plan ? FeeAssignment.findById(input.assignment._id).populate("plan").lean() : null,
     Attendance.findById(input.attendanceId).select("classroom scheduledSessionId sessionDate").lean(),
   ]);
+  const plan: any = freshAssignment?.plan || null;
   if (!student || student.role !== "student" || student.isActive === false || student.isPaused === true || !plan || plan.isActive === false) return null;
 
   const afterDate = attendance?.sessionDate ? new Date(attendance.sessionDate) : new Date();
@@ -697,7 +814,7 @@ async function createCreditRechargeInvoiceIfNeeded(input: {
         assignment: input.assignment._id.toString(),
         type: "credits",
         title: `${plan.name} - Credit recharge`,
-        amount: plan.amount,
+        ...planPriceForAssignment(plan, freshAssignment),
         issueDate: new Date(),
         dueDate,
         credits: Number(plan.credits || 0),

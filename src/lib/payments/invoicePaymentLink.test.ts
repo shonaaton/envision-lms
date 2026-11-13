@@ -9,6 +9,14 @@ const active = (amount: number) => ({ id: "plink_1", shortUrl: "https://rzp.io/r
 const gst = { invoiceMode: "included", gstPercentage: 18 };
 
 describe("decideInvoiceLinkAction", () => {
+  it("collects an export invoice in its own currency", () => {
+    const exportInvoice = { invoiceMode: "non_gst", gstPercentage: 0, status: "unpaid", amount: 1901250, totalAmount: 1901250, exportSupply: { currency: "USD", foreignAmount: 22500, exchangeRate: 84.5 } };
+    expect(decideInvoiceLinkAction(exportInvoice)).toBe("create");
+    expect(decideInvoiceLinkAction({ ...exportInvoice, razorpayLink: { ...active(22500), currency: "USD" } })).toBe("reuse");
+    // An older rupee link for the same invoice is replaced by a USD one.
+    expect(decideInvoiceLinkAction({ ...exportInvoice, razorpayLink: active(1901250) })).toBe("replace");
+  });
+
   it("makes a link for an unpaid invoice that has none", () => {
     expect(decideInvoiceLinkAction({ ...gst, status: "unpaid", totalAmount: 250000 })).toBe("create");
   });

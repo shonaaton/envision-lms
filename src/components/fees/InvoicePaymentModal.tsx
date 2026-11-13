@@ -34,6 +34,8 @@ export function InvoicePaymentModal({
   totalAmount,
   invoiceMode,
   gstPercentage,
+  existingDiscount = 0,
+  canKeepDiscount = false,
   studentFilter,
   action,
 }: {
@@ -43,12 +45,17 @@ export function InvoicePaymentModal({
   totalAmount: number;
   invoiceMode: "included" | "excluded" | "non_gst";
   gstPercentage: number;
+  /** Standing discount already taken off this invoice's amount, in paise. */
+  existingDiscount?: number;
+  /** A plan invoice (monthly or credit recharge), whose discount can carry to later invoices. */
+  canKeepDiscount?: boolean;
   studentFilter: string;
   action: ServerAction;
 }) {
   const [open, setOpen] = useState(false);
   const [waiveLateFee, setWaiveLateFee] = useState(false);
   const [discountAmount, setDiscountAmount] = useState("");
+  const [keepDiscount, setKeepDiscount] = useState(true);
   const [transactions, setTransactions] = useState<TransactionDraft[]>(() => [newTransaction(String((totalAmount || 0) / 100))]);
   const discountPaise = Math.max(0, Math.round(Number(discountAmount || 0) * 100));
   const adjustedTotal = useMemo(() => {
@@ -73,6 +80,7 @@ export function InvoicePaymentModal({
     if (!open) return;
     setWaiveLateFee(false);
     setDiscountAmount("");
+    setKeepDiscount(true);
     setTransactions([newTransaction(String((totalAmount || 0) / 100))]);
   }, [open, totalAmount, invoiceId]);
 
@@ -147,6 +155,22 @@ export function InvoicePaymentModal({
                 <input name="paymentAdjustmentNote" placeholder="Optional" className="h-10 w-full rounded-md border border-slate-200 bg-white px-3 text-sm" />
               </label>
               {lateFee > 0 && <div className="md:col-span-3 text-xs font-semibold text-slate-500">Current late fee: {formatINR(lateFee)}</div>}
+              {existingDiscount > 0 && (
+                <div className="md:col-span-3 text-xs font-semibold text-emerald-700">
+                  This invoice already carries a standing discount of {formatINR(existingDiscount)}. Anything entered above is taken off on top of it.
+                </div>
+              )}
+              {canKeepDiscount && discountPaise > 0 && (
+                <label className="md:col-span-3 flex items-start gap-2 text-sm font-semibold text-slate-700">
+                  <input name="keepDiscount" type="checkbox" checked={keepDiscount} onChange={(event) => setKeepDiscount(event.target.checked)} className="mt-0.5 h-4 w-4 rounded border-slate-300" />
+                  <span>
+                    Keep this discount on future invoices
+                    <span className="block text-xs font-normal text-slate-500">
+                      Every later invoice for this student, and any unpaid one already raised, will be {formatINR(existingDiscount + discountPaise)} less than the plan price. Untick for a one-time discount.
+                    </span>
+                  </span>
+                </label>
+              )}
             </div>
 
             <div className="space-y-3">

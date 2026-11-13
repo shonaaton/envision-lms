@@ -2,15 +2,29 @@ import { Types } from "mongoose";
 import { recordActivity } from "@/lib/activity";
 import { invoiceStaffRecipients } from "@/lib/demoNotificationRecipients";
 import { markInvoicePaid } from "@/lib/fees";
-import { formatINR } from "@/lib/utils";
 import { paymentMethodFromRazorpay, razorpayChargeFields } from "@/lib/payments/razorpay";
 import { recordPaidLinkOnAccount } from "@/lib/payments/salesPaymentLinks";
 import { Invoice, Notification } from "@/models/Fee";
 import { Payment } from "@/models/Payment";
 import { SalesPaymentLink } from "@/models/SalesPaymentLink";
+import { moneyIn, razorpayInrAmount } from "@/lib/exportInvoice";
 
-type LinkEntity = { id?: string; notes?: Record<string, string>; amount_paid?: number; status?: string };
-type PaymentEntity = { id?: string; order_id?: string; method?: string; amount?: number; fee?: number; tax?: number };
+type LinkEntity = { id?: string; notes?: Record<string, string>; amount_paid?: number; currency?: string; status?: string };
+type PaymentEntity = { id?: string; order_id?: string; method?: string; amount?: number; currency?: string; base_amount?: number; base_currency?: string; fee?: number; tax?: number };
+
+/**
+ * A link paid in a foreign currency (an export invoice's link): what was paid
+ * in that currency, and the rupees it became. Razorpay reports the rupees as
+ * the payment's base_amount; without it, `fallbackRate` (the invoice's own
+ * rate) converts.
+ */
+function linkPaymentAmounts(link: LinkEntity, payment: PaymentEntity, fallbackRate = 0) {
+  const currency = String(payment.currency || link.currency || "INR").toUpperCase();
+  const paid = Number(link.amount_paid || payment.amount || 0);
+  if (currency === "INR") return { currency, paid, inr: paid };
+  const inr = razorpayInrAmount(payment) ?? (fallbackRate > 0 ? Math.round(paid * fallbackRate) : 0);
+  return { currency, paid, inr };
+}
 
 /**
  * payment_link.paid. Razorpay retries a webhook until it gets a 200 and may
@@ -28,12 +42,15 @@ export async function handlePaymentLinkPaid(link: LinkEntity, payment: PaymentEn
     if (await Payment.exists({ razorpayPaymentId: paymentId })) return { handled: true, duplicate: true };
     const invoice: any = await Invoice.findById(invoiceId).lean();
     if (!invoice) return { handled: false, reason: "invoice_not_found" };
-    const amount = Number(link.amount_paid || payment.amount || invoice.totalAmount);
+    const paid = linkPaymentAmounts(link, payment, Number(invoice.exportSupply?.exchangeRate || 0));
+    // Payment.amount is always rupees: for a foreign payment, the INR it settled as.
+    const amount = paid.currency === "INR" ? Number(paid.paid || invoice.totalAmount) : paid.inr || Number(invoice.totalAmount);
     const record: any = await Payment.create({
       user: invoice.student,
       purpose: "invoice",
       refId: invoice._id,
       amount,
+      ...(paid.currency !== "INR" ? { foreignCurrency: paid.currency, foreignAmount: paid.paid } : {}),
       razorpayOrderId: payment.order_id,
       razorpayPaymentId: paymentId,
       status: "paid",
@@ -71,7 +88,8 @@ export async function handlePaymentLinkPaid(link: LinkEntity, payment: PaymentEn
         $set: {
           status: "paid",
           paidAt: new Date(),
-          amountPaid: Number(link.amount_paid || payment.amount || 0),
+          amountPaid: linkPaymentAmounts(link, payment).paid,
+          amountPaidInr: linkPaymentAmounts(link, payment).inr || undefined,
           razorpayPaymentId: paymentId,
           method: String(payment.method || ""),
           ...razorpayChargeFields(payment),
@@ -80,7 +98,7 @@ export async function handlePaymentLinkPaid(link: LinkEntity, payment: PaymentEn
       { new: true }
     ).lean();
     if (!updated) return { handled: true, duplicate: true };
-    const amountText = formatINR(updated.amountPaid || updated.amount);
+    const amountText = moneyIn(updated.amountPaid || updated.amount, updated.currency);
     // Sent for a demo account: the invoice and payment go straight onto it.
     const recorded = updated.account ? await recordPaidLinkOnAccount(salesLinkId) : null;
     const staff = await invoiceStaffRecipients().catch(() => []);

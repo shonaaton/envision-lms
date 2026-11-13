@@ -116,7 +116,7 @@ export async function loadCoachPay(period: PayPeriod, filters: CoachPayFilters =
   const [classrooms, rates, overrides, rulings] = await Promise.all([
     Classroom.find(query)
       .select(
-        "title level classroomType demoBooking coach instructor batches students durationMinutes classDate startDate startTime generatedSessions isSessionInstance"
+        "title level classroomType demoBooking coach instructor batches students studentExits durationMinutes classDate startDate startTime generatedSessions isSessionInstance"
       )
       .populate("coach instructor", "name username")
       .populate("batches", "name")

@@ -1,7 +1,7 @@
 import { Types } from "mongoose";
 
 import { recordActivity } from "@/lib/activity";
-import { createInvoice } from "@/lib/fees";
+import { createInvoice, planPriceForAssignment } from "@/lib/fees";
 import { syncClassroomSessionInstances } from "@/lib/classroomSessionInstances";
 import { sessionRosterWithStudent, studentsMissingFromSessionRoster } from "@/lib/classroomStudentExits";
 import { pauseEmptyGroupsForStudent, resumeGroupsForStudent } from "@/lib/groupLifecycle";
@@ -767,7 +767,7 @@ async function restartBilling(input: { studentId: string; studentName?: string; 
     title: isCredits
       ? `${plan.name} credit recharge`
       : `${plan.name} - ${input.nextInvoiceDate.toLocaleString("en-IN", { month: "long", year: "numeric" })}`,
-    amount: Number(plan.amount || 0),
+    ...planPriceForAssignment(plan, assignment),
     issueDate: input.nextInvoiceDate,
     dueDate: input.nextInvoiceDate,
     credits: isCredits ? Number(plan.credits || 0) : 0,

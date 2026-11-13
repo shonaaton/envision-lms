@@ -201,7 +201,7 @@ export default async function NewInvoicePage({ searchParams }: { searchParams?: 
   const createdInvoiceId = queryValue(params, "created");
   const [createdInvoiceDoc, students, plans, assignments, settings] = await Promise.all([
     /^[a-f0-9]{24}$/i.test(createdInvoiceId) ? Invoice.findById(createdInvoiceId).populate("student", "name").lean() : Promise.resolve(null),
-    User.find({ role: "student" }, { name: 1, username: 1, isActive: 1 }).sort({ name: 1 }).lean(),
+    User.find({ role: "student" }, { name: 1, username: 1, isActive: 1, country: 1 }).sort({ name: 1 }).lean(),
     FeePlan.find({ isActive: true }).sort({ name: 1 }).lean(),
     FeeAssignment.find({}, { student: 1, plan: 1 }).lean(),
     getAcademySettings(),
@@ -227,8 +227,17 @@ export default async function NewInvoicePage({ searchParams }: { searchParams?: 
         canRecordPayment={permissions.payment}
         canRecordCreditPayment={permissions.credit}
         lut={{ arn: String((settings as any)?.lutArn || ""), filedOn: String((settings as any)?.lutFiledOn || "") }}
-        students={students.map((student: any) => ({ id: student._id.toString(), name: student.name, username: student.username || "", isActive: student.isActive !== false }))}
-        plans={plans.map((plan: any) => ({ id: plan._id.toString(), name: plan.name, type: plan.type, amount: plan.amount, credits: plan.credits || 0, gstMode: plan.gstMode || "non_gst", gstPercentage: plan.gstPercentage || 0 }))}
+        students={students.map((student: any) => ({ id: student._id.toString(), name: student.name, username: student.username || "", isActive: student.isActive !== false, country: student.country || "" }))}
+        plans={plans.map((plan: any) => ({
+          id: plan._id.toString(),
+          name: plan.name,
+          type: plan.type,
+          amount: plan.amount,
+          credits: plan.credits || 0,
+          gstMode: plan.gstMode || "non_gst",
+          gstPercentage: plan.gstPercentage || 0,
+          exportPricing: plan.exportPricing?.currency ? { currency: String(plan.exportPricing.currency), foreignAmount: Number(plan.exportPricing.foreignAmount || 0), exchangeRate: Number(plan.exportPricing.exchangeRate || 0) } : null,
+        }))}
         assignments={assignments.map((assignment: any) => ({ studentId: assignment.student?.toString(), planId: assignment.plan?.toString() }))}
       />
     </div>

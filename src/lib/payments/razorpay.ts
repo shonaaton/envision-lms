@@ -51,12 +51,15 @@ export function razorpayChargeFields(payment: { fee?: unknown; tax?: unknown } |
 export type PaymentLinkNotes = { kind: "invoice"; invoiceId: string } | { kind: "sales_link"; salesLinkId: string };
 
 /**
- * A Razorpay payment link for a fixed INR amount (paise). Razorpay's own SMS and
+ * A Razorpay payment link for a fixed amount in 1/100 units of `currency`
+ * (INR paise unless a foreign currency is given; that needs international
+ * payments switched on in the Razorpay account). Razorpay's own SMS and
  * email are off: the academy sends the link on WhatsApp and email itself, so the
  * parent does not get the same request three times.
  */
 export async function createPaymentLink(input: {
   amount: number;
+  currency?: string;
   description: string;
   referenceId: string;
   customer?: { name?: string; email?: string; contact?: string };
@@ -65,7 +68,7 @@ export async function createPaymentLink(input: {
   const customer = Object.fromEntries(Object.entries(input.customer || {}).filter(([, value]) => Boolean(value)));
   const link: any = await rzp().paymentLink.create({
     amount: Math.round(input.amount),
-    currency: "INR",
+    currency: (input.currency || "INR").toUpperCase(),
     accept_partial: false,
     reference_id: input.referenceId.slice(0, 40),
     description: input.description.slice(0, 2048),

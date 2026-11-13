@@ -10,7 +10,8 @@ import { canonicalPhoneNumber } from "@/lib/phoneCountryCodes";
 import { collectsThroughRazorpay } from "@/lib/payments/gstAccount";
 import { demoOwnerRestriction, leadOwnersForStudents, ownsDemoLead } from "@/lib/demoLeadOwner";
 import { sendWhatsAppAutomationTemplate } from "@/lib/whatsappAutomationEvents";
-import { formatINR } from "@/lib/utils";
+import { EXPORT_CURRENCIES, exportCountryFor, impliedRate, isExportPlan, moneyIn } from "@/lib/exportInvoice";
+import { dialCodeEntry } from "@/lib/phoneCountryCodes";
 import { FeePlan } from "@/models/Fee";
 import { Payment } from "@/models/Payment";
 import { SalesPaymentLink } from "@/models/SalesPaymentLink";
@@ -31,16 +32,19 @@ export const createSalesLinkSchema = z.object({
   countryCode: z.string().trim().max(6).optional().default("+91"),
   email: z.string().trim().email("Enter a valid email.").max(160).optional().or(z.literal("")).default(""),
   feePlanId: z.string().trim().optional().default(""),
-  /** Rupees, used when no plan is picked. */
+  /** Whole units of `currency` (rupees unless a foreign currency is picked), used when no plan is picked. */
   amountRupees: z.coerce.number().optional(),
+  /** INR, or a foreign currency for a client abroad (export under LUT, no GST). */
+  currency: z.string().trim().toUpperCase().optional().default("INR"),
   description: z.string().trim().max(200).optional().default(""),
   /** A demo account the payment is recorded on automatically once paid. */
   accountId: z.string().trim().optional().default(""),
 });
 
 /**
- * Active GST plans with the GST-inclusive total a family would pay for each.
- * Non-GST plans are left out: Razorpay pays into the GST account (user, 2026-10-27).
+ * Active GST plans with the GST-inclusive total a family would pay for each,
+ * and plans priced in a foreign currency with their foreign price. Non-GST
+ * plans are left out: Razorpay pays into the GST account (user, 2026-10-27).
  */
 export async function salesFeePlans() {
   await dbConnect();
@@ -50,7 +54,10 @@ export async function salesFeePlans() {
     name: String(plan.name),
     type: String(plan.type),
     credits: Number(plan.credits || 0),
-    total: invoiceBreakup(Number(plan.amount || 0), 0, settings, { gstMode: plan.gstMode, gstPercentage: plan.gstPercentage }).totalAmount,
+    currency: isExportPlan(plan) ? String(plan.exportPricing.currency) : "INR",
+    total: isExportPlan(plan)
+      ? Number(plan.exportPricing.foreignAmount || 0)
+      : invoiceBreakup(Number(plan.amount || 0), 0, settings, { gstMode: plan.gstMode, gstPercentage: plan.gstPercentage }).totalAmount,
   }));
 }
 
@@ -64,12 +71,14 @@ function serialize(link: any) {
     email: link.email || "",
     feePlanName: link.feePlanName || "",
     amount: Number(link.amount || 0),
+    currency: String(link.currency || "INR"),
     description: link.description,
     createdByName: link.createdByName || "",
     shortUrl: link.shortUrl || "",
     status: link.status,
     paidAt: link.paidAt || null,
     amountPaid: Number(link.amountPaid || 0),
+    amountPaidInr: Number(link.amountPaidInr || 0),
     method: link.method || "",
     whatsappStatus: link.whatsappStatus || "",
     accountName: link.account?.name || "",
@@ -106,7 +115,7 @@ async function sendLinkOnWhatsApp(link: any) {
   const result = await sendWhatsAppAutomationTemplate({
     to,
     templateName: "sales_payment_link",
-    bodyParameters: [link.customerName, link.description, formatINR(link.amount), link.shortUrl],
+    bodyParameters: [link.customerName, link.description, moneyIn(link.amount, link.currency), link.shortUrl],
     metadata: { kind: "sales_payment_link", salesLinkId: String(link._id) },
   }).catch((error) => ({ delivered: false, skipped: false, error: String(error?.message || error) }) as any);
   link.whatsappStatus = result?.delivered ? "sent" : result?.skipped ? "not_configured" : "failed";
@@ -123,18 +132,27 @@ export async function createSalesPaymentLink(actor: PaymentLinkActor, raw: unkno
   await dbConnect();
 
   let amount = 0;
+  let currency = "INR";
   let plan: any = null;
   if (input.feePlanId) {
     if (!Types.ObjectId.isValid(input.feePlanId)) throw new PaymentLinkError("Choose a valid fee plan.");
     plan = await FeePlan.findOne({ _id: input.feePlanId, isActive: true }).lean();
     if (!plan) throw new PaymentLinkError("That fee plan is no longer active.");
     if (!collectsThroughRazorpay(plan)) throw new PaymentLinkError("That is a non-GST plan, which is paid into the other account. Pick a GST plan or type the amount.");
-    const settings = await getAcademySettings();
-    amount = invoiceBreakup(Number(plan.amount || 0), 0, settings, { gstMode: plan.gstMode, gstPercentage: plan.gstPercentage }).totalAmount;
+    if (isExportPlan(plan)) {
+      // Priced abroad: the link is in the plan's currency, for its foreign price.
+      currency = String(plan.exportPricing.currency);
+      amount = Number(plan.exportPricing.foreignAmount || 0);
+    } else {
+      const settings = await getAcademySettings();
+      amount = invoiceBreakup(Number(plan.amount || 0), 0, settings, { gstMode: plan.gstMode, gstPercentage: plan.gstPercentage }).totalAmount;
+    }
   } else {
+    currency = input.currency || "INR";
+    if (currency !== "INR" && !EXPORT_CURRENCIES.some((item) => item.code === currency)) throw new PaymentLinkError("Choose a supported currency.");
     amount = Math.round(Number(input.amountRupees || 0) * 100);
   }
-  if (!(amount >= 100)) throw new PaymentLinkError("The amount must be at least ₹1.");
+  if (!(amount >= 100)) throw new PaymentLinkError(`The amount must be at least ${moneyIn(100, currency)}.`);
   if (amount > 10_000_000) throw new PaymentLinkError("The amount looks too large. Check it and try again.");
   const description = input.description || plan?.name || "";
   if (description.length < 3) throw new PaymentLinkError("Say what the payment is for, or pick a fee plan.");
@@ -159,6 +177,7 @@ export async function createSalesPaymentLink(actor: PaymentLinkActor, raw: unkno
     feePlan: plan?._id,
     feePlanName: plan?.name,
     amount,
+    currency,
     description,
     account: account?._id,
     createdBy: actor.id,
@@ -168,6 +187,7 @@ export async function createSalesPaymentLink(actor: PaymentLinkActor, raw: unkno
   try {
     const created = await createPaymentLink({
       amount,
+      currency,
       description: `Envision Chess Academy - ${description}${input.studentName ? ` for ${input.studentName}` : ""}`,
       referenceId: link.referenceId,
       customer: { name: input.customerName, email: input.email || undefined, contact: `+${phone}` },
@@ -184,10 +204,10 @@ export async function createSalesPaymentLink(actor: PaymentLinkActor, raw: unkno
   await recordActivity({
     actor: actor.id,
     type: "sales.payment_link.created",
-    label: `${actor.name} sent a ${formatINR(amount)} payment link to ${input.customerName}`,
+    label: `${actor.name} sent a ${moneyIn(amount, currency)} payment link to ${input.customerName}`,
     entityType: "SalesPaymentLink",
     entityId: String(link._id),
-    metadata: { amount, feePlan: plan ? String(plan._id) : "", account: account ? String(account._id) : "", razorpayLinkId: link.razorpayLinkId, whatsappStatus: link.whatsappStatus },
+    metadata: { amount, currency, feePlan: plan ? String(plan._id) : "", account: account ? String(account._id) : "", razorpayLinkId: link.razorpayLinkId, whatsappStatus: link.whatsappStatus },
   });
   return serialize({ ...link.toObject(), account });
 }
@@ -331,7 +351,7 @@ export async function recordPaidLinkOnAccount(salesLinkId: string) {
 
 async function recordLinkPaymentOnStudent(link: any, studentId: string, options: { actorId?: string; notifyStudent: boolean }) {
   if (!Types.ObjectId.isValid(studentId)) throw new PaymentLinkError("Choose a student.");
-  const student: any = await User.findOne({ _id: studentId, role: "student" }).select("name").lean();
+  const student: any = await User.findOne({ _id: studentId, role: "student" }).select("name country countryCode").lean();
   if (!student) throw new PaymentLinkError("Choose a student.");
   // Claimed first, so the webhook and an admin's manual attach can never both
   // raise an invoice for the same payment.
@@ -352,6 +372,7 @@ async function raiseLinkInvoice(link: any, studentId: string, student: any, opti
   const actorId = options.actorId;
 
   const [settings, plan]: any[] = await Promise.all([getAcademySettings(), link.feePlan ? FeePlan.findById(link.feePlan).lean() : null]);
+  if (String(link.currency || "INR") !== "INR") return raiseForeignLinkInvoice(link, studentId, student, plan, settings, options);
   // The money came through Razorpay, i.e. into the GST account, so the invoice
   // is always a GST invoice with GST inside the amount paid.
   const gstPercentage = [plan?.gstPercentage, settings.gstPercentage, 18].map(Number).find((value) => value > 0) as number;
@@ -398,6 +419,74 @@ async function raiseLinkInvoice(link: any, studentId: string, student: any, opti
     entityType: "SalesPaymentLink",
     entityId: String(link._id),
     metadata: { invoice: String(invoice._id), payment: String(payment._id), automatic: !actorId },
+  });
+  return { invoiceNumber: String(invoice.invoiceNumber), studentName: String(student.name || "") };
+}
+
+/**
+ * A link paid in a foreign currency: the client is abroad, so the invoice is an
+ * export invoice under LUT (no GST) for what they paid in their currency, at
+ * the rupees Razorpay converted it into. A credits plan still adds its credits.
+ */
+async function raiseForeignLinkInvoice(link: any, studentId: string, student: any, plan: any, settings: any, options: { actorId?: string; notifyStudent: boolean }) {
+  const actorId = options.actorId;
+  const currency = String(link.currency).toUpperCase();
+  const paidForeign = Number(link.amountPaid || link.amount);
+  const inr = Number(link.amountPaidInr || 0)
+    || (plan?.exportPricing?.currency === currency ? Math.round(paidForeign * Number(plan.exportPricing.exchangeRate || 0)) : 0);
+  if (!(inr > 0)) throw new PaymentLinkError("Razorpay has not reported the rupee value of this payment yet, so the export invoice cannot be raised. Try again shortly.");
+  const isCredits = plan?.type === "credits" && Number(plan.credits) > 0;
+  const invoice: any = await createInvoice({
+    student: studentId,
+    plan: plan ? String(plan._id) : undefined,
+    type: isCredits ? "credits" : "manual",
+    credits: isCredits ? Number(plan.credits) : undefined,
+    title: link.description,
+    amount: inr,
+    dueDate: link.paidAt || new Date(),
+    issueDate: link.paidAt || new Date(),
+    referenceNumber: link.razorpayPaymentId || link.referenceId,
+    invoiceMode: "non_gst",
+    gstPercentage: 0,
+    exportSupply: {
+      currency,
+      foreignAmount: paidForeign,
+      exchangeRate: impliedRate(paidForeign, inr),
+      country: exportCountryFor(student, dialCodeEntry(link.countryCode)?.country),
+      lutArn: String(settings.lutArn || ""),
+      lutFiledOn: settings.lutFiledOn || undefined,
+    },
+    notes: `Paid in ${currency} through sales payment link ${link.referenceId}, sent by ${link.createdByName || "sales"}.`,
+    activity: { actor: actorId, source: actorId ? "manual_admin" : "backend", label: `Export invoice raised for a ${currency} sales payment link paid by ${link.customerName}` },
+  });
+  const payment: any = await Payment.create({
+    user: studentId,
+    purpose: "invoice",
+    refId: invoice._id,
+    amount: inr,
+    foreignCurrency: currency,
+    foreignAmount: paidForeign,
+    razorpayPaymentId: link.razorpayPaymentId,
+    status: "paid",
+    method: paymentMethodFromRazorpay(link.method),
+    referenceNumber: link.razorpayPaymentId,
+    invoiceNumber: invoice.invoiceNumber,
+    paidAt: link.paidAt || new Date(),
+    ...(link.razorpayFee !== undefined && link.razorpayFee !== null ? { razorpayFee: link.razorpayFee, razorpayTax: link.razorpayTax || 0 } : {}),
+  });
+  await markInvoicePaid(String(invoice._id), String(payment._id), { actor: actorId, source: "razorpay_payment_link", label: `Recorded ${currency} sales link payment from ${link.customerName}` }, [], {}, { notifyStudent: options.notifyStudent });
+  await SalesPaymentLink.updateOne(
+    { _id: link._id },
+    { $set: { attachedStudent: studentId, attachedInvoice: invoice._id, attachedAt: new Date(), ...(actorId ? { attachedBy: actorId } : {}) } }
+  );
+  await recordActivity({
+    actor: actorId,
+    targetUser: studentId,
+    type: "sales.payment_link.attached",
+    label: `${actorId ? "Attached" : "Automatically recorded"} the ${currency} link payment from ${link.customerName} on ${student.name} as ${invoice.invoiceNumber}`,
+    entityType: "SalesPaymentLink",
+    entityId: String(link._id),
+    metadata: { invoice: String(invoice._id), payment: String(payment._id), automatic: !actorId, currency, foreignAmount: paidForeign, inr },
   });
   return { invoiceNumber: String(invoice.invoiceNumber), studentName: String(student.name || "") };
 }

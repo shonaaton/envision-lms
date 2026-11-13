@@ -4,6 +4,7 @@ import { sendAutomationEmail } from "@/lib/emailAutomation";
 import { resolveAudienceEmails } from "@/lib/studentContact";
 import { sendWhatsAppAutomationTemplate, whatsappRecipientName } from "@/lib/whatsappAutomationEvents";
 import { formatINR } from "@/lib/utils";
+import { invoiceAmountLabel } from "@/lib/exportInvoice";
 import { Classroom } from "@/models/Classroom";
 import { Homework } from "@/models/Homework";
 import { User } from "@/models/User";
@@ -362,7 +363,7 @@ export async function sendInvoiceOverdueEscalationEmail(input: {
     "",
     `Invoice: ${invoice.invoiceNumber}`,
     `Details: ${invoice.title}`,
-    `Amount: ${formatINR(invoice.totalAmount)}`,
+    `Amount: ${invoiceAmountLabel(invoice)}`,
     `Due date: ${dueDate}`,
     ...(input.payUrl ? [`Pay online: ${input.payUrl}`] : []),
     input.invoiceUrl ? `${input.payUrl ? "Invoice" : "Payment / invoice"} link: ${input.invoiceUrl}` : "Please log in to your student portal to view and pay the invoice.",
@@ -380,7 +381,7 @@ export async function sendInvoiceOverdueEscalationEmail(input: {
   await sendWhatsAppAutomationTemplate({
     user: student,
     templateName: "invoice_overdue_action_required",
-    bodyParameters: [whatsappRecipientName(student), invoice.invoiceNumber, invoice.title || "Invoice", String(input.daysOverdue), formatINR(invoice.totalAmount)],
+    bodyParameters: [whatsappRecipientName(student), invoice.invoiceNumber, invoice.title || "Invoice", String(input.daysOverdue), invoiceAmountLabel(invoice)],
     metadata: { kind: "invoice_overdue_escalation", invoiceId: objectId(invoice._id), invoiceNumber: invoice.invoiceNumber },
   });
   return { sent: 1 };

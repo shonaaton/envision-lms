@@ -115,3 +115,86 @@ export function lutDateLabel(value?: string | null) {
   const date = new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3])));
   return date.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric", timeZone: "UTC" });
 }
+
+/* ------------------------------------------------- plans and payment links */
+
+/** A fee plan priced in a foreign currency. plan.amount stays INR paise at exchangeRate. */
+export type ExportPricing = { currency: string; foreignAmount: number; exchangeRate: number };
+
+export function isExportPlan(plan: any): boolean {
+  return Boolean(plan?.exportPricing?.currency);
+}
+
+/** Any amount in 1/100 units of `currency`: rupees as ₹, everything else as "USD 225.00". */
+export function moneyIn(minor: number, currency?: string | null) {
+  const code = String(currency || "INR").toUpperCase();
+  return code === "INR" ? formatINR(Number(minor || 0)) : formatForeign(Number(minor || 0), code);
+}
+
+/**
+ * The client's country for an export invoice: the student's own country, else
+ * the one their phone code points to, else "Outside India". A shared code such
+ * as +1 (United States / Canada) is not a country, so it is not used.
+ */
+export function exportCountryFor(student: { country?: unknown; countryCode?: unknown } | null | undefined, dialCountry?: string | null) {
+  const own = String(student?.country || "").trim();
+  if (own && !/^india$/i.test(own)) return own;
+  const fromDial = String(dialCountry || "").trim();
+  if (fromDial && !fromDial.includes("/") && !/^india$/i.test(fromDial)) return fromDial;
+  return "Outside India";
+}
+
+/**
+ * The export details for an invoice raised from a foreign-priced plan. The
+ * plan's own price is used as is; any other INR amount (a pro-rated or
+ * adjusted bill) is converted back at the plan's rate.
+ */
+export function exportSupplyFromPlan(
+  plan: { amount?: number; exportPricing?: ExportPricing | null },
+  amountPaise: number,
+  country: string,
+  lut: { lutArn?: string; lutFiledOn?: string },
+): ExportSupply | undefined {
+  const pricing = plan?.exportPricing;
+  if (!pricing?.currency || !(Number(pricing.exchangeRate) > 0)) return undefined;
+  const foreignAmount = Number(amountPaise) === Number(plan.amount)
+    ? Number(pricing.foreignAmount)
+    : Math.round(Number(amountPaise) / Number(pricing.exchangeRate));
+  return {
+    currency: pricing.currency,
+    foreignAmount,
+    exchangeRate: Number(pricing.exchangeRate),
+    country: country || "Outside India",
+    lutArn: String(lut.lutArn || ""),
+    lutFiledOn: lut.lutFiledOn || undefined,
+  };
+}
+
+/** What a Razorpay link for this invoice must collect: the foreign total for an export invoice, rupees otherwise. */
+export function invoiceLinkAmount(invoice: any): { amount: number; currency: string } {
+  if (isExportInvoice(invoice)) return { amount: exportForeignTotal(invoice), currency: String(invoice.exportSupply.currency) };
+  return { amount: Number(invoice?.totalAmount || 0), currency: "INR" };
+}
+
+/**
+ * Rupees (paise) Razorpay converted a payment into. For a non-INR payment the
+ * payment entity carries base_amount in base_currency (INR), which is what
+ * settles and what Razorpay's fee is worked out on. Null when the payment does
+ * not say (an INR payment, or an older payload): the caller decides then.
+ */
+export function razorpayInrAmount(payment: { amount?: unknown; currency?: unknown; base_amount?: unknown; base_currency?: unknown } | null | undefined) {
+  const currency = String(payment?.currency || "INR").toUpperCase();
+  if (currency === "INR") {
+    const amount = Number(payment?.amount);
+    return Number.isFinite(amount) && amount > 0 ? Math.round(amount) : null;
+  }
+  const base = Number(payment?.base_amount);
+  const baseCurrency = String(payment?.base_currency || "INR").toUpperCase();
+  return baseCurrency === "INR" && Number.isFinite(base) && base > 0 ? Math.round(base) : null;
+}
+
+/** Rupees per unit, to 4 places, from a foreign amount and the INR it became. */
+export function impliedRate(foreignMinor: number, inrPaise: number) {
+  if (!(foreignMinor > 0) || !(inrPaise > 0)) return 0;
+  return Math.round((inrPaise / foreignMinor) * 10000) / 10000;
+}

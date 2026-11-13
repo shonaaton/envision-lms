@@ -6,6 +6,7 @@ import { resolveAudienceEmails } from "@/lib/studentContact";
 import { authorizeCronRequest } from "@/lib/cronAuth";
 import { ensureMonthlyInvoices } from "@/lib/fees";
 import { formatINR } from "@/lib/utils";
+import { invoiceAmountLabel } from "@/lib/exportInvoice";
 import { Invoice, Notification } from "@/models/Fee";
 import { sendInvoiceOverdueEscalationEmail } from "@/lib/studentCommunicationEmails";
 import { invoiceStaffRecipients } from "@/lib/demoNotificationRecipients";
@@ -45,7 +46,7 @@ function studentMessage(invoice: any, invoiceUrl: string, days: number, payUrl =
   return [
     `Hello ${invoice.student.name},`,
     `Invoice ${invoice.invoiceNumber} for ${invoice.title} is ${timing}.`,
-    `Amount: ${formatINR(invoice.totalAmount)}.`,
+    `Amount: ${invoiceAmountLabel(invoice)}.`,
     `Due date: ${dueText}.`,
     payUrl ? `Pay online: ${payUrl}` : "",
     invoiceUrl ? `Download invoice: ${invoiceUrl}` : "Please log in to the student portal to view and pay the invoice.",
@@ -73,7 +74,7 @@ async function invoiceReminderTemplate(days: number, payUrl: string) {
  */
 function amountAndDateParameters(templateName: string, invoice: any) {
   const dueText = new Date(invoice.dueDate).toLocaleDateString("en-IN");
-  const amountText = formatINR(invoice.totalAmount);
+  const amountText = invoiceAmountLabel(invoice);
   if (templateName === "invoice_due_today") return [amountText];
   if (templateName === "invoice_due_soon" || templateName === "invoice_overdue_reminder") return [amountText, dueText];
   return [dueText, amountText];
@@ -113,7 +114,7 @@ async function notifyAdmins(invoice: any, days: number, invoiceUrl: string) {
         message: [
           `Hello ${admin.name || "Admin"},`,
           `Invoice ${invoice.invoiceNumber} for ${invoice.student.name} ${timing}.`,
-          `Amount: ${formatINR(invoice.totalAmount)}.`,
+          `Amount: ${invoiceAmountLabel(invoice)}.`,
           invoiceUrl ? `Invoice link: ${invoiceUrl}` : "Open the Fees > Invoices page to review it.",
         ].join("\n\n"),
         metadata: { kind: "monthly_invoice_admin_reminder", invoiceId: invoice._id.toString(), days },
@@ -131,7 +132,7 @@ async function notifyAdmins(invoice: any, days: number, invoiceUrl: string) {
           ...amountAndDateParameters("invoice_due_today", invoice),
         ]
       // invoice_followup_alert (the Meta name) already says "is {{4}}".
-      : [admin.name || "Admin", invoice.invoiceNumber, invoice.student.name || "Student", "due in 3 days", formatINR(invoice.totalAmount)],
+      : [admin.name || "Admin", invoice.invoiceNumber, invoice.student.name || "Student", "due in 3 days", invoiceAmountLabel(invoice)],
       metadata: { kind: "monthly_invoice_admin_reminder", invoiceId: invoice._id.toString(), days, href: "/fees/invoices" },
   })));
   return admins.length;
@@ -147,7 +148,7 @@ async function notifyOverdueInvoiceStaff(invoice: any, days: number) {
       recipient.name || "Admin",
       invoice.invoiceNumber,
       invoice.student?.name || invoice.title || "Student",
-      formatINR(invoice.totalAmount),
+      invoiceAmountLabel(invoice),
       new Date(invoice.dueDate).toLocaleDateString("en-IN"),
     ],
     metadata: {

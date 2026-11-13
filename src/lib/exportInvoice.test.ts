@@ -44,3 +44,42 @@ describe("export invoices", () => {
     expect(update).toEqual({ status: "overdue" });
   });
 });
+
+describe("foreign-currency plans and payment links", () => {
+  it("formats rupees and foreign currencies", async () => {
+    const { moneyIn } = await import("./exportInvoice");
+    expect(moneyIn(22500, "USD")).toBe("USD 225.00");
+    expect(moneyIn(22500, "INR")).toMatch(/225\.00/);
+  });
+
+  it("names the client's country without guessing a shared dial code", async () => {
+    const { exportCountryFor } = await import("./exportInvoice");
+    expect(exportCountryFor({ country: "Germany" })).toBe("Germany");
+    expect(exportCountryFor({ country: "India" }, "United Kingdom")).toBe("United Kingdom");
+    expect(exportCountryFor({}, "United States / Canada")).toBe("Outside India");
+  });
+
+  it("raises an export invoice from a foreign plan at the plan's rate", async () => {
+    const { exportSupplyFromPlan } = await import("./exportInvoice");
+    const plan = { amount: 1901250, exportPricing: { currency: "USD", foreignAmount: 22500, exchangeRate: 84.5 } };
+    expect(exportSupplyFromPlan(plan, 1901250, "United States", { lutArn: "AD1", lutFiledOn: "2026-11-10" })).toEqual({
+      currency: "USD", foreignAmount: 22500, exchangeRate: 84.5, country: "United States", lutArn: "AD1", lutFiledOn: "2026-11-10",
+    });
+    expect(exportSupplyFromPlan(plan, 845000, "United States", { lutArn: "AD1" })?.foreignAmount).toBe(10000);
+    expect(exportSupplyFromPlan({ amount: 100 }, 100, "X", { lutArn: "AD1" })).toBeUndefined();
+  });
+
+  it("asks Razorpay links for the foreign total of an export invoice", async () => {
+    const { invoiceLinkAmount } = await import("./exportInvoice");
+    expect(invoiceLinkAmount({ totalAmount: 1901250, amount: 1901250, exportSupply: { currency: "USD", foreignAmount: 22500, exchangeRate: 84.5 } })).toEqual({ amount: 22500, currency: "USD" });
+    expect(invoiceLinkAmount({ totalAmount: 500000 })).toEqual({ amount: 500000, currency: "INR" });
+  });
+
+  it("reads the rupees Razorpay converted a foreign payment into", async () => {
+    const { razorpayInrAmount, impliedRate } = await import("./exportInvoice");
+    expect(razorpayInrAmount({ amount: 22500, currency: "USD", base_amount: 1893000, base_currency: "INR" })).toBe(1893000);
+    expect(razorpayInrAmount({ amount: 22500, currency: "USD" })).toBeNull();
+    expect(razorpayInrAmount({ amount: 500000, currency: "INR" })).toBe(500000);
+    expect(impliedRate(22500, 1893000)).toBe(84.1333);
+  });
+});

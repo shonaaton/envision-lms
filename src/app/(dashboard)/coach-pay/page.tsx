@@ -2,6 +2,7 @@ import Link from "next/link";
 import { AlertTriangle, BadgeIndianRupee, CalendarClock, Gavel, Inbox, Languages, Layers, Receipt, Repeat, ScrollText, UserCheck, Users } from "lucide-react";
 
 import { DataPanel, EmptyState, PageHeader, StatCard } from "@/components/common/PageHeader";
+import { CoachPayTabs } from "@/components/coach-pay/CoachPayTabs";
 import { PayPeriodFilter } from "@/components/coach-pay/PayPeriodFilter";
 import { SessionRateDialog } from "@/components/coach-pay/SessionRateDialog";
 import { PAY_KIND_LABELS, PAY_PLAN_LABELS, PAY_STATUS_LABELS, RATE_SCOPE_LABELS, formatHours, type PayEvent } from "@/lib/coachPay";
@@ -100,6 +101,7 @@ export default async function CoachPayPage({
 
   return (
     <div className="min-h-screen bg-slate-50 px-4 py-4 text-slate-950 sm:px-6 lg:px-8">
+      {viewer.canViewProfitability && <CoachPayTabs active="payments" month={period.month} />}
       <PageHeader
         eyebrow={viewer.canViewAll ? "Payroll workspace" : "My earnings"}
         title={viewer.canViewAll ? "All Coach Payments" : "My Teaching Earnings"}

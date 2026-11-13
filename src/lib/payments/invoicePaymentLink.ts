@@ -4,8 +4,9 @@ import { cancelPaymentLink, createPaymentLink, razorpayConfigured } from "@/lib/
 import { canonicalPhoneNumber } from "@/lib/phoneCountryCodes";
 import { collectsThroughRazorpay } from "@/lib/payments/gstAccount";
 import { upiPayPageUrl } from "@/lib/payments/upiPayment";
+import { invoiceLinkAmount } from "@/lib/exportInvoice";
 
-type StoredLink = { id?: string; shortUrl?: string; amount?: number; status?: string } | null | undefined;
+type StoredLink = { id?: string; shortUrl?: string; amount?: number; currency?: string; status?: string } | null | undefined;
 
 export type InvoiceLinkAction = "none" | "reuse" | "create" | "replace";
 
@@ -15,13 +16,15 @@ export type InvoiceLinkAction = "none" | "reuse" | "create" | "replace";
  * would collect the wrong figure: it is cancelled and a new one made. A non-GST
  * invoice never gets one: Razorpay pays into the GST account.
  */
-export function decideInvoiceLinkAction(invoice: { status?: string; totalAmount?: number; invoiceMode?: string; gstPercentage?: number; razorpayLink?: StoredLink }): InvoiceLinkAction {
+export function decideInvoiceLinkAction(invoice: { status?: string; totalAmount?: number; amount?: number; invoiceMode?: string; gstPercentage?: number; exportSupply?: any; razorpayLink?: StoredLink }): InvoiceLinkAction {
   if (invoice.status === "paid" || invoice.status === "cancelled" || invoice.status === "draft") return "none";
   if (!collectsThroughRazorpay(invoice)) return "none";
   if (!(Number(invoice.totalAmount) > 0)) return "none";
   const link = invoice.razorpayLink;
   if (!link?.id || link.status !== "active") return "create";
-  return Number(link.amount) === Number(invoice.totalAmount) ? "reuse" : "replace";
+  // An export invoice's link is in the client's currency, for its foreign total.
+  const due = invoiceLinkAmount(invoice);
+  return Number(link.amount) === due.amount && String(link.currency || "INR") === due.currency ? "reuse" : "replace";
 }
 
 /**
@@ -78,8 +81,10 @@ export async function invoicePaymentLink(invoiceId: string): Promise<InvoicePayL
     const referenceId = `${invoice.invoiceNumber || invoice._id}-L${counter?.razorpayLinkSeq || 1}`;
     const student = invoice.student || {};
     const phone = canonicalPhoneNumber(student.phone, student.countryCode);
+    const due = invoiceLinkAmount(invoice);
     const link = await createPaymentLink({
-      amount: invoice.totalAmount,
+      amount: due.amount,
+      currency: due.currency,
       description: `Envision Chess Academy - ${invoice.invoiceNumber || "Invoice"}${student.name ? ` for ${student.name}` : ""}`,
       referenceId,
       customer: {
@@ -90,7 +95,7 @@ export async function invoicePaymentLink(invoiceId: string): Promise<InvoicePayL
       notes: { kind: "invoice", invoiceId: String(invoice._id) },
     });
     await Invoice.findByIdAndUpdate(invoiceId, {
-      razorpayLink: { id: link.id, shortUrl: link.shortUrl, amount: invoice.totalAmount, referenceId, status: "active", createdAt: new Date() },
+      razorpayLink: { id: link.id, shortUrl: link.shortUrl, amount: due.amount, currency: due.currency, referenceId, status: "active", createdAt: new Date() },
     });
     return { ok: true, url: link.shortUrl, kind: "razorpay" };
   } catch (error: any) {

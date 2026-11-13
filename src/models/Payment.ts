@@ -7,6 +7,10 @@ const PaymentSchema = new Schema(
     refId: { type: Schema.Types.ObjectId }, // Classroom / Booking / Tournament id
     amount: { type: Number, required: true }, // paise
     currency: { type: String, default: "INR" },
+    // A payment the client made in a foreign currency (export invoices): amount
+    // above stays the INR paise Razorpay converted it into; these say what was paid.
+    foreignCurrency: String,
+    foreignAmount: Number,
     razorpayOrderId: { type: String, index: true },
     razorpayPaymentId: String,
     razorpaySignature: String,

@@ -6,6 +6,7 @@ import { FeePlansWorkspace } from "@/components/fees/FeePlanForms";
 import { requireFeesAccess } from "@/lib/feesAccess";
 import { redirect } from "next/navigation";
 import { recordActivity } from "@/lib/activity";
+import { inrPaiseFor, isExportCurrency } from "@/lib/exportInvoice";
 
 export const dynamic = "force-dynamic";
 
@@ -15,6 +16,22 @@ function paise(value: FormDataEntryValue | null) {
 
 function overdueDays(value: FormDataEntryValue | null) {
   return Math.min(7, Math.max(0, Number(value || 7)));
+}
+
+/**
+ * The plan's price. An export plan is priced in a foreign currency for clients
+ * abroad (no GST under LUT): amount is stored as INR at the plan's rate, the
+ * foreign price beside it. Null when the export fields are incomplete.
+ */
+function planPricing(formData: FormData) {
+  if (String(formData.get("gstMode") || "") !== "export") {
+    return { amount: paise(formData.get("amount")), ...taxDetails(formData), exportPricing: null as null | { currency: string; foreignAmount: number; exchangeRate: number } };
+  }
+  const currency = String(formData.get("currency") || "").toUpperCase();
+  const foreignAmount = paise(formData.get("amount"));
+  const exchangeRate = Math.round(Number(formData.get("exchangeRate") || 0) * 10000) / 10000;
+  if (!isExportCurrency(currency) || !(foreignAmount > 0) || !(exchangeRate > 0) || exchangeRate > 10000) return null;
+  return { amount: inrPaiseFor(foreignAmount, exchangeRate), gstMode: "non_gst", gstPercentage: 0, exportPricing: { currency, foreignAmount, exchangeRate } };
 }
 
 function taxDetails(formData: FormData) {
@@ -33,13 +50,15 @@ async function createPlan(formData: FormData) {
   if (!session) throw new Error("Forbidden");
   await dbConnect();
   const type = String(formData.get("type")) as "monthly" | "credits";
-  const tax = taxDetails(formData);
+  const tax = planPricing(formData);
+  if (!tax) redirect("/fees/fee-plans?error=export");
   const plan = await FeePlan.create({
     name: formData.get("name"),
     type,
-    amount: paise(formData.get("amount")),
+    amount: tax.amount,
     gstMode: tax.gstMode,
     gstPercentage: tax.gstPercentage,
+    ...(tax.exportPricing ? { exportPricing: tax.exportPricing } : {}),
     credits: type === "credits" ? Number(formData.get("credits") || 0) : 0,
     billingCycle: "monthly",
     billingDay: Number(formData.get("billingDay") || 1),
@@ -54,7 +73,7 @@ async function createPlan(formData: FormData) {
     label: `Created ${type} fee plan ${plan.name}`,
     entityType: "FeePlan",
     entityId: plan._id.toString(),
-    metadata: { planName: plan.name, planType: type, amount: plan.amount, credits: plan.credits || 0, source: "manual_admin" },
+    metadata: { planName: plan.name, planType: type, amount: plan.amount, credits: plan.credits || 0, exportPricing: tax.exportPricing || undefined, source: "manual_admin" },
   });
   revalidatePath("/fees/fee-plans");
   redirect("/fees/fee-plans?success=created");
@@ -67,12 +86,14 @@ async function updatePlan(formData: FormData) {
   await dbConnect();
   const id = String(formData.get("id"));
   const type = String(formData.get("type")) as "monthly" | "credits";
-  const tax = taxDetails(formData);
+  const tax = planPricing(formData);
+  if (!tax) redirect("/fees/fee-plans?error=export");
   const before: any = await FeePlan.findById(id).lean();
   const plan: any = await FeePlan.findByIdAndUpdate(id, {
+    ...(tax.exportPricing ? { exportPricing: tax.exportPricing } : { $unset: { exportPricing: "" } }),
     name: formData.get("name"),
     type,
-    amount: paise(formData.get("amount")),
+    amount: tax.amount,
     gstMode: tax.gstMode,
     gstPercentage: tax.gstPercentage,
     credits: type === "credits" ? Number(formData.get("credits") || 0) : 0,
@@ -94,6 +115,8 @@ async function updatePlan(formData: FormData) {
         planType: plan.type,
         previousAmount: before?.amount,
         amount: plan.amount,
+        previousExportPricing: before?.exportPricing || undefined,
+        exportPricing: plan.exportPricing || undefined,
         previousCredits: before?.credits || 0,
         credits: plan.credits || 0,
         source: "manual_admin",
@@ -179,6 +202,9 @@ export default async function FeePlansPage({ searchParams }: { searchParams?: Pr
       amount: plan.amount,
       gstMode: plan.gstMode || "non_gst",
       gstPercentage: plan.gstMode === "non_gst" ? 0 : plan.gstPercentage || 0,
+      exportPricing: plan.exportPricing?.currency
+        ? { currency: String(plan.exportPricing.currency), foreignAmount: Number(plan.exportPricing.foreignAmount || 0), exchangeRate: Number(plan.exportPricing.exchangeRate || 0) }
+        : null,
       credits: plan.credits || 0,
       lateFeeAmount: plan.lateFeeAmount || 50000,
       lateFeeAfterDays: Math.min(plan.lateFeeAfterDays || 7, 7),
@@ -218,6 +244,11 @@ export default async function FeePlansPage({ searchParams }: { searchParams?: Pr
       {success && (
         <div className="mb-4 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-800">
           {success === "created" ? "Fee plan created successfully." : success === "updated" ? "Fee plan updated successfully." : success === "archived" ? "Fee plan archived successfully." : "Fee plan deleted permanently."}
+        </div>
+      )}
+      {error === "export" && (
+        <div className="mb-4 rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-800">
+          An export plan needs a currency, an amount above zero and the exchange rate (rupees for 1 unit). Nothing was saved.
         </div>
       )}
       {error === "linked" && (

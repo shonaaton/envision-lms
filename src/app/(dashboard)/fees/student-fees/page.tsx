@@ -1,5 +1,5 @@
 import { dbConnect } from "@/lib/db";
-import { createInvoice, ensureMonthlyInvoices } from "@/lib/fees";
+import { createInvoice, ensureMonthlyInvoices, planPriceForAssignment, setStandingDiscount } from "@/lib/fees";
 import { formatINR } from "@/lib/utils";
 import { CreditLedger, FeeAssignment, FeePlan, Invoice } from "@/models/Fee";
 import { User } from "@/models/User";
@@ -117,7 +117,7 @@ async function assignPlan(formData: FormData) {
           assignment: assignment._id.toString(),
           type: "credits",
           title: `${plan.name} credit recharge`,
-          amount: Number(plan.amount || 0),
+          ...planPriceForAssignment(plan, assignment),
           dueDate: firstDueDate,
           credits: Number(plan.credits || 0),
           notes: "Generated when credit plan was assigned",
@@ -145,7 +145,7 @@ async function assignPlan(formData: FormData) {
           assignment: assignment._id.toString(),
           type: "monthly",
           title: `${plan.name} - ${firstDueDate.toLocaleString("en-IN", { month: "long", year: "numeric" })}`,
-          amount: Number(plan.amount || 0),
+          ...planPriceForAssignment(plan, assignment),
           dueDate: firstDueDate,
           notes: "Generated when monthly plan was assigned",
           invoiceMode: plan.gstMode || "non_gst",
@@ -187,6 +187,31 @@ async function assignPlan(formData: FormData) {
     redirect("/fees/student-fees?error=assignment-failed");
   }
   redirect("/fees/student-fees?success=assigned");
+}
+
+async function updateStandingDiscount(formData: FormData) {
+  "use server";
+  const session = await requireFeesAccess("edit", "studentFees");
+  if (!session) throw new Error("Forbidden");
+  await dbConnect();
+  const assignmentId = String(formData.get("assignment") || "");
+  if (!Types.ObjectId.isValid(assignmentId)) redirect("/fees/student-fees?view=records&error=invalid-selection");
+  const rupees = Number(formData.get("discountAmount") || 0);
+  if (!Number.isFinite(rupees) || rupees < 0) redirect("/fees/student-fees?view=records&error=invalid-discount");
+  const assignment: any = await FeeAssignment.findById(assignmentId).populate("plan").lean();
+  if (!assignment) redirect("/fees/student-fees?view=records&error=missing-record");
+  const discountAmount = Math.round(rupees * 100);
+  if (discountAmount > Number(assignment.plan?.amount || 0)) redirect("/fees/student-fees?view=records&error=invalid-discount");
+  await setStandingDiscount({
+    assignmentId,
+    discountAmount,
+    note: String(formData.get("discountNote") || "").trim() || "Set from Student Records",
+    actor: (session.user as any).id,
+  });
+  revalidatePath("/fees/student-fees");
+  revalidatePath("/fees/invoices");
+  revalidatePath("/fees");
+  redirect("/fees/student-fees?view=records&success=discount");
 }
 
 async function deleteFeeAssignment(formData: FormData) {
@@ -318,10 +343,12 @@ export default async function StudentFeesPage({ searchParams }: { searchParams?:
         </div>
       </div>
 
-      {(success === "assigned" || success === "deleted" || success === "imported") && (
+      {(success === "assigned" || success === "deleted" || success === "imported" || success === "discount") && (
         <div className="mb-4 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-800">
           {success === "deleted"
             ? "Fee record deleted successfully."
+            : success === "discount"
+              ? "Standing discount saved. New invoices and any unpaid ones for this student now use it."
             : success === "imported"
               ? `Legacy data imported successfully. Attendance rows: ${attendanceImported}, invoice rows: ${invoicesImported}, summaries applied: ${summariesApplied}.`
               : "Fee plan assigned successfully."}
@@ -333,6 +360,8 @@ export default async function StudentFeesPage({ searchParams }: { searchParams?:
             ? "Please select a valid student and fee plan."
             : error === "invalid-date"
               ? "Please choose a valid effective date."
+              : error === "invalid-discount"
+                ? "The discount must be zero or more, and no more than the plan price."
               : error === "missing-file"
                 ? "Please upload the CSV file for this student."
               : error === "missing-record"
@@ -391,7 +420,7 @@ export default async function StudentFeesPage({ searchParams }: { searchParams?:
             ) : (
             <div className="overflow-x-auto">
               <table className="min-w-full text-left text-sm">
-                <thead className="border-b bg-slate-50 text-xs uppercase tracking-[0.08em] text-slate-500"><tr><th className="px-3 py-3">Student</th><th className="px-3 py-3">Plan</th><th className="px-3 py-3">Type</th><th className="px-3 py-3">Outstanding</th><th className="px-3 py-3">Upcoming</th><th className="px-3 py-3">Late Fee</th><th className="px-3 py-3">Credits</th><th className="px-3 py-3">Status</th><th className="px-3 py-3">Last Paid</th><th className="px-3 py-3">Actions</th></tr></thead>
+                <thead className="border-b bg-slate-50 text-xs uppercase tracking-[0.08em] text-slate-500"><tr><th className="px-3 py-3">Student</th><th className="px-3 py-3">Plan</th><th className="px-3 py-3">Type</th><th className="px-3 py-3">Outstanding</th><th className="px-3 py-3">Upcoming</th><th className="px-3 py-3">Late Fee</th><th className="px-3 py-3">Credits</th><th className="px-3 py-3">Discount / invoice</th><th className="px-3 py-3">Status</th><th className="px-3 py-3">Last Paid</th><th className="px-3 py-3">Actions</th></tr></thead>
                 <tbody>
                   {assignments.map((a: any) => {
                     const studentInvoices = invoices.filter((i: any) => i.student?._id?.toString() === a.student?._id?.toString());
@@ -415,6 +444,14 @@ export default async function StudentFeesPage({ searchParams }: { searchParams?:
                         <td className="px-3 py-3 font-semibold text-sky-700">{formatINR(upcoming)}</td>
                         <td className="px-3 py-3">{formatINR(lateFees)}</td>
                         <td className="px-3 py-3">{a.type === "credits" ? `${a.creditBalance} left` : "-"}</td>
+                        <td className="px-3 py-3">
+                          <form action={updateStandingDiscount} className="flex items-center gap-1.5" title={a.discountNote || "Taken off the plan price on every invoice"}>
+                            <input type="hidden" name="assignment" value={a._id.toString()} />
+                            <span className="text-xs text-slate-500">₹</span>
+                            <input name="discountAmount" type="number" min="0" step="0.01" defaultValue={a.discountAmount ? String(a.discountAmount / 100) : "0"} aria-label="Standing discount per invoice" className="h-8 w-20 rounded-md border border-slate-200 px-2 text-xs" />
+                            <button className="rounded-md border border-slate-200 px-2 py-1 text-xs font-semibold text-slate-700">Save</button>
+                          </form>
+                        </td>
                         <td className="px-3 py-3"><span className={`rounded-full px-2 py-1 text-xs font-semibold ${outstanding > 0 ? "bg-amber-50 text-amber-700" : upcoming > 0 ? "bg-sky-50 text-sky-700" : "bg-emerald-50 text-emerald-700"}`}>{outstanding > 0 ? "Outstanding" : upcoming > 0 ? "Upcoming" : "Clear"}</span></td>
                         <td className="px-3 py-3 text-xs text-slate-500">{lastPaid ? new Date(lastPaid.paidAt).toLocaleDateString("en-IN") : "-"}</td>
                         <td className="px-3 py-3">

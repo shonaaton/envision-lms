@@ -30,6 +30,8 @@ async function saveAcademySetup(formData: FormData) {
         invoiceMode: formData.get("invoiceMode") === "gst" ? "gst" : "non_gst",
         gstPercentage: Number(formData.get("gstPercentage") || 0),
         invoicePrefix: String(formData.get("invoicePrefix") || "ENV").trim() || "ENV",
+        lutArn: String(formData.get("lutArn") || "").trim().toUpperCase(),
+        lutFiledOn: /^\d{4}-\d{2}-\d{2}$/.test(String(formData.get("lutFiledOn") || "")) ? String(formData.get("lutFiledOn")) : "",
         lowCreditThreshold: Number(formData.get("lowCreditThreshold") || 1),
         logoUrl: ACADEMY_LOGO_URL,
         signatoryUrl: ACADEMY_SIGNATURE_URL,
@@ -44,7 +46,7 @@ async function saveAcademySetup(formData: FormData) {
       entityType: "AcademySettings",
       entityId: settings._id.toString(),
       metadata: {
-        fields: ["academyName", "registeredAddress", "gstNumber", "email", "phone", "invoiceFooter", "invoiceMode", "gstPercentage", "invoicePrefix", "lowCreditThreshold"],
+        fields: ["academyName", "registeredAddress", "gstNumber", "email", "phone", "invoiceFooter", "invoiceMode", "gstPercentage", "invoicePrefix", "lutArn", "lutFiledOn", "lowCreditThreshold"],
         source: "manual_admin",
       },
     });
@@ -100,6 +102,14 @@ export default async function AcademySettingsPage({ searchParams }: { searchPara
           </select>
           <input name="gstPercentage" defaultValue={settings.gstPercentage} type="number" min="0" step="0.01" className="rounded-md border px-3 py-2 text-sm" placeholder="GST Percentage" />
           <input name="lowCreditThreshold" defaultValue={settings.lowCreditThreshold} type="number" min="0" className="rounded-md border px-3 py-2 text-sm" placeholder="Low Credit Alert Threshold" />
+          <label className="text-xs font-semibold text-slate-600">
+            LUT ARN (export invoices without GST)
+            <input name="lutArn" defaultValue={settings.lutArn} className="mt-1 block w-full rounded-md border px-3 py-2 text-sm font-normal text-slate-950" placeholder="e.g. AD191126003090O" />
+          </label>
+          <label className="text-xs font-semibold text-slate-600">
+            LUT filed on (refile every April)
+            <input name="lutFiledOn" type="date" defaultValue={settings.lutFiledOn} className="mt-1 block w-full rounded-md border px-3 py-2 text-sm font-normal text-slate-950" />
+          </label>
           <textarea name="registeredAddress" defaultValue={settings.registeredAddress} className="md:col-span-2 rounded-md border px-3 py-2 text-sm" placeholder="Registered Address" />
           <textarea name="invoiceFooter" defaultValue={settings.invoiceFooter} className="md:col-span-2 rounded-md border px-3 py-2 text-sm" placeholder="Invoice Footer Details" />
         </div>

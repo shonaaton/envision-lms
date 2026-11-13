@@ -50,14 +50,16 @@ export function invoiceBreakup(amount: number, lateFee: number, settings: any, o
  * they are marked overdue and their amounts stay as issued.
  */
 export function overdueInvoiceUpdate(
-  invoice: { type?: string; amount: number; dueDate: Date; invoiceMode?: string | null; gstPercentage?: number | null },
+  invoice: { type?: string; amount: number; dueDate: Date; invoiceMode?: string | null; gstPercentage?: number | null; exportSupply?: { currency?: string | null } | null },
   plan: { lateFeeAfterDays?: number | null; lateFeeAmount?: number | null; gstMode?: string | null; gstPercentage?: number | null } | null | undefined,
   now: Date,
 ) {
   const DAY = 24 * 60 * 60 * 1000;
   const lateAfterDays = Math.min(7, Math.max(0, Number(plan?.lateFeeAfterDays ?? 7)));
   if (new Date(invoice.dueDate) >= new Date(now.getTime() - lateAfterDays * DAY)) return null;
-  if (invoice.type === "manual" || !plan) return { status: "overdue" as const };
+  // An export (LUT) invoice is billed in a foreign currency with no GST: an INR
+  // late fee or the plan's GST would break both, so it is only marked overdue.
+  if (invoice.type === "manual" || !plan || invoice.exportSupply?.currency) return { status: "overdue" as const };
   const lateFee = Number(plan.lateFeeAmount ?? 50000);
   const breakup = invoiceBreakup(invoice.amount, lateFee, {}, {
     gstMode: invoice.invoiceMode || plan.gstMode || "non_gst",

@@ -32,6 +32,8 @@ export async function getAcademySettings() {
       gstNumber: (existing as any).gstNumber || ACADEMY_DEFAULTS.gstNumber,
       email: (existing as any).email || ACADEMY_DEFAULTS.email,
       phone: (existing as any).phone || ACADEMY_DEFAULTS.phone,
+      lutArn: (existing as any).lutArn || ACADEMY_DEFAULTS.lutArn,
+      lutFiledOn: (existing as any).lutFiledOn || ACADEMY_DEFAULTS.lutFiledOn,
       authorizedSignatory: ACADEMY_DEFAULTS.authorizedSignatory,
       logoUrl: ACADEMY_LOGO_URL,
       signatoryUrl: ACADEMY_SIGNATURE_URL,
@@ -142,6 +144,7 @@ export async function createInvoice(input: {
   invoiceMode?: "included" | "excluded" | "non_gst";
   gstPercentage?: number;
   creationKey?: string;
+  exportSupply?: import("@/lib/exportInvoice").ExportSupply;
   activity?: {
     actor?: string;
     source?: "manual_admin" | "plan_assignment" | "monthly_system" | "backend";

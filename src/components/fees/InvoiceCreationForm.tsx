@@ -19,6 +19,7 @@ import {
   X,
 } from "lucide-react";
 import { invoiceBreakup, type InvoiceTaxMode } from "@/lib/invoiceMath";
+import { EXPORT_CURRENCIES, formatForeign, inrPaiseFor, lutCovers, lutDateLabel, lutValidUntil } from "@/lib/exportInvoice";
 
 type StudentOption = { id: string; name: string; username?: string; isActive?: boolean };
 type PlanOption = { id: string; name: string; type: "monthly" | "credits"; amount: number; credits: number; gstMode?: InvoiceTaxMode; gstPercentage?: number };
@@ -36,6 +37,8 @@ export type CreatedInvoiceSummary = {
   status?: string;
   paymentError?: string;
   alreadyCreated?: boolean;
+  exportCurrency?: string;
+  foreignAmount?: number;
 };
 
 export type CreateInvoiceResult =
@@ -44,6 +47,8 @@ export type CreateInvoiceResult =
   | { status: "error"; error: string };
 
 type Source = "plan" | "custom";
+/** The three GST modes, plus export of services under LUT (no GST, foreign currency). */
+type TaxChoice = InvoiceTaxMode | "export";
 type PaymentMode = "upi" | "bank_transfer" | "cash" | "other";
 
 const PAYMENT_MODE_OPTIONS: Array<[PaymentMode, string]> = [
@@ -55,10 +60,11 @@ const PAYMENT_MODE_OPTIONS: Array<[PaymentMode, string]> = [
 
 const GST_RATES = [5, 12, 18, 28];
 
-const TAX_OPTIONS: Array<{ value: InvoiceTaxMode; label: string; help: string }> = [
+const TAX_OPTIONS: Array<{ value: TaxChoice; label: string; help: string }> = [
   { value: "included", label: "GST included", help: "The amount is the final price. GST is taken out of it, never added." },
   { value: "excluded", label: "Add GST on top", help: "The amount is the base price. GST is added to it." },
   { value: "non_gst", label: "No GST", help: "Non-GST invoice with no tax lines." },
+  { value: "export", label: "Export (LUT)", help: "Client outside India. No GST under the LUT, billed in their currency." },
 ];
 
 function currency(paise: number) {
@@ -90,6 +96,7 @@ function timeAgo(iso: string) {
 }
 
 function taxModeLabel(mode?: string) {
+  if (mode === "export") return "Export under LUT";
   if (mode === "included") return "GST included";
   if (mode === "excluded") return "GST extra";
   return "Non-GST";
@@ -213,6 +220,7 @@ export function InvoiceCreationForm({
   initialStudentId,
   canRecordPayment = false,
   canRecordCreditPayment = false,
+  lut,
 }: {
   students: StudentOption[];
   plans: PlanOption[];
@@ -222,6 +230,7 @@ export function InvoiceCreationForm({
   initialStudentId?: string;
   canRecordPayment?: boolean;
   canRecordCreditPayment?: boolean;
+  lut?: { arn: string; filedOn: string };
 }) {
   const router = useRouter();
   const today = localDateKey();
@@ -238,9 +247,13 @@ export function InvoiceCreationForm({
   const [source, setSource] = useState<Source>(startPlans.length > 0 ? "plan" : "custom");
   const [planId, setPlanId] = useState(startPlan?.id || "");
   const [amount, setAmount] = useState(startPlan ? String(startPlan.amount / 100) : "");
-  const [taxMode, setTaxMode] = useState<InvoiceTaxMode>(startPlan ? startPlan.gstMode || "non_gst" : "included");
+  const [taxMode, setTaxMode] = useState<TaxChoice>(startPlan ? startPlan.gstMode || "non_gst" : "included");
   const [gstRate, setGstRate] = useState(startPlan ? String(startPlan.gstPercentage || 18) : "18");
   const [customTitle, setCustomTitle] = useState<string | null>(null);
+  const [currencyCode, setCurrencyCode] = useState<string>("USD");
+  const [exchangeRate, setExchangeRate] = useState("");
+  const [country, setCountry] = useState("");
+  const [clientAddress, setClientAddress] = useState("");
   const [invoiceDate, setInvoiceDate] = useState(today);
   const [dueDate, setDueDate] = useState(addDays(today, 7));
   const [referenceNumber, setReferenceNumber] = useState("");
@@ -261,9 +274,20 @@ export function InvoiceCreationForm({
   const studentPlans = plansFor(studentId);
   const plan = source === "plan" ? studentPlans.find((item) => item.id === planId) : undefined;
 
-  const amountPaise = Math.round(Number(amount || 0) * 100);
-  const rate = taxMode === "non_gst" ? 0 : Number(gstRate || 0);
-  const breakup = invoiceBreakup(Number.isFinite(amountPaise) ? amountPaise : 0, 0, {}, { gstMode: taxMode, gstPercentage: rate });
+  const isExport = taxMode === "export";
+  // For an export invoice the amount is typed in the foreign currency; the
+  // invoice is saved in INR at the entered rate, exactly as the server does.
+  const enteredMinor = Math.round(Number(amount || 0) * 100);
+  const rateToInr = Number(exchangeRate || 0);
+  const amountPaise = isExport ? inrPaiseFor(enteredMinor, rateToInr) : enteredMinor;
+  const gstMode: InvoiceTaxMode = isExport ? "non_gst" : taxMode;
+  const rate = gstMode === "non_gst" ? 0 : Number(gstRate || 0);
+  const breakup = invoiceBreakup(Number.isFinite(amountPaise) ? amountPaise : 0, 0, {}, { gstMode, gstPercentage: rate });
+  const foreign = (minor: number) => formatForeign(minor, currencyCode);
+  /** What the invoice says: the foreign amount for an export, rupees otherwise. */
+  const shown = (paise: number) => (isExport ? foreign(enteredMinor) : currency(paise));
+  const lutUntil = lutValidUntil(lut?.filedOn);
+  const lutOutOfCover = isExport && Boolean(lut?.arn) && Boolean(invoiceDate) && !lutCovers(invoiceDate, lut?.filedOn);
 
   const autoTitle = useMemo(() => {
     if (!student) return "";
@@ -275,8 +299,13 @@ export function InvoiceCreationForm({
   const missing: string[] = [];
   if (!student) missing.push("Choose a student");
   if (source === "plan" && !plan) missing.push("Pick a plan");
-  if (!(amountPaise > 0)) missing.push("Enter the amount");
-  if (taxMode !== "non_gst" && !(rate > 0 && rate <= 100)) missing.push("Enter the GST rate");
+  if (!(enteredMinor > 0)) missing.push("Enter the amount");
+  if (isExport) {
+    if (!lut?.arn) missing.push("Add the LUT ARN in Academy Setup");
+    if (!(rateToInr > 0)) missing.push(`Enter the exchange rate for ${currencyCode}`);
+    if (!country.trim()) missing.push("Enter the client's country");
+  }
+  if (gstMode !== "non_gst" && !(rate > 0 && rate <= 100)) missing.push("Enter the GST rate");
   if (!invoiceDate || !dueDate) missing.push("Set both dates");
   else if (dueDate < invoiceDate) missing.push("Due date is before the invoice date");
   if (!title.trim()) missing.push("Add a title");
@@ -349,6 +378,12 @@ export function InvoiceCreationForm({
     formData.set("plan", plan?.id || "");
     formData.set("amount", amount);
     formData.set("invoiceMode", taxMode);
+    if (isExport) {
+      formData.set("currency", currencyCode);
+      formData.set("exchangeRate", exchangeRate);
+      formData.set("country", country.trim());
+      formData.set("clientAddress", clientAddress.trim());
+    }
     formData.set("gstPercentage", String(rate));
     formData.set("title", title.trim());
     formData.set("invoiceDate", invoiceDate);
@@ -402,8 +437,9 @@ export function InvoiceCreationForm({
             </div>
           </div>
           <div className="rounded-lg bg-white px-4 py-2.5 text-right shadow-sm">
-            <div className="text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500">{created.status === "paid" ? "Total paid" : "Total payable"} · {taxModeLabel(created.invoiceMode)}</div>
-            <div className="text-2xl font-black text-slate-950">{currency(created.totalAmount)}</div>
+            <div className="text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500">{created.status === "paid" ? "Total paid" : "Total payable"} · {created.exportCurrency ? "Export under LUT" : taxModeLabel(created.invoiceMode)}</div>
+            <div className="text-2xl font-black text-slate-950">{created.exportCurrency ? formatForeign(created.foreignAmount || 0, created.exportCurrency) : currency(created.totalAmount)}</div>
+            {created.exportCurrency ? <div className="text-xs font-semibold text-slate-500">{currency(created.totalAmount)} in the books</div> : null}
             <span className={`mt-1 inline-flex rounded-full px-2 py-0.5 text-[10px] font-black uppercase tracking-wide ${created.status === "paid" ? "bg-emerald-100 text-emerald-800" : "bg-amber-100 text-amber-800"}`}>{created.status === "paid" ? "Paid" : "Unpaid"}</span>
           </div>
         </div>
@@ -419,7 +455,7 @@ export function InvoiceCreationForm({
     );
   }
 
-  const amountLabel = taxMode === "included" ? "Final amount the student pays (GST inside)" : taxMode === "excluded" ? "Base amount before GST" : "Amount";
+  const amountLabel = isExport ? `Amount in ${currencyCode}` : taxMode === "included" ? "Final amount the student pays (GST inside)" : taxMode === "excluded" ? "Base amount before GST" : "Amount";
 
   return (
     <div className="rounded-xl border border-slate-200 bg-white shadow-sm shadow-brand-900/5">
@@ -494,7 +530,7 @@ export function InvoiceCreationForm({
 
           <section className={student ? "" : "pointer-events-none opacity-50"}>
             <SectionTitle step={3} title="Amount and GST" hint={plan ? "Filled in from the plan. Change anything that is different this time." : undefined} />
-            <div className="grid gap-2 sm:grid-cols-3" role="radiogroup" aria-label="GST treatment">
+            <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4" role="radiogroup" aria-label="GST treatment">
               {TAX_OPTIONS.map((option) => {
                 const active = taxMode === option.value;
                 return (
@@ -519,7 +555,7 @@ export function InvoiceCreationForm({
               <div>
                 <Label htmlFor="invoice-amount">{amountLabel}</Label>
                 <div className="relative">
-                  <span className="pointer-events-none absolute left-3 top-2.5 text-sm font-bold text-slate-400">₹</span>
+                  <span className="pointer-events-none absolute left-3 top-2.5 text-sm font-bold text-slate-400">{isExport ? currencyCode : "₹"}</span>
                   <input
                     id="invoice-amount"
                     type="number"
@@ -529,10 +565,24 @@ export function InvoiceCreationForm({
                     value={amount}
                     onChange={(event) => { clearFeedback(); setAmount(event.target.value); }}
                     placeholder="0"
-                    className={`${inputClass} pl-7 text-base font-bold`}
+                    className={`${inputClass} ${isExport ? "pl-14" : "pl-7"} text-base font-bold`}
                   />
                 </div>
               </div>
+              {isExport ? (
+                <div className="grid grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)] gap-2">
+                  <div>
+                    <Label htmlFor="invoice-currency">Currency</Label>
+                    <select id="invoice-currency" value={currencyCode} onChange={(event) => { clearFeedback(); setCurrencyCode(event.target.value); }} className={inputClass}>
+                      {EXPORT_CURRENCIES.map((item) => <option key={item.code} value={item.code}>{item.code} · {item.name}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <Label htmlFor="invoice-exchange-rate">₹ for 1 {currencyCode}</Label>
+                    <input id="invoice-exchange-rate" type="number" inputMode="decimal" min="0" step="0.0001" value={exchangeRate} onChange={(event) => { clearFeedback(); setExchangeRate(event.target.value); }} placeholder="e.g. 84.50" className={inputClass} />
+                  </div>
+                </div>
+              ) : (
               <div>
                 <Label htmlFor="invoice-gst-rate">GST rate</Label>
                 <div className="flex gap-1.5">
@@ -561,16 +611,46 @@ export function InvoiceCreationForm({
                   />
                 </div>
               </div>
+              )}
             </div>
-            {amountPaise > 0 ? (
+            {isExport ? (
+              <div className="mt-3 space-y-3">
+                <div className="grid gap-3 md:grid-cols-2">
+                  <div>
+                    <Label htmlFor="invoice-country">Client&apos;s country</Label>
+                    <input id="invoice-country" value={country} onChange={(event) => { clearFeedback(); setCountry(event.target.value); }} placeholder="e.g. United States" className={inputClass} />
+                  </div>
+                  <div>
+                    <Label htmlFor="invoice-client-address">Client&apos;s address <span className="font-normal text-slate-400">(optional, printed on the invoice)</span></Label>
+                    <input id="invoice-client-address" value={clientAddress} onChange={(event) => setClientAddress(event.target.value)} placeholder="City, state" className={inputClass} />
+                  </div>
+                </div>
+                <p className="text-xs text-slate-500">Use the rate on the invoice date. For a Razorpay payment, divide the rupees Razorpay credited by the {currencyCode} amount.</p>
+                {lut?.arn ? (
+                  <div className={`rounded-lg border px-3 py-2 text-xs ${lutOutOfCover ? "border-amber-300 bg-amber-50 text-amber-900" : "border-slate-200 bg-slate-50 text-slate-600"}`}>
+                    <span className="font-bold text-slate-800">LUT ARN {lut.arn}</span>
+                    {lut.filedOn ? ` · filed ${lutDateLabel(lut.filedOn)}${lutUntil ? `, covers invoices up to ${lutDateLabel(lutUntil)}` : ""}` : ""}
+                    {lutOutOfCover ? <span className="mt-1 block font-semibold">This invoice date is outside the LUT&apos;s cover. File a new LUT and update it in Academy Setup, or change the date.</span> : null}
+                  </div>
+                ) : (
+                  <div className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-800">No LUT ARN is saved. Add it in Academy Setup first.</div>
+                )}
+              </div>
+            ) : null}
+            {enteredMinor > 0 ? (
               <div className="mt-3 overflow-hidden rounded-lg border border-slate-200 text-sm" aria-label="GST breakup">
                 <div className="flex items-center justify-between bg-slate-50 px-3 py-2">
                   <span className="font-bold text-slate-950">Invoice total</span>
-                  <span className="text-lg font-black text-slate-950">{currency(breakup.totalAmount)}</span>
+                  <span className="text-lg font-black text-slate-950">{shown(breakup.totalAmount)}</span>
                 </div>
                 <div className="divide-y divide-slate-100 px-3">
-                  <div className="flex justify-between py-1.5"><span className="text-slate-500">Base amount (taxable value)</span><span className="font-semibold text-slate-800">{currency(breakup.taxableAmount)}</span></div>
-                  {taxMode !== "non_gst" ? (
+                  <div className="flex justify-between py-1.5"><span className="text-slate-500">Base amount (taxable value)</span><span className="font-semibold text-slate-800">{shown(breakup.taxableAmount)}</span></div>
+                  {isExport ? (
+                    <>
+                      <div className="flex justify-between py-1.5"><span className="text-slate-500">IGST</span><span className="text-slate-400">Nil, export under LUT</span></div>
+                      <div className="flex justify-between py-1.5"><span className="text-slate-500">In rupees{rateToInr > 0 ? ` @ ₹${rateToInr}` : ""}</span><span className="font-semibold text-slate-800">{rateToInr > 0 ? currency(breakup.totalAmount) : "Enter the rate"}</span></div>
+                    </>
+                  ) : taxMode !== "non_gst" ? (
                     <>
                       <div className="flex justify-between py-1.5"><span className="text-slate-500">CGST @ {rate / 2}%</span><span className="text-slate-800">{currency(breakup.cgstAmount)}</span></div>
                       <div className="flex justify-between py-1.5"><span className="text-slate-500">SGST @ {rate / 2}%</span><span className="text-slate-800">{currency(breakup.sgstAmount)}</span></div>
@@ -631,7 +711,7 @@ export function InvoiceCreationForm({
                 <input type="checkbox" checked={recordingPayment} disabled={!paymentAllowed} onChange={(event) => { clearFeedback(); setMarkPaid(event.target.checked); }} className="mt-0.5 h-4 w-4 accent-emerald-600" />
                 <span>
                   <span className="block text-sm font-bold text-slate-950">Already paid: mark as paid now</span>
-                  <span className="block text-xs text-slate-500">{paymentAllowed ? `Records ${amountPaise > 0 ? currency(breakup.totalAmount) : "the full total"} as received${plan?.type === "credits" ? " and adds the credits" : ""}.` : "You do not have permission to record payments on credit invoices."}</span>
+                  <span className="block text-xs text-slate-500">{paymentAllowed ? `Records ${amountPaise > 0 ? (isExport ? `${foreign(enteredMinor)} (${currency(breakup.totalAmount)})` : currency(breakup.totalAmount)) : "the full total"} as received${plan?.type === "credits" ? " and adds the credits" : ""}.` : "You do not have permission to record payments on credit invoices."}</span>
                 </span>
               </label>
               {recordingPayment ? (
@@ -673,8 +753,13 @@ export function InvoiceCreationForm({
                 <div className="line-clamp-2 text-xs text-slate-500">{title || "—"}</div>
               </div>
               <dl className="mt-4 space-y-1.5 border-t border-dashed border-slate-200 pt-3 text-sm">
-                <div className="flex justify-between"><dt className="text-slate-500">Base amount</dt><dd className="font-semibold text-slate-800">{currency(breakup.taxableAmount)}</dd></div>
-                {taxMode !== "non_gst" ? (
+                <div className="flex justify-between"><dt className="text-slate-500">Base amount</dt><dd className="font-semibold text-slate-800">{shown(breakup.taxableAmount)}</dd></div>
+                {isExport ? (
+                  <>
+                    <div className="flex justify-between"><dt className="text-slate-500">IGST</dt><dd className="text-slate-400">Nil (LUT)</dd></div>
+                    <div className="flex justify-between"><dt className="text-slate-500">In rupees</dt><dd className="text-slate-800">{rateToInr > 0 ? currency(breakup.totalAmount) : "—"}</dd></div>
+                  </>
+                ) : taxMode !== "non_gst" ? (
                   <>
                     <div className="flex justify-between"><dt className="text-slate-500">CGST {rate / 2}%</dt><dd className="text-slate-800">{currency(breakup.cgstAmount)}</dd></div>
                     <div className="flex justify-between"><dt className="text-slate-500">SGST {rate / 2}%</dt><dd className="text-slate-800">{currency(breakup.sgstAmount)}</dd></div>
@@ -686,9 +771,9 @@ export function InvoiceCreationForm({
               <div className="mt-3 flex items-end justify-between border-t border-slate-200 pt-3">
                 <div>
                   <div className="text-[11px] font-bold uppercase tracking-[0.12em] text-slate-500">Total payable</div>
-                  <div className="text-[11px] font-semibold text-brand">{taxModeLabel(taxMode)}{taxMode !== "non_gst" ? ` · ${rate}%` : ""}</div>
+                  <div className="text-[11px] font-semibold text-brand">{taxModeLabel(taxMode)}{gstMode !== "non_gst" ? ` · ${rate}%` : ""}</div>
                 </div>
-                <div className="text-2xl font-black text-slate-950">{currency(breakup.totalAmount)}</div>
+                <div className="text-2xl font-black text-slate-950">{shown(breakup.totalAmount)}</div>
               </div>
               {taxMode === "included" && amountPaise > 0 ? (
                 <p className="mt-2 rounded-md bg-emerald-50 px-2.5 py-1.5 text-xs font-semibold text-emerald-800">GST is inside {currency(amountPaise)}. Nothing is added on top.</p>
@@ -735,7 +820,7 @@ export function InvoiceCreationForm({
                 onClick={() => submit(false)}
                 className="inline-flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-brand px-4 text-sm font-bold text-white shadow-sm shadow-brand-900/20 transition hover:bg-brand-700 disabled:cursor-not-allowed disabled:opacity-50"
               >
-                {pending ? <><Loader2 size={16} className="animate-spin" /> {recordingPayment ? "Creating and recording payment…" : "Creating invoice…"}</> : <><Plus size={16} /> {recordingPayment ? "Create and mark paid" : "Create invoice"}{ready ? ` · ${currency(breakup.totalAmount)}` : ""}</>}
+                {pending ? <><Loader2 size={16} className="animate-spin" /> {recordingPayment ? "Creating and recording payment…" : "Creating invoice…"}</> : <><Plus size={16} /> {recordingPayment ? "Create and mark paid" : "Create invoice"}{ready ? ` · ${shown(breakup.totalAmount)}` : ""}</>}
               </button>
             ) : null}
             {!ready && !pending ? <p className="text-center text-xs text-slate-500">{missing[0]} to continue.</p> : null}

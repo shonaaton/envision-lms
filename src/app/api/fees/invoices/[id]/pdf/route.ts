@@ -8,6 +8,7 @@ import { Invoice } from "@/models/Fee";
 import { canAccessFeature } from "@/lib/featureAccess";
 import { isFeesManager } from "@/lib/feesAccess";
 import { invoiceReferences } from "@/lib/feesMetrics";
+import { LUT_ENDORSEMENT, exportForeignTotal, formatForeign, lutDateLabel } from "@/lib/exportInvoice";
 import {
   ACCENT,
   BRAND,
@@ -65,17 +66,23 @@ async function makeInvoicePdf(invoice: any, settings: any) {
     ACADEMY_DEFAULTS.website,
   ];
   const isGstInvoice = invoice.invoiceMode === "included" || invoice.invoiceMode === "excluded";
+  // Export under LUT: printed in the client's currency, zero-rated, with the
+  // Rule 46 endorsement. The rupee figures stay on the page as the INR value.
+  const exp: any = invoice.exportSupply?.currency ? invoice.exportSupply : null;
+  const expRate = Number(exp?.exchangeRate || 0);
+  const foreignTotal = exportForeignTotal(invoice);
+  const shown = (paise: unknown) => (exp ? formatForeign(foreignTotal, exp.currency) : money(paise));
   const isPaid = invoice.status === "paid";
   const student = invoice.student || {};
   const plan = invoice.plan || {};
   const invoiceTitle = invoice.type === "credits" ? "Credit Plan Invoice" : invoice.type === "monthly" ? "Monthly Fee Invoice" : "Custom Fee Invoice";
-  const taxMode = invoice.invoiceMode === "included" ? "GST Included" : invoice.invoiceMode === "excluded" ? "GST Excluded" : "Non-GST";
+  const taxMode = exp ? "Zero-rated (LUT)" : invoice.invoiceMode === "included" ? "GST Included" : invoice.invoiceMode === "excluded" ? "GST Excluded" : "Non-GST";
   const statusColor = isPaid ? GREEN : invoice.status === "cancelled" || invoice.status === "overdue" ? RED : BRAND;
   const qty = invoice.credits ? `${invoice.credits}` : "1";
   const unitLabel = invoice.credits ? "credits" : "fee";
   const gstRate = Number(invoice.gstPercentage || 0);
   const baseAmount = Number(invoice.taxableAmount || invoice.amount || 0);
-  const amountWords = `Amount in words: ${money(invoice.totalAmount)} only`;
+  const amountWords = `Amount in words: ${shown(invoice.totalAmount)} only`;
 
   canvas.rect(0, 0, PAGE.width, PAGE.height, "#ffffff");
   canvas.rect(0, 0, PAGE.width, 112, BRAND);
@@ -88,8 +95,8 @@ async function makeInvoicePdf(invoice: any, settings: any) {
     canvas.text("ENVISION CHESS ACADEMY", 34, 58, { size: 16, font: "bold", color: ACCENT });
   }
 
-  canvas.text(isGstInvoice ? "TAX INVOICE" : "INVOICE", 558, 34, { size: 22, font: "bold", color: "#ffffff", align: "right" });
-  canvas.text(invoiceTitle, 558, 53, { size: 8, font: "bold", color: ACCENT, align: "right" });
+  canvas.text(isGstInvoice || exp ? "TAX INVOICE" : "INVOICE", 558, 34, { size: 22, font: "bold", color: "#ffffff", align: "right" });
+  canvas.text(exp ? "Export of Services under LUT" : invoiceTitle, 558, 53, { size: 8, font: "bold", color: ACCENT, align: "right" });
   canvas.text(`Invoice No: ${invoice.invoiceNumber || "-"}`, 558, 70, { size: 9, font: "bold", color: "#ffffff", align: "right" });
   canvas.pill(titleCase(invoice.status), 485, 82, 73, statusColor);
 
@@ -105,17 +112,20 @@ async function makeInvoicePdf(invoice: any, settings: any) {
   canvas.text("Bill To", 326, 160, { size: 8, font: "bold", color: BRAND });
   canvas.text(student.name || "Student", 326, 181, { size: 13, font: "bold", color: INK, maxWidth: 108, maxLines: 2, lineHeight: 15 });
   canvas.text(student.email || student.username || "Student details not added", 326, 213, { size: 7.5, color: "#344054", maxWidth: 108, maxLines: 2 });
+  if (exp) {
+    canvas.text([exp.address, exp.country].filter(Boolean).join(", "), 326, 237, { size: 7.5, font: "bold", color: "#344054", maxWidth: 108, maxLines: 3, lineHeight: 9 });
+  }
 
   canvas.line(447, 154, 447, 272, LINE);
   canvas.meta("Invoice Date", date(invoice.issueDate), 464, 162, 80);
   canvas.meta("Due Date", date(invoice.dueDate), 464, 194, 80);
-  canvas.meta("GSTIN", isGstInvoice ? gstNumber : "Not applicable", 464, 226, 80);
+  canvas.meta("GSTIN", isGstInvoice || exp ? gstNumber : "Not applicable", 464, 226, 80);
   canvas.meta("Reference No", invoiceReferences(invoice).join(", ") || "-", 464, 258, 80);
 
   canvas.rect(34, 310, 527, 52, PANEL, LINE);
   canvas.meta("Tax Mode", taxMode, 52, 333, 95);
   canvas.meta("Student Plan", plan.name || titleCase(invoice.type), 165, 333, 130);
-  canvas.meta("Place of Supply", "West Bengal", 315, 333, 105);
+  canvas.meta("Place of Supply", exp ? `Outside India (${exp.country})` : "West Bengal", 315, 333, 115);
   canvas.meta("Payment Status", titleCase(invoice.status), 444, 333, 90);
 
   canvas.rect(34, 392, 527, 28, BRAND);
@@ -132,21 +142,29 @@ async function makeInvoicePdf(invoice: any, settings: any) {
   canvas.text(invoice.notes || "Academy fee generated through the Envision LMS billing system.", 78, 468, { size: 7.5, color: "#475467", maxWidth: 220, maxLines: 2, lineHeight: 9 });
   canvas.text(qty, 325, 446, { size: 9, font: "bold", color: INK, align: "right" });
   canvas.text(unitLabel, 368, 446, { size: 8, color: "#475467", align: "right" });
-  canvas.text(money(baseAmount), 427, 446, { size: 8.5, color: INK, align: "right" });
-  canvas.text(isGstInvoice ? `${gstRate}%` : "-", 483, 446, { size: 8.5, color: INK, align: "right" });
-  canvas.text(money(invoice.totalAmount), 544, 446, { size: 9, font: "bold", color: INK, align: "right" });
+  canvas.text(shown(baseAmount), 427, 446, { size: 8.5, color: INK, align: "right" });
+  canvas.text(exp ? "Nil" : isGstInvoice ? `${gstRate}%` : "-", 483, 446, { size: 8.5, color: INK, align: "right" });
+  canvas.text(shown(invoice.totalAmount), 544, 446, { size: 9, font: "bold", color: INK, align: "right" });
 
   canvas.rect(34, 510, 252, 72, PANEL, LINE);
   canvas.text("Amount in words", 52, 535, { size: 8, font: "bold", color: BRAND });
   canvas.text(amountWords, 52, 558, { size: 8, color: "#475467", maxWidth: 210, maxLines: 3, lineHeight: 10 });
 
-  canvas.rect(321, 510, 240, isGstInvoice ? 126 : 84, "#ffffff", LINE);
+  canvas.rect(321, 510, 240, isGstInvoice || exp ? 126 : 84, "#ffffff", LINE);
   let rowY = 533;
   const totalRow = (label: string, value: string, bold = false, color = INK) => {
     canvas.text(label, 339, rowY, { size: bold ? 9 : 8, font: bold ? "bold" : "regular", color });
     canvas.text(value, 543, rowY, { size: bold ? 9 : 8, font: bold ? "bold" : "regular", color, align: "right" });
     rowY += 18;
   };
+  if (exp) {
+    totalRow("Taxable value", shown(invoice.totalAmount));
+    totalRow("IGST (export under LUT)", "Nil");
+    canvas.line(339, rowY - 7, 543, rowY - 7, LINE);
+    totalRow("Grand total", shown(invoice.totalAmount), true, BRAND);
+    totalRow("Value in INR", money(invoice.totalAmount));
+    totalRow("Exchange rate", `1 ${exp.currency} = INR ${new Intl.NumberFormat("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 4 }).format(expRate)}`);
+  } else {
   totalRow("Base amount", money(invoice.taxableAmount || invoice.amount));
   if (invoice.lateFee) totalRow("Late fee", money(invoice.lateFee));
   if (isGstInvoice) {
@@ -156,10 +174,14 @@ async function makeInvoicePdf(invoice: any, settings: any) {
   }
   canvas.line(339, rowY - 7, 543, rowY - 7, LINE);
   totalRow("Grand total", money(invoice.totalAmount), true, BRAND);
+  }
 
   canvas.rect(34, 620, 252, 88, "#ffffff", LINE);
-  canvas.text("Terms & Notes", 52, 644, { size: 8, font: "bold", color: BRAND });
-  canvas.text(settings.invoiceFooter || "Thank you for choosing Envisions Chess Academy LLP. This is a computer-generated invoice issued from the academy LMS.", 52, 668, {
+  canvas.text(exp ? "Export declaration" : "Terms & Notes", 52, 644, { size: 8, font: "bold", color: BRAND });
+  if (exp) {
+    canvas.text(`${LUT_ENDORSEMENT}.`, 52, 662, { size: 7.5, font: "bold", color: INK, maxWidth: 180, maxLines: 3, lineHeight: 10 });
+    canvas.text(`LUT ARN: ${exp.lutArn}${exp.lutFiledOn ? ` (filed ${lutDateLabel(exp.lutFiledOn)})` : ""}`, 52, 698, { size: 7.5, color: "#475467", maxWidth: 212, maxLines: 1 });
+  } else canvas.text(settings.invoiceFooter || "Thank you for choosing Envisions Chess Academy LLP. This is a computer-generated invoice issued from the academy LMS.", 52, 668, {
     size: 7.5,
     color: "#475467",
     maxWidth: 212,

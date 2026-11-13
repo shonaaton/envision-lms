@@ -8,6 +8,7 @@ import { resolveAudienceEmails } from "@/lib/studentContact";
 import { notifyCreditReversal } from "@/lib/studentLifecycleNotifications";
 import { sendWhatsAppReminder } from "@/lib/whatsappAutomation";
 import { formatINR } from "@/lib/utils";
+import { invoiceAmountLabel, isExportInvoice } from "@/lib/exportInvoice";
 import { CreditLedger, DeletedInvoice, FeeAssignment, Invoice, Notification } from "@/models/Fee";
 import { Payment } from "@/models/Payment";
 import { User } from "@/models/User";
@@ -60,7 +61,7 @@ function invoiceReminderMessage(invoice: any, invoiceUrl: string) {
   return [
     `Hello ${invoice.student.name},`,
     `This is a friendly reminder that invoice ${invoice.invoiceNumber} for ${invoice.title} is still pending.`,
-    `Total amount: ${formatINR(invoice.totalAmount)}.`,
+    `Total amount: ${invoiceAmountLabel(invoice)}.`,
     `Due date: ${new Date(invoice.dueDate).toLocaleDateString("en-IN")}.`,
     invoiceUrl ? `Download invoice: ${invoiceUrl}` : "Please log in to your student portal to view and pay the invoice.",
     "If you have already paid, please ignore this message or share the payment reference with the academy.",
@@ -344,7 +345,7 @@ async function sendInvoiceToStudent(formData: FormData) {
     message: [
       `Hello ${invoice.student.name},`,
       `Your invoice ${invoice.invoiceNumber} for ${invoice.title} is now available.`,
-      `Total amount: ${formatINR(invoice.totalAmount)}.`,
+      `Total amount: ${invoiceAmountLabel(invoice)}.`,
       invoiceUrl ? `Download invoice: ${invoiceUrl}` : "Please log in to your student portal to download the invoice.",
     ].join("\n\n"),
     htmlBody: `
@@ -352,7 +353,7 @@ async function sendInvoiceToStudent(formData: FormData) {
         <h2 style="color:#5a1372;margin:0 0 12px">Invoice ${invoice.invoiceNumber}</h2>
         <p>Hello ${invoice.student.name},</p>
         <p>Your invoice for <strong>${invoice.title}</strong> is now available.</p>
-        <p><strong>Total amount:</strong> ${formatINR(invoice.totalAmount)}</p>
+        <p><strong>Total amount:</strong> ${invoiceAmountLabel(invoice)}</p>
         ${invoiceUrl ? `<p><a href="${invoiceUrl}" style="display:inline-block;background:#5a1372;color:#fff;text-decoration:none;padding:12px 18px;border-radius:8px;font-weight:700">Download Invoice PDF</a></p>` : "<p>Please log in to your student portal to download the invoice.</p>"}
         <p style="color:#64748b;font-size:13px">Envisions Chess Academy LLP</p>
       </div>
@@ -374,7 +375,7 @@ async function sendInvoiceToStudent(formData: FormData) {
         message: [
           `Hello ${invoice.student.parentName || "Parent"},`,
           `Invoice ${invoice.invoiceNumber} for ${invoice.student.name} is now available.`,
-          `Total amount: ${formatINR(invoice.totalAmount)}.`,
+          `Total amount: ${invoiceAmountLabel(invoice)}.`,
           invoiceUrl ? `Download invoice: ${invoiceUrl}` : "Please ask the student to log in to the portal to download the invoice.",
         ].join("\n\n"),
         metadata: {
@@ -552,6 +553,9 @@ function isGstInvoice(invoice: any) {
 
 /** Says at a glance whether this is a GST or a non-GST invoice, with the rate and tax for GST ones. */
 function GstBadge({ invoice }: { invoice: any }) {
+  if (isExportInvoice(invoice)) {
+    return <span className="rounded-full bg-sky-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-sky-700 ring-1 ring-sky-200">Export • LUT • {invoice.exportSupply.currency}</span>;
+  }
   if (!isGstInvoice(invoice)) {
     return <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-slate-600 ring-1 ring-slate-200">Non-GST invoice</span>;
   }
@@ -848,7 +852,9 @@ export default async function FeeInvoicesPage({ searchParams }: { searchParams?:
                         <div className="truncate"><span className="font-semibold text-slate-700">Plan:</span> {invoice.plan?.name || "-"}</div>
                         <div className="truncate">
                           <span className="font-semibold text-slate-700">Tax:</span>{" "}
-                          {isGstInvoice(invoice)
+                          {isExportInvoice(invoice)
+                            ? <span className="font-semibold text-sky-700">Zero-rated (LUT) • {invoice.exportSupply.country}</span>
+                            : isGstInvoice(invoice)
                             ? <span className="font-semibold text-emerald-700">{invoiceModeLabel(invoice.invoiceMode)} • GST {formatINR(invoice.gstAmount || 0)}</span>
                             : <span className="font-semibold text-slate-600">Non-GST</span>}
                         </div>
@@ -864,7 +870,8 @@ export default async function FeeInvoicesPage({ searchParams }: { searchParams?:
                     <div className="flex flex-wrap items-center gap-2 xl:justify-end">
                       <div className="mr-1 min-w-28 rounded-lg bg-slate-50 px-3 py-2 text-right">
                         <div className="text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500">Total</div>
-                        <div className="text-sm font-black text-slate-950">{formatINR(invoice.totalAmount)}</div>
+                        <div className="text-sm font-black text-slate-950">{invoiceAmountLabel(invoice)}</div>
+                        {isExportInvoice(invoice) ? <div className="text-[10px] font-semibold text-slate-500">{formatINR(invoice.totalAmount)}</div> : null}
                       </div>
                       <IconAction href={pdfHref} title="View invoice" icon={<Eye size={14} />} tone="brand" />
                       <IconAction href={pdfHref} title="Download PDF" icon={<Download size={14} />} download />

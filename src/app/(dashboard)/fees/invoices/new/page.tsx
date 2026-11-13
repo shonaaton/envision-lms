@@ -1,6 +1,7 @@
 import { auth } from "@/lib/auth";
 import { dbConnect } from "@/lib/db";
-import { createInvoice, invoiceBreakup, markInvoicePaid } from "@/lib/fees";
+import { createInvoice, getAcademySettings, invoiceBreakup, markInvoicePaid } from "@/lib/fees";
+import { formatForeign, inrPaiseFor, isExportCurrency, type ExportSupply } from "@/lib/exportInvoice";
 import { afterManualInvoicePayment } from "@/lib/invoicePaidFollowUp";
 import { FeeAssignment, FeePlan, Invoice } from "@/models/Fee";
 import { User } from "@/models/User";
@@ -34,6 +35,9 @@ function createdInvoiceSummary(invoice: any, alreadyCreated = false): CreatedInv
     studentName: invoice.student?.name || "",
     status: String(invoice.status || "unpaid"),
     alreadyCreated,
+    ...(invoice.exportSupply?.currency
+      ? { exportCurrency: String(invoice.exportSupply.currency), foreignAmount: Number(invoice.exportSupply.foreignAmount || 0) }
+      : {}),
   };
 }
 
@@ -62,15 +66,42 @@ async function createManualInvoice(formData: FormData): Promise<CreateInvoiceRes
   if (planId && !plan) return { status: "error", error: "That fee plan no longer exists. Pick another or create a custom invoice." };
   const invoiceType: "monthly" | "credits" | "manual" = plan ? plan.type : "manual";
 
-  const amount = paise(formData.get("amount"));
+  const rawMode = String(formData.get("invoiceMode") || "non_gst");
+  // Export under LUT: the amount arrives in the foreign currency and is saved
+  // in INR at the entered rate; no GST. See lib/exportInvoice.ts.
+  const isExport = rawMode === "export";
+  let exportSupply: ExportSupply | undefined;
+  let amount = paise(formData.get("amount"));
+  if (isExport) {
+    const currency = String(formData.get("currency") || "").toUpperCase();
+    if (!isExportCurrency(currency)) return { status: "error", error: "Choose the currency the client paid in." };
+    const exchangeRate = Number(formData.get("exchangeRate") || 0);
+    if (!Number.isFinite(exchangeRate) || exchangeRate <= 0 || exchangeRate > 10000) return { status: "error", error: `Enter the exchange rate: rupees for 1 ${currency}.` };
+    const foreignAmount = paise(formData.get("amount"));
+    if (!Number.isFinite(foreignAmount) || foreignAmount <= 0) return { status: "error", error: "Enter an amount greater than zero." };
+    const country = String(formData.get("country") || "").trim().slice(0, 80);
+    if (!country) return { status: "error", error: "Enter the client's country. An export invoice must name it." };
+    const settings: any = await getAcademySettings();
+    const lutArn = String(formData.get("lutArn") || settings.lutArn || "").trim().slice(0, 40);
+    if (!lutArn) return { status: "error", error: "Add the LUT ARN in Academy Setup before creating an export invoice." };
+    exportSupply = {
+      currency,
+      foreignAmount,
+      exchangeRate: Math.round(exchangeRate * 10000) / 10000,
+      country,
+      address: String(formData.get("clientAddress") || "").trim().slice(0, 300) || undefined,
+      lutArn,
+      lutFiledOn: lutArn === settings.lutArn ? settings.lutFiledOn || undefined : undefined,
+    };
+    amount = inrPaiseFor(foreignAmount, exportSupply.exchangeRate);
+  }
   if (!Number.isFinite(amount) || amount <= 0) return { status: "error", error: "Enter an amount greater than zero." };
   const title = String(formData.get("title") || "").trim() || plan?.name || "Custom Invoice";
   const issueDate = new Date(String(formData.get("invoiceDate") || ""));
   const dueDate = new Date(String(formData.get("dueDate") || ""));
   if (Number.isNaN(issueDate.getTime()) || Number.isNaN(dueDate.getTime())) return { status: "error", error: "Enter a valid invoice date and due date." };
   if (dueDate < issueDate) return { status: "error", error: "The due date cannot be before the invoice date." };
-  const rawMode = String(formData.get("invoiceMode") || "non_gst");
-  const invoiceMode: "included" | "excluded" | "non_gst" = rawMode === "included" || rawMode === "excluded" ? rawMode : "non_gst";
+  const invoiceMode: "included" | "excluded" | "non_gst" = !isExport && (rawMode === "included" || rawMode === "excluded") ? rawMode : "non_gst";
   const gstPercentage = invoiceMode === "non_gst" ? 0 : Number(formData.get("gstPercentage") || 0);
   if (invoiceMode !== "non_gst" && (!Number.isFinite(gstPercentage) || gstPercentage <= 0 || gstPercentage > 100)) {
     return { status: "error", error: "Enter a GST rate between 0 and 100, or choose No GST." };
@@ -117,10 +148,13 @@ async function createManualInvoice(formData: FormData): Promise<CreateInvoiceRes
       invoiceMode,
       gstPercentage,
       creationKey: creationKey || undefined,
+      exportSupply,
       activity: {
         actor: (session.user as any).id,
         source: "manual_admin",
-        label: `Created ${invoiceType === "manual" ? "custom" : invoiceType} invoice`,
+        label: exportSupply
+          ? `Created export (LUT) invoice for ${formatForeign(exportSupply.foreignAmount, exportSupply.currency)}`
+          : `Created ${invoiceType === "manual" ? "custom" : invoiceType} invoice`,
       },
     });
     let paymentError = "";
@@ -165,11 +199,12 @@ export default async function NewInvoicePage({ searchParams }: { searchParams?: 
   // The form lands on ?created= after saving, so the confirmation survives the
   // page refresh that follows the save.
   const createdInvoiceId = queryValue(params, "created");
-  const [createdInvoiceDoc, students, plans, assignments] = await Promise.all([
+  const [createdInvoiceDoc, students, plans, assignments, settings] = await Promise.all([
     /^[a-f0-9]{24}$/i.test(createdInvoiceId) ? Invoice.findById(createdInvoiceId).populate("student", "name").lean() : Promise.resolve(null),
     User.find({ role: "student" }, { name: 1, username: 1, isActive: 1 }).sort({ name: 1 }).lean(),
     FeePlan.find({ isActive: true }).sort({ name: 1 }).lean(),
     FeeAssignment.find({}, { student: 1, plan: 1 }).lean(),
+    getAcademySettings(),
   ]);
   const createdInvoice = createdInvoiceDoc ? createdInvoiceSummary(createdInvoiceDoc) : null;
 
@@ -191,6 +226,7 @@ export default async function NewInvoicePage({ searchParams }: { searchParams?: 
         initialStudentId={queryValue(params, "for")}
         canRecordPayment={permissions.payment}
         canRecordCreditPayment={permissions.credit}
+        lut={{ arn: String((settings as any)?.lutArn || ""), filedOn: String((settings as any)?.lutFiledOn || "") }}
         students={students.map((student: any) => ({ id: student._id.toString(), name: student.name, username: student.username || "", isActive: student.isActive !== false }))}
         plans={plans.map((plan: any) => ({ id: plan._id.toString(), name: plan.name, type: plan.type, amount: plan.amount, credits: plan.credits || 0, gstMode: plan.gstMode || "non_gst", gstPercentage: plan.gstPercentage || 0 }))}
         assignments={assignments.map((assignment: any) => ({ studentId: assignment.student?.toString(), planId: assignment.plan?.toString() }))}

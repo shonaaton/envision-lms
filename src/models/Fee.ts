@@ -17,6 +17,10 @@ const AcademySettingsSchema = new Schema(
     invoiceMode: { type: String, enum: ["gst", "non_gst"], default: "non_gst" },
     gstPercentage: { type: Number, default: 18 },
     invoicePrefix: { type: String, default: "ENV" },
+    // Letter of Undertaking for exporting services without GST. Refiled every
+    // financial year; each export invoice keeps a copy of the one it used.
+    lutArn: { type: String, default: ACADEMY_DEFAULTS.lutArn },
+    lutFiledOn: { type: String, default: ACADEMY_DEFAULTS.lutFiledOn },
     lowCreditThreshold: { type: Number, default: 1 },
     /**
      * CRM pipeline stage name -> { group, order }.
@@ -117,6 +121,24 @@ const InvoiceSchema = new Schema(
     lastReminderKey: { type: String, index: true },
     lastReminderAt: Date,
     notes: String,
+    // Export of services under LUT (lib/exportInvoice.ts): billed in a foreign
+    // currency with no GST. totalAmount and payments stay INR paise at
+    // exchangeRate; these are the foreign figures the PDF prints.
+    exportSupply: {
+      type: new Schema(
+        {
+          currency: { type: String, required: true },
+          foreignAmount: { type: Number, required: true },
+          exchangeRate: { type: Number, required: true },
+          country: { type: String, required: true, trim: true },
+          address: { type: String, trim: true },
+          lutArn: { type: String, required: true, trim: true },
+          lutFiledOn: String,
+        },
+        { _id: false },
+      ),
+      default: undefined,
+    },
     // One key per submission of the manual invoice form, so a double click or a
     // retried request returns the invoice already made instead of a second one.
     creationKey: { type: String, index: { unique: true, sparse: true } },

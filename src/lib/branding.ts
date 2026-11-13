@@ -22,6 +22,9 @@ export const ACADEMY_DEFAULTS = {
   email: "info@envisionchessacademy.com",
   website: "www.envisionchessacademy.com",
   authorizedSignatory: "Sayantan Chandra",
+  // LUT (GST RFD-11) for FY 2026-27, filed 10 Nov 2026. Editable in Academy Setup.
+  lutArn: "AD191126003090O",
+  lutFiledOn: "2026-11-10",
 };
 
 /**

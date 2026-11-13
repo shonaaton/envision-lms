@@ -97,6 +97,7 @@ export async function loadCoachPay(period: PayPeriod, filters: CoachPayFilters =
           { instructor: filters.coachId },
           { "generatedSessions.substituteCoach": filters.coachId },
           { "generatedSessions.conductedBy": filters.coachId },
+          { "generatedSessions.assignedCoach": filters.coachId },
         ],
       },
     ];
@@ -118,9 +119,9 @@ export async function loadCoachPay(period: PayPeriod, filters: CoachPayFilters =
       .select(
         "title level classroomType demoBooking coach instructor batches students studentExits durationMinutes classDate startDate startTime generatedSessions isSessionInstance"
       )
-      .populate("coach instructor", "name username")
+      .populate("coach instructor", "name username role")
       .populate("batches", "name")
-      .populate("generatedSessions.substituteCoach generatedSessions.conductedBy generatedSessions.assignedCoach", "name username")
+      .populate("generatedSessions.substituteCoach generatedSessions.conductedBy generatedSessions.assignedCoach", "name username role")
       .lean(),
     CoachRate.find({ isActive: { $ne: false } }).lean(),
     SessionPayOverride.find({}).lean(),
@@ -204,7 +205,7 @@ export async function loadNoShowReviews(period: PayPeriod, options: { includeDec
   const [classrooms, rulings] = await Promise.all([
     Classroom.find(query)
       .select("title classroomType coach instructor batches students durationMinutes classDate startDate startTime generatedSessions")
-      .populate("coach instructor", "name username")
+      .populate("coach instructor", "name username role")
       .populate("batches", "name")
       .populate("students", "name username")
       .populate("generatedSessions.substituteCoach generatedSessions.conductedBy generatedSessions.assignedCoach generatedSessions.students", "name username")

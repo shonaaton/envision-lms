@@ -57,12 +57,17 @@ export default async function CoachProfitabilityPage({
 
       <p className="text-sm text-slate-600">
         Revenue uses LMS fee collections excluding GST. Each student’s collections are split by completed classes with each coach in the selected month.
-        Gain or loss is attributed revenue minus Coach Pay, before overhead and payment processing fees.
+        Fees use the billing month, including unpaid invoices, excluding GST and late fees. Fixed monthly salary is counted once, with zero additional cost for covered substitutions. Gain or loss is before overhead and payment processing fees.
       </p>
       {report.unallocatedRevenue !== 0 && (
         <p className="rounded-lg border border-slate-200 bg-white p-3 text-sm">
           <strong>{formatINR(report.unallocatedRevenue)} in unallocated revenue.</strong>{" "}
-          These collections had no matching completed class for the student this month.
+          These monthly fees had no matching completed class for the student this month.
+        </p>
+      )}
+      {report.missingFees > 0 && (
+        <p className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+          {report.missingFees} students have no applicable fee invoice. Their class revenue needs review.
         </p>
       )}
       {(report.pendingReview > 0 || report.unpriced > 0) && (
@@ -95,6 +100,8 @@ export default async function CoachProfitabilityPage({
                         <Link href={`/coach-pay?period=month&month=${period.month}&coach=${encodeURIComponent(coach.coachId)}`} className="text-brand hover:underline">
                           {coach.name}
                         </Link>
+                                                <span className="block text-xs text-slate-500">{coach.classes.length} classes · {coach.substitutions} substitutions</span>
+                        {coach.monthlyCost > 0 && <span className="block text-xs text-slate-500">Fixed salary {formatINR(coach.monthlyCost)}</span>}
                         {needsReview && <span className="block text-xs text-amber-800">Cost pending review</span>}
                       </th>
                       <td className="whitespace-nowrap p-3 text-right tabular-nums">{formatINR(coach.revenue)}</td>
@@ -109,6 +116,41 @@ export default async function CoachProfitabilityPage({
             </table>
           </div>
         )}
+      </DataPanel>
+
+      <DataPanel title="Class revenue and cost">
+        <div className="space-y-3">
+          {report.rows.filter((coach) => coach.classes.length > 0).map((coach) => (
+            <details key={coach.coachId} className="rounded-lg border border-slate-200 p-3">
+              <summary className="cursor-pointer font-medium">{coach.name} · {coach.classes.length} classes</summary>
+              {coach.monthlyCost > 0 && <p className="mt-2 text-sm text-slate-600">Monthly salary of {formatINR(coach.monthlyCost)} is included in the coach total. Covered classes below show zero additional cost.</p>}
+              <div className="mt-3 overflow-x-auto">
+                <table className="w-full text-left text-sm">
+                  <thead><tr>
+                    <th className="p-2">Class</th><th className="p-2">Student revenue</th>
+                    <th className="p-2 text-right">Revenue</th><th className="p-2 text-right">Class cost</th><th className="p-2 text-right">Gain / loss</th>
+                  </tr></thead>
+                  <tbody>
+                    {coach.classes.map((item) => (
+                      <tr key={item.id} className="border-t border-slate-100">
+                        <td className="p-2">
+                          {item.title}
+                          <span className="block text-xs text-slate-500">{item.date.toLocaleDateString("en-IN", { timeZone: "Asia/Kolkata" })}{item.substitute ? " · Substitution" : ""}</span>
+                        </td>
+                        <td className="p-2">{item.students.map((student) => (
+                          <div key={student.id}>{student.name} · {student.missingFee ? "Fee missing" : formatINR(student.revenue)}</div>
+                        ))}</td>
+                        <td className="whitespace-nowrap p-2 text-right">{formatINR(item.revenue)}</td>
+                        <td className="whitespace-nowrap p-2 text-right">{item.unpriced ? "Rate missing" : formatINR(item.cost)}{item.fixedSalary && <span className="block text-xs text-slate-500">Covered by salary</span>}</td>
+                        <td className="whitespace-nowrap p-2 text-right">{item.unpriced ? "Pending rate" : formatINR(item.revenue - item.cost)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </details>
+          ))}
+        </div>
       </DataPanel>
     </div>
   );

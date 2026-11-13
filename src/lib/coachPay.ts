@@ -364,7 +364,11 @@ export function buildPayEvents(input: BuildPayEventsInput): PayEvent[] {
     for (const session of sessions) {
       const sessionId = idOf(session._id);
       const date = scheduledStartDate(session, classroom);
-      const coachId = effectiveSessionCoachId(session, classroom);
+      const assignedIds = [session.substituteCoach, session.assignedCoach, classroom.coach, classroom.instructor].map(idOf);
+      const actorIsUnassignedAdmin = ["admin", "sub-admin"].includes(session.conductedBy?.role) &&
+        !assignedIds.includes(idOf(session.conductedBy));
+      const teacherSession = actorIsUnassignedAdmin ? { ...session, conductedBy: undefined } : session;
+      const coachId = effectiveSessionCoachId(teacherSession, classroom);
       if (!coachId) continue;
       const coachSource = [session.conductedBy, session.substituteCoach, session.assignedCoach, classroom.coach, classroom.instructor].find(
         (candidate: any) => idOf(candidate) === coachId

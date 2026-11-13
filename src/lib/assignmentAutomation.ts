@@ -1,7 +1,18 @@
 import { AssignmentAutomationLog, AssignmentTemplate } from "@/models/AssignmentTemplate";
 import { Classroom } from "@/models/Classroom";
 import { Homework } from "@/models/Homework";
+import { Course, type CourseDoc } from "@/models/Course";
+import { PGN } from "@/models/PGN";
 import { getSessionStart } from "@/lib/classroomSessions";
+import { courseTierLabel } from "@/lib/courseTiers";
+import { pgnHomeworkActivity, type HomeworkPgn } from "@/lib/pgnHomeworkActivity";
+import {
+  isRevisionTopic,
+  revisionPgnKind,
+  revisionPgnTopicKey,
+  revisionTopics,
+  taughtTopicsBeforeRevision,
+} from "@/lib/revisionHomework";
 import { notifyHomeworkAssigned } from "@/lib/homeworkEmail";
 import { notifyHomeworkNotAssigned } from "@/lib/homeworkAutomationAlerts";
 
@@ -62,6 +73,7 @@ function scheduledSessionsFor(classroom: any) {
       _id: `${classroom._id}-single`,
       sessionNumber: 1,
       topicName: classroom.topicName || classroom.title,
+      topicOrder: classroom.topicOrder,
       scheduledFor: classroom.classDate,
       startTime: classroom.startTime,
       durationMinutes: classroom.durationMinutes || 60,
@@ -199,6 +211,77 @@ function missingTemplateMessage(topicName: string, classroom: any, rejected: Arr
   return `Template exists for "${topicName}" but was not used: ${detail}${others}.`;
 }
 
+async function buildRevisionAssignment(classroom: any, currentSession: any, topicName: string) {
+  const course = classroom.course
+    ? await Course.findById(classroom.course).select("name level levels").lean<Pick<CourseDoc, "name" | "level" | "levels">>()
+    : null;
+  const sessions = scheduledSessionsFor(classroom);
+  let topics = taughtTopicsBeforeRevision(sessions, currentSession);
+  // Standalone classes have no series history. Resolve the revision in the
+  // course plan by topic order, with a name fallback only for unique topics.
+  if (sessions.length === 1 && classroom.levelName && course) {
+    const level = course.levels?.find((item) => sameLevelName(item.name, classroom.levelName));
+    const ordered = [...(level?.topics || [])].sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+    const matching = ordered.filter((item) => looseTopicKey(item.name) === looseTopicKey(topicName));
+    const byOrder = matching.filter((item) => item.order === currentSession.topicOrder);
+    const revision = byOrder.length === 1 ? byOrder[0] : matching.length === 1 ? matching[0] : undefined;
+    if (revision) topics = revisionTopics(ordered.slice(0, ordered.indexOf(revision)).map((item) => item.name));
+  }
+  if (!topics.length || !classroom.levelName) {
+    return { template: null, reason: "No preceding topics could be resolved for this revision and level." };
+  }
+
+  const courseNames = [course?.name, classroom.courseName, courseTierLabel(course?.level || classroom.level)].filter(Boolean);
+  const topicNames = new Map(topics.map((topic) => [revisionPgnTopicKey(topic), topic]));
+  const files = await PGN.find({ visibility: "shared", folder: /\// })
+    .select("title sourceFileName folder")
+    .sort({ sourceFileName: 1, title: 1, _id: 1 })
+    .lean();
+  const sources = files.flatMap((file) => {
+    const name = file.sourceFileName || file.title;
+    const topic = revisionPgnTopicKey(name);
+    if (!topicNames.has(topic)) return [];
+    const kind = revisionPgnKind(file.folder, name, courseNames, classroom.levelName);
+    return kind ? [{ id: String(file._id), topic, kind }] : [];
+  });
+  if (!sources.some(({ kind }) => kind === "CW") || !sources.some(({ kind }) => kind === "HW")) {
+    return { template: null, reason: "The shared PGN library needs both classwork and homework for the preceding topics." };
+  }
+
+  const pgNs = await PGN.find({ _id: { $in: sources.map(({ id }) => id) }, visibility: "shared" })
+    .select("title pgn folder").lean<HomeworkPgn[]>();
+  const byId = new Map(pgNs.map((file) => [String(file._id), file]));
+  const available = sources.filter(({ id }) => byId.get(id)?.pgn?.trim());
+  if (!available.some(({ kind }) => kind === "CW") || !available.some(({ kind }) => kind === "HW")) {
+    return { template: null, reason: "The selected classwork and homework PGNs are no longer available." };
+  }
+
+  const activities = [...topicNames].flatMap(([key, topic]) => {
+    const seen = new Set<string>();
+    const selected = available.filter((source) => source.topic === key).flatMap(({ id }) => {
+      const file = byId.get(id)!;
+      const pgn = file.pgn.trim();
+      if (seen.has(pgn)) return [];
+      seen.add(pgn);
+      return [file];
+    });
+    return selected.length ? [pgnHomeworkActivity(topic, selected)] : [];
+  });
+
+  return {
+    template: {
+      _id: null,
+      title: `${topicName} Homework`,
+      instructions: "Review the classwork positions and solve the homework positions for the topics covered.",
+      activities,
+      targetMode: classroom.batches?.length ? "classroom_batches" : "all_class_students",
+    },
+    metadata: {
+      topicsWithoutPgns: [...topicNames.values()].filter((topic) => !activities.some((activity) => activity.topic === topic)),
+    },
+  };
+}
+
 function nextSessionStart(classroom: any, currentSession: any) {
   const currentStart = getSessionStart(currentSession);
   if (!currentStart) return null;
@@ -269,7 +352,15 @@ export async function autoAssignHomeworkForSession({
   const currentSession = findSession(classroom, scheduledSessionId);
   if (!currentSession) return null;
   const topicName = String(currentSession.topicName || classroom.topicName || classroom.title || "").trim();
-  const { topicKey, template, ambiguous, rejected } = await findTemplateForSession(classroom, topicName);
+  const revision = isRevisionTopic(topicName);
+  if (revision) {
+    const existing = await Homework.findOne({ classroom: classroomId, sourceSessionId: scheduledSessionId, autoAssigned: true }).lean();
+    if (existing) return existing;
+  }
+  const revisionAssignment = revision ? await buildRevisionAssignment(classroom, currentSession, topicName) : null;
+  const { topicKey, template, ambiguous, rejected } = revisionAssignment
+    ? { topicKey: normalizeTopicKey(topicName), template: revisionAssignment.template, ambiguous: [], rejected: [] }
+    : await findTemplateForSession(classroom, topicName);
 
   if (ambiguous.length) {
     await recordMissedAssignment(classroom, {
@@ -291,7 +382,7 @@ export async function autoAssignHomeworkForSession({
       topicName,
       topicKey,
       status: "missing_template",
-      message: missingTemplateMessage(topicName, classroom, rejected),
+      message: revisionAssignment?.reason || missingTemplateMessage(topicName, classroom, rejected),
       metadata: rejected.length
         ? {
             skippedTemplates: rejected.map(({ template: skipped, reason }) => ({
@@ -400,6 +491,7 @@ export async function autoAssignHomeworkForSession({
     topicKey,
     status: dueAt ? "assigned" : "assigned_without_due",
     message: dueAt ? `Auto-assigned homework for "${topicName}".` : `Auto-assigned homework for "${topicName}" without a deadline because no next class was found.`,
+    metadata: revisionAssignment?.metadata,
     dueAt: dueAt || undefined,
   });
 

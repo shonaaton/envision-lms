@@ -6,6 +6,7 @@ import { dbConnect } from "@/lib/db";
 import { canAccessFeature } from "@/lib/featureAccess";
 import { recordActivity } from "@/lib/activity";
 import { normalizeTopicKey, topicFromHomeworkFileName } from "@/lib/assignmentAutomation";
+import { pgnHomeworkActivity } from "@/lib/pgnHomeworkActivity";
 import { AssignmentTemplate } from "@/models/AssignmentTemplate";
 import { Course } from "@/models/Course";
 import { PGN } from "@/models/PGN";
@@ -69,28 +70,6 @@ async function findCourseTopic(topicKey: string) {
     });
   });
   return matches;
-}
-
-function pgnActivity(topicName: string, pgns: any[]) {
-  return {
-    type: "study_pgn",
-    title: `${topicName} PGN Study`,
-    instructions: "Study the selected PGNs and solve the board tasks.",
-    difficulty: "beginner",
-    points: 1,
-    timeLimitMinutes: 0,
-    topic: topicName,
-    source: { kind: "pgn_quiz", folder: pgns[0]?.folder || "", maxAttempts: 1 },
-    items: pgns.map((pgn: any) => ({
-      id: String(pgn._id),
-      title: pgn.title,
-      pgnTitle: pgn.title,
-      pgnSourceId: String(pgn._id),
-      pgn: pgn.pgn,
-      source: { kind: "pgn", folder: pgn.folder || "Unfiled" },
-      points: 1,
-    })),
-  };
 }
 
 function cleanText(value = "") {
@@ -238,7 +217,7 @@ export async function POST(req: Request) {
       courseName: link?.course?.name || "",
       level: link?.course?.level || "",
       levelName: link?.level?.name || "",
-      activities: [pgnActivity(group.topicName, group.pgns)],
+      activities: [pgnHomeworkActivity(group.topicName, group.pgns)],
       puzzles: [],
       numberOfAttempts: 1,
       timeLimitMinutes: 0,

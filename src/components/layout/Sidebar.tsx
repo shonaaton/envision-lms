@@ -65,6 +65,7 @@ import {
   FilePlus2,
   MonitorCheck,
   FileSpreadsheet,
+  Globe2,
 } from "lucide-react";
 import Logo from "./Logo";
 import { cn } from "@/lib/utils";
@@ -149,6 +150,7 @@ const sections: NavSection[] = [
       { href: "/fees/invoices", label: "Invoices", icon: Receipt, featureKey: "invoices" },
       { href: "/fees/invoices/new", label: "Create Invoice", icon: FilePlus2, featureKey: "invoices", permission: "invoice" },
       { href: "/fees/reports", label: "Fee Reports", icon: BarChart3, featureKey: "feeReports" },
+      { href: "/fees/export-invoices", label: "Export (LUT) Invoices", icon: Globe2, featureKey: "feeReports" },
     ],
   },
   {

@@ -396,7 +396,7 @@ export const FEATURE_DEFINITIONS: FeatureDefinition[] = [
     label: "Fee Reports",
     category: "Payments",
     description: "Fee reports, exports, and finance summaries.",
-    routes: ["/fees/reports"],
+    routes: ["/fees/reports", "/fees/export-invoices"],
     permissions: [view, exportRecords],
     defaultStatus: "enabled",
     defaultRolePermissions: { admin: ["view", "export"] },

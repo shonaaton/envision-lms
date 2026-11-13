@@ -442,6 +442,7 @@ export function FinanceDashboard({
   sections,
   canExport = true,
   showGstFilter = true,
+  extraSection,
 }: {
   initial: FeesAnalytics;
   quickLinks: Array<[string, string]>;
@@ -453,6 +454,8 @@ export function FinanceDashboard({
   canExport?: boolean;
   /** The GST split only affects collections, so it is hidden when those are. */
   showGstFilter?: boolean;
+  /** A server-rendered section shown under the dashboard, e.g. the export (LUT) invoice register. */
+  extraSection?: React.ReactNode;
 }) {
   const visible = (id: FinanceSection) => !sections || sections.includes(id);
   const [data, setData] = useState<FeesAnalytics>(initial);
@@ -1130,6 +1133,8 @@ export function FinanceDashboard({
           </Section>
         ) : null}
       </div>
+
+      {extraSection}
 
       <p className="mt-6 text-center text-[11px] text-slate-400">
         Updated {new Date(data.generatedAt).toLocaleString("en-IN")} - every card opens the underlying records.

@@ -10,6 +10,7 @@ import { redirect } from "next/navigation";
 import { getFeaturePermissionState } from "@/lib/featureAccess";
 import { isFeesManager } from "@/lib/feesAccess";
 import { FinanceDashboard } from "@/components/fees/FinanceDashboard";
+import { ExportInvoicesPanel } from "@/components/fees/ExportInvoicesPanel";
 
 export const dynamic = "force-dynamic";
 
@@ -75,10 +76,11 @@ export default async function FeesDashboardPage() {
       ["/fees/reminders", "Fee Reminders"],
       ...(invoicePermissions.view || invoicePermissions.invoice ? [["/fees/invoices", "Invoices"]] as Array<[string, string]> : []),
       ...(invoicePermissions.view ? [["/fees/deleted-invoices", "Deleted Invoices"]] as Array<[string, string]> : []),
-      ...(reportPermissions.view || reportPermissions.export ? [["/fees/reports", "Reports"]] as Array<[string, string]> : []),
+      ...(reportPermissions.view || reportPermissions.export ? [["/fees/reports", "Reports"], ["/fees/export-invoices", "Export (LUT) Invoices"]] as Array<[string, string]> : []),
       ...(role === "admin" ? [["/admin/settings", "Academy Setup"]] as Array<[string, string]> : []),
     ];
-    return <FinanceDashboard initial={analytics} quickLinks={quickLinks} />;
+    const exportPanel = reportPermissions.view || reportPermissions.export ? <ExportInvoicesPanel canExport={reportPermissions.export} /> : null;
+    return <FinanceDashboard initial={analytics} quickLinks={quickLinks} extraSection={exportPanel} />;
   }
 
   const [invoices, assignments, recentCredits] = await Promise.all([

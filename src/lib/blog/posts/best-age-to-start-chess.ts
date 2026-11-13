@@ -112,7 +112,7 @@ const post: BlogPost = {
       type: "cta",
       heading: "Not sure if your child is ready?",
       text: "A free demo class answers it. A coach plays a few positions with your child and tells you honestly whether to start now, and from which session.",
-      href: "/register",
+      href: "/book-free-demo-class",
       label: "Book a Free Demo Class",
     },
   ],

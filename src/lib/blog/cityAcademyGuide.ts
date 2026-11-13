@@ -149,7 +149,7 @@ export function cityAcademyGuide(input: CityAcademyGuideInput): BlogPost {
       type: "cta",
       heading: `Try a live online chess class from ${city.city}`,
       text: "Book a free online demo class. A coach assesses your child and recommends the exact session to start from - no travel, no payment and no obligation.",
-      href: "/register",
+      href: "/book-free-demo-class",
       label: "Book a Free Demo Class",
     },
   ];

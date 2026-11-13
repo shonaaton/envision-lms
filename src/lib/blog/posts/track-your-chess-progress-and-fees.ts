@@ -156,7 +156,7 @@ const post: BlogPost = {
       type: "cta",
       heading: "See the portal for yourself",
       text: "Book a free demo class. You get a live lesson with a coach and a look at the student portal.",
-      href: "/register",
+      href: "/book-free-demo-class",
       label: "Book a free demo class",
     },
   ],

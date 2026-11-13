@@ -118,7 +118,7 @@ const post: BlogPost = {
       type: "cta",
       heading: "Put us through the checklist",
       text: "Book a free demo class and ask every question above. A coach will assess your child and show you exactly where they would start and what comes next.",
-      href: "/register",
+      href: "/book-free-demo-class",
       label: "Book a Free Demo Class",
     },
   ],

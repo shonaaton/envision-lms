@@ -113,7 +113,7 @@ const post: BlogPost = {
       type: "cta",
       heading: "Start building strong foundations",
       text: "Book a free online demo chess class. A coach assesses your child and shows exactly where they would start on our 240-session course ladder.",
-      href: "/register",
+      href: "/book-free-demo-class",
       label: "Book a Free Demo Class",
     },
   ],

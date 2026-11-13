@@ -114,7 +114,7 @@ export default async function StudentSuccessPage({ params }: { params: { student
   return (
     <main className="min-h-screen bg-[#f7f8fb] text-slate-950">
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(schema) }} />
-      <MarketingHeader demoHref="/register" />
+      <MarketingHeader demoHref="/book-free-demo-class" />
       <section className="bg-[#17051f] px-4 py-14 text-white sm:px-6 lg:px-8">
         <div className="mx-auto grid max-w-7xl gap-8 lg:grid-cols-[0.9fr_1.1fr] lg:items-center">
           <div>

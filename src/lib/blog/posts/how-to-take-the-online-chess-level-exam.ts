@@ -242,7 +242,7 @@ const post: BlogPost = {
       type: "cta",
       heading: "Not an Envision student yet?",
       text: "Book a free demo class with one of our coaches. Every level ends with an exam like this one and a certificate for your child.",
-      href: "/register",
+      href: "/book-free-demo-class",
       label: "Book a free demo class",
     },
   ],

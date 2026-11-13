@@ -133,7 +133,7 @@ const post: BlogPost = {
       type: "cta",
       heading: "Find out if your child is ready for coaching",
       text: "Book a free online demo chess class. A coach plays a few positions with your child and gives you an honest recommendation - including where in the syllabus they would start.",
-      href: "/register",
+      href: "/book-free-demo-class",
       label: "Book a Free Demo Class",
     },
   ],

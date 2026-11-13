@@ -19,6 +19,7 @@ import { courseHub, coursePages } from "@/lib/coursePages";
 const knownRoutes = new Set([
   "/",
   "/register",
+  "/book-free-demo-class",
   "/contact-us",
   "/success-stories",
   "/online-chess-classes-for-kids",

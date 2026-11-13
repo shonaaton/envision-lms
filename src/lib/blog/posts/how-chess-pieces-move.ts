@@ -196,7 +196,7 @@ const post: BlogPost = {
       type: "cta",
       heading: "Learning chess with a child?",
       text: "Our Beginner Chess Course takes children from the board and the pieces to checkmate in 48 live sessions. Book a free demo class and a coach will place your child at the right session.",
-      href: "/register",
+      href: "/book-free-demo-class",
       label: "Book a Free Demo Class",
     },
   ],

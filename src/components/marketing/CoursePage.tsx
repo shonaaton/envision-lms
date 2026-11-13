@@ -13,7 +13,7 @@ import { blogHubLink, centreHubLink, centreLinks, contactLink, guidesForCourse, 
 import { MARKETING_BASE_URL } from "@/lib/publicLinks";
 import { courseOffer, onlineCourseInstance, ORGANIZATION_ID } from "@/lib/seo";
 
-const demoHref = "/register";
+const demoHref = "/book-free-demo-class";
 
 /** Matches the social card `courseMetadata` sets, so schema and OG agree. */
 const COURSE_OG_IMAGE = "/images/achievements/682626726_122217430778279433_7786835792267057544_n.jpg";

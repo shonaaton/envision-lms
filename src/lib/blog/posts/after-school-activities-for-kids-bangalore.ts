@@ -128,7 +128,7 @@ const post: BlogPost = {
       type: "cta",
       heading: "Add chess without adding a commute",
       text: "Book a free online demo chess class. A coach meets your child live, recommends where to start and shows you exactly how classes fit around school and sport.",
-      href: "/register",
+      href: "/book-free-demo-class",
       label: "Book a Free Demo Class",
     },
   ],

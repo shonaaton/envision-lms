@@ -153,7 +153,7 @@ const post: BlogPost = {
       type: "cta",
       heading: "Turn won positions into wins",
       text: "The Beginner Chess Course spends much of its final level on checkmate technique and mate-in-one training. Book a free demo and a coach will assess where your child is.",
-      href: "/register",
+      href: "/book-free-demo-class",
       label: "Book a Free Demo Class",
     },
   ],

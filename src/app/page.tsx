@@ -90,7 +90,7 @@ export const metadata: Metadata = {
   },
 };
 
-const demoHref = "/register";
+const demoHref = "/book-free-demo-class";
 const cloudinaryCollectionUrl = "https://collection.cloudinary.com/dlafr6yu3/3ddc9e2d8d7656087c4a52336a2e1df4";
 const offlineSourceUrl = OFFLINE_ACADEMY_URL;
 
@@ -574,7 +574,7 @@ export default async function Home() {
               <h2 className="mt-4 text-2xl font-black text-brand-900 sm:text-3xl">Daily chess practice between live classes.</h2>
               <p className="mt-3 max-w-2xl text-sm leading-7 text-brand-900/70">Good chess coaching is only half the week. Students anywhere in India can solve tactics, learn coordinates, hunt kings, play computer bots, finish assignments and climb academy leaderboards from the same portal they attend class in.</p>
             </div>
-            <Link href={demoHref} className="btn border border-brand/25 bg-white text-brand shadow-sm shadow-brand-900/5 hover:border-brand/50 hover:bg-brand-50">Explore Learning Portal</Link>
+            <Link href="/register" className="btn border border-brand/25 bg-white text-brand shadow-sm shadow-brand-900/5 hover:border-brand/50 hover:bg-brand-50">Explore Learning Portal</Link>
           </div>
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             {practiceTools.map((tool) => {

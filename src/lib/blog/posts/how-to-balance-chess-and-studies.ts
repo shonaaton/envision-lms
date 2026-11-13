@@ -121,7 +121,7 @@ const post: BlogPost = {
       type: "cta",
       heading: "Chess that fits around school",
       text: "Book a free online demo chess class. A coach assesses your child, explains the class rhythm and helps you plan chess around the school year.",
-      href: "/register",
+      href: "/book-free-demo-class",
       label: "Book a Free Demo Class",
     },
   ],

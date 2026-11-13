@@ -208,7 +208,7 @@ const academyLinks: NavItem[] = [
   ["Student Achievements", "/#achievements"],
   ["Student Success Stories", "/success-stories"],
   ["Parent Reviews", "/#reviews"],
-  ["Book a Free Demo Class", "/register"],
+  ["Book a Free Demo Class", "/book-free-demo-class"],
   ["Contact Us", "/contact-us"],
   ["Student Login", "/login"],
 ];

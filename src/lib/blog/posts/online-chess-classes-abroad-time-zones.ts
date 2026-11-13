@@ -111,7 +111,7 @@ const post: BlogPost = {
       type: "cta",
       heading: "Find a class time that works where you live",
       text: "Book a free demo class and tell us your time zone. A coach assesses your child's level, and we will tell you which group or one-to-one slots fit your week.",
-      href: "/register",
+      href: "/book-free-demo-class",
       label: "Book a Free Demo Class",
     },
   ],

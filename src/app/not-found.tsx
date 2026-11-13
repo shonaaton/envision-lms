@@ -125,7 +125,7 @@ function OffTheBoard() {
 export default function NotFound() {
   return (
     <>
-      <MarketingHeader demoHref="/register" />
+      <MarketingHeader demoHref="/book-free-demo-class" />
 
       <main>
         <section className="bg-white px-4 py-14 sm:px-6 lg:px-8 lg:py-20">
@@ -158,7 +158,7 @@ export default function NotFound() {
                   Back to the home page
                 </Link>
                 <Link
-                  href="/register"
+                  href="/book-free-demo-class"
                   className="inline-flex items-center gap-2 rounded-xl bg-accent px-5 py-3 text-sm font-black text-brand-900 shadow-sm shadow-brand-900/10 transition hover:-translate-y-0.5 hover:bg-accent-300"
                 >
                   Book a free demo class

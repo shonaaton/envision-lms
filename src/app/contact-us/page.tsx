@@ -89,7 +89,7 @@ export default function ContactUsPage() {
     <main className="landing-compact min-h-screen bg-white text-brand-900">
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(schema) }} />
 
-      <MarketingHeader demoHref="/register" />
+      <MarketingHeader demoHref="/book-free-demo-class" />
 
       {/* ------------------------------------------------------ hero + form */}
       <section className="relative isolate overflow-hidden bg-[#f5edf8] text-brand-900">
@@ -213,7 +213,7 @@ export default function ContactUsPage() {
             </p>
           </div>
           <div className="mt-6 flex flex-col gap-3 sm:flex-row lg:mt-0">
-            <Link href="/register" className="btn-accent">Book Free Demo Class <ArrowRight size={16} /></Link>
+            <Link href="/book-free-demo-class" className="btn-accent">Book Free Demo Class <ArrowRight size={16} /></Link>
             <Link href={`/${centreHub.slug}`} className="btn border border-brand/25 bg-white text-brand hover:border-brand/50 hover:bg-brand-50">
               {centreHub.navLabel}
             </Link>

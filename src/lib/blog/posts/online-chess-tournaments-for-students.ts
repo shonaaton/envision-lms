@@ -128,7 +128,7 @@ const post: BlogPost = {
       type: "cta",
       heading: "Want your child to play in our tournaments?",
       text: "Book a free demo class. Enrolled students can join the academy's online tournaments every week.",
-      href: "/register",
+      href: "/book-free-demo-class",
       label: "Book a free demo class",
     },
   ],

@@ -127,7 +127,7 @@ const post: BlogPost = {
       type: "cta",
       heading: "Preparing for a first rated tournament?",
       text: "Our coaches prepare students for rated events every season, from the first registration to game analysis afterwards. Book a free assessment to see where your child stands.",
-      href: "/register",
+      href: "/book-free-demo-class",
       label: "Book a Free Assessment",
     },
   ],

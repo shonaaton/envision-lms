@@ -143,7 +143,7 @@ const post: BlogPost = {
       type: "cta",
       heading: "Try a live class first",
       text: "Book a free demo class. You get the same portal, a real coach and a live lesson on the interactive board.",
-      href: "/register",
+      href: "/book-free-demo-class",
       label: "Book a free demo class",
     },
   ],

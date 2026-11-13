@@ -154,7 +154,7 @@ const post: BlogPost = {
       type: "cta",
       heading: "Build an opening repertoire with a coach",
       text: "From first principles to a tournament repertoire, our coaches build openings in the order that actually wins games. Start with a free demo class.",
-      href: "/register",
+      href: "/book-free-demo-class",
       label: "Book a Free Demo Class",
     },
   ],

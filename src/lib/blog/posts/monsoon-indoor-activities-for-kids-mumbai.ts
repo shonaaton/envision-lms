@@ -129,7 +129,7 @@ const post: BlogPost = {
       type: "cta",
       heading: "Make this monsoon count",
       text: "Book a free online demo chess class. A coach meets your child live and recommends exactly where to start - no travel, whatever the weather.",
-      href: "/register",
+      href: "/book-free-demo-class",
       label: "Book a Free Demo Class",
     },
   ],

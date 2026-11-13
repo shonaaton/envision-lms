@@ -23,6 +23,7 @@ import { courseHub, coursePages } from "@/lib/coursePages";
 const STATIC_ROUTES = [
   "/",
   "/register",
+  "/book-free-demo-class",
   "/contact-us",
   "/success-stories",
   "/blog",
@@ -125,8 +126,8 @@ describe.each(blogPosts.map((post) => [post.slug, post] as const))("blog post %s
 
   it("links into the rest of the site with at least three contextual links and the demo form", () => {
     const hrefs = internalHrefs(post);
-    expect(new Set(hrefs.filter((href) => href !== "/register")).size).toBeGreaterThanOrEqual(3);
-    expect(hrefs).toContain("/register");
+    expect(new Set(hrefs.filter((href) => href !== "/book-free-demo-class")).size).toBeGreaterThanOrEqual(3);
+    expect(hrefs).toContain("/book-free-demo-class");
     expect(hrefs).not.toContain(blogHref(post.slug));
   });
 

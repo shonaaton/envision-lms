@@ -147,7 +147,7 @@ const post: BlogPost = {
       type: "cta",
       heading: "Make tactics automatic",
       text: "Our coaches teach every tactical pattern in order, then drill it with homework puzzles and weekly tournaments. Book a free demo class to find your child's level.",
-      href: "/register",
+      href: "/book-free-demo-class",
       label: "Book a Free Demo Class",
     },
   ],

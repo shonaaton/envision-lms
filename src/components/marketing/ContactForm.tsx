@@ -86,7 +86,7 @@ export default function ContactForm() {
           page.
         </p>
         <div className="mt-6 flex flex-col justify-center gap-3 sm:flex-row">
-          <Link href="/register" className="btn-accent">Book a free demo class <ArrowRight size={16} /></Link>
+          <Link href="/book-free-demo-class" className="btn-accent">Book a free demo class <ArrowRight size={16} /></Link>
           <button type="button" onClick={() => setSent(false)} className="btn border border-brand/25 bg-white text-brand hover:border-brand/50 hover:bg-brand-50">
             Send another message
           </button>

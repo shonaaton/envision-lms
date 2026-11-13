@@ -143,7 +143,7 @@ const post: BlogPost = {
       type: "cta",
       heading: "New to Envision?",
       text: "Book a free demo class and meet a coach before you join. Every enrolled family gets 12 PTMs a year.",
-      href: "/register",
+      href: "/book-free-demo-class",
       label: "Book a free demo class",
     },
   ],

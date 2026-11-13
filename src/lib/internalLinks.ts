@@ -80,7 +80,7 @@ export const contactLink: RelatedLink = {
 };
 
 export const demoLink: RelatedLink = {
-  href: "/register",
+  href: "/book-free-demo-class",
   label: "Book a Free Demo Class",
   detail: "A real assessment class with a coach that ends in a level recommendation.",
 };

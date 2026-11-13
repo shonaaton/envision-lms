@@ -81,7 +81,7 @@ export default async function SuccessStoriesPage() {
   return (
     <main className="min-h-screen bg-[#f7f8fb] text-slate-950">
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(schema) }} />
-      <MarketingHeader demoHref="/register" />
+      <MarketingHeader demoHref="/book-free-demo-class" />
       <section className="bg-[#17051f] px-4 py-16 text-white sm:px-6 lg:px-8">
         <div className="mx-auto max-w-7xl">
           <p className="text-xs font-black uppercase tracking-[0.16em] text-accent">Student Success Stories</p>

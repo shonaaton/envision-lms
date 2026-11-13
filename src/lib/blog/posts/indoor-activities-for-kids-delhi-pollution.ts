@@ -119,7 +119,7 @@ const post: BlogPost = {
       type: "cta",
       heading: "Turn smog season into a new skill",
       text: "Book a free online demo chess class. A coach meets your child live, plays a few positions and recommends where to start - taught in English or Hindi, from home.",
-      href: "/register",
+      href: "/book-free-demo-class",
       label: "Book a Free Demo Class",
     },
   ],

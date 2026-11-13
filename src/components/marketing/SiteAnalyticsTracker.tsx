@@ -68,7 +68,7 @@ export default function SiteAnalyticsTracker() {
         trackClick("contact", label || href.split(":")[0]);
         return;
       }
-      if (href === "/register" || /demo|book|assessment/i.test(label)) {
+      if (href === "/register" || href.startsWith("/book-free-demo-class") || /demo|book|assessment/i.test(label)) {
         trackClick("cta", label || "Demo CTA");
         return;
       }

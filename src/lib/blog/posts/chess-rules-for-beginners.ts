@@ -189,7 +189,7 @@ const post: BlogPost = {
       type: "cta",
       heading: "Want a coach to check your child really has the rules?",
       text: "Castling, en passant and stalemate are where self-taught players most often go wrong. A free demo class with one of our coaches finds the gaps and recommends where to start.",
-      href: "/register",
+      href: "/book-free-demo-class",
       label: "Book a Free Demo Class",
     },
   ],

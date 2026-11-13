@@ -176,7 +176,7 @@ const post: BlogPost = {
       type: "cta",
       heading: "Visit an Envision centre - or try a class online",
       text: "Book a free demo class at any of our four Kolkata centres or online. A coach assesses your child and recommends the exact session to start from, with no obligation.",
-      href: "/register",
+      href: "/book-free-demo-class",
       label: "Book a Free Demo Class",
     },
   ],

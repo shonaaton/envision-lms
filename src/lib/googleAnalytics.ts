@@ -10,6 +10,7 @@ declare global {
 export function publicPageType(pathname: string) {
   if (pathname === "/") return "home";
   if (pathname === "/register") return "demo_registration";
+  if (pathname.startsWith("/book-free-demo-class")) return "demo_landing";
   if (pathname.startsWith("/contact-us")) return "contact";
   if (pathname.startsWith("/chess-academy-in-")) return "location_landing";
   if (pathname.startsWith("/courses")) return "course_landing";

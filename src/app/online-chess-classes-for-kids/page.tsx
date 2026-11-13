@@ -42,7 +42,7 @@ import { absoluteUrl, breadcrumbSchema, courseOffer, faqSchema, onlineCourseInst
  */
 
 const PATH = "/online-chess-classes-for-kids";
-const demoHref = "/register";
+const demoHref = "/book-free-demo-class";
 
 export const metadata = publicMetadata({
   path: PATH,

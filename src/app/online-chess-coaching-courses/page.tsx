@@ -15,7 +15,7 @@ import { courseOffer, onlineCourseInstance } from "@/lib/seo";
 
 export const metadata = courseHubMetadata();
 
-const demoHref = "/register";
+const demoHref = "/book-free-demo-class";
 const hubUrl = `${MARKETING_BASE_URL}/${courseHub.slug}`;
 
 /** Every stage with its session count, read from the syllabus rather than typed. */

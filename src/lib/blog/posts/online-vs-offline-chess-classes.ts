@@ -137,7 +137,7 @@ const post: BlogPost = {
       type: "cta",
       heading: "Try an online class before you decide",
       text: "Book a free online demo chess class. You will see exactly how a live class works, and a coach will recommend where your child should start.",
-      href: "/register",
+      href: "/book-free-demo-class",
       label: "Book a Free Demo Class",
     },
   ],

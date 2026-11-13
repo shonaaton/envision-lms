@@ -11,7 +11,7 @@ import { MarketingFooter, MarketingHeader } from "@/components/marketing/Marketi
 export default function LegalPagePlaceholder({ title }: { title: string }) {
   return (
     <>
-      <MarketingHeader demoHref="/register" />
+      <MarketingHeader demoHref="/book-free-demo-class" />
       <main className="min-h-[60vh] bg-[#f7f8fb] px-4 py-16 text-slate-950 sm:px-6 lg:px-8">
         <div className="mx-auto max-w-3xl">
           <h1 className="text-3xl font-black sm:text-4xl">{title}</h1>

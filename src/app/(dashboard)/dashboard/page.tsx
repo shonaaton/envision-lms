@@ -710,14 +710,14 @@ function DemoStudentDashboard({
       <div className="grid gap-5 xl:grid-cols-[minmax(0,1.35fr)_minmax(360px,0.65fr)]">
         <div className="space-y-5">
           <div className="grid gap-5 lg:grid-cols-2">
-            <StudentCard className="min-h-[220px]">
+            <StudentCard className="flex min-h-[220px] flex-col">
               <StudentSectionHeader
                 icon={Calendar}
                 title={nextSession ? "Your Demo Class" : "Next Class"}
                 action={nextSession ? <StatusBadge tone={bookingApproved ? "success" : "brand"}>{bookingApproved ? "Confirmed" : "Scheduled"}</StatusBadge> : <DemoPreviewBadge />}
               />
               {nextSession ? (
-                <div className="flex h-full flex-col justify-between gap-4">
+                <div className="flex flex-1 flex-col justify-between gap-4">
                   <div className="min-w-0">
                     <div className="flex flex-wrap items-center gap-2">
                       <h3 className="truncate text-base font-black text-slate-950">{sessionTopic(nextSession.session, nextSession.classroom)}</h3>
@@ -748,7 +748,7 @@ function DemoStudentDashboard({
                   />
                 </div>
               ) : (
-                <div className="flex h-full flex-col justify-between gap-4">
+                <div className="flex flex-1 flex-col justify-between gap-4">
                   <div className="grid gap-2">
                     {demoStudentExperience.upcomingClasses.slice(0, 2).map((item) => (
                       <div key={item.title} className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5">
@@ -1448,10 +1448,10 @@ async function StudentDashboard({ userId, joinAllowed }: { userId: string; joinA
           </section>
 
           <div className="grid gap-5 lg:grid-cols-2">
-            <StudentCard className="min-h-[220px]">
+            <StudentCard className="flex min-h-[220px] flex-col">
               <StudentSectionHeader icon={Calendar} title="Next Class" action={<StudentTextLink href="/calendar">Calendar</StudentTextLink>} />
               {nextSession ? (
-                <div className="flex h-full flex-col justify-between gap-4">
+                <div className="flex flex-1 flex-col justify-between gap-4">
                   <div className="min-w-0">
                     <div className="flex flex-wrap items-center gap-2">
                       <h3 className="truncate text-base font-black text-slate-950">{sessionTopic(nextSession.session, nextSession.classroom)}</h3>

@@ -30,6 +30,7 @@ import homeworkGuide from "@/lib/blog/posts/how-to-do-chess-homework-online";
 import practiceToolsGuide from "@/lib/blog/posts/online-chess-practice-tools-for-kids";
 import ptmGuide from "@/lib/blog/posts/how-to-book-a-parent-teacher-meeting";
 import joinClassGuide from "@/lib/blog/posts/how-to-join-an-online-chess-class";
+import joinDemoGuide from "@/lib/blog/posts/how-to-join-a-free-demo-chess-class";
 import tournamentsGuide from "@/lib/blog/posts/online-chess-tournaments-for-students";
 import progressGuide from "@/lib/blog/posts/track-your-chess-progress-and-fees";
 
@@ -51,6 +52,7 @@ const ALL_POSTS: BlogPost[] = [
   howToChooseACoach,
   // Student portal guides: one per part of the portal, with real screenshots.
   levelExamGuide,
+  joinDemoGuide,
   joinClassGuide,
   homeworkGuide,
   practiceToolsGuide,

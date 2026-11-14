@@ -24,7 +24,7 @@ const post: BlogPost = {
   publishedAt: "2026-11-04",
   updatedAt: "2026-11-04",
   relatedCourses: ["beginner-chess-course", "intermediate-chess-course"],
-  relatedPosts: ["how-online-chess-classes-work", "how-to-do-chess-homework-online", "online-chess-classes-abroad-time-zones"],
+  relatedPosts: ["how-online-chess-classes-work", "how-to-join-a-free-demo-chess-class", "how-to-do-chess-homework-online", "online-chess-classes-abroad-time-zones"],
   priority: 39,
   body: [
     {

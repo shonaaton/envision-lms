@@ -18,7 +18,8 @@ import {
 } from "@/lib/demoRequest";
 import { CONTACT_INTEREST_VALUES, ONLINE_INTEREST, contactDisplayPhone } from "@/lib/contactEnquiries";
 import { exactNationalNumber, exactPhoneNumberProblem } from "@/lib/phoneCountryCodes";
-import { demoSlotLabel } from "@/lib/demoRequestSlots";
+import { demoSlotLabel, demoSlotStart } from "@/lib/demoRequestSlots";
+import { describeLeadDetailChanges, normalizeLeadDetails, type LeadDetails, type LeadDetailsInput } from "@/lib/demoLeadDetails";
 import { LEAD_CHANNELS, summarizeLeadSource, type LeadChannel, type LeadSourceSummary } from "@/lib/leadSource";
 import {
   REMINDERS_PER_LEAD_MAX,
@@ -36,6 +37,7 @@ import {
   reassignDemoLeadReminderTasks,
   raiseDemoRequestTask,
   reassignDemoRequestTask,
+  refreshDemoRequestTask,
   resolveDemoLeadCallTask,
   resolveDemoLeadReminderTasks,
 } from "@/lib/tasks/taskTriggers";
@@ -169,6 +171,10 @@ export type DemoLeadRow = {
   interest: string;
   preferredTime: string;
   demoSlot: string;
+  /** The raw slot and manual source, for the edit form's starting values. */
+  demoSlotDate: string;
+  demoSlotTime: string;
+  manualSource: string;
   whatsappVerified: boolean;
   otpFailed: boolean;
   /** Typed in by a salesperson, so there was never a WhatsApp code to check. */
@@ -279,6 +285,9 @@ export async function getDemoLeads(viewer: DemoLeadViewer, filters: DemoLeadFilt
     interest: String(doc.interest || ""),
     preferredTime: String(doc.preferredTime || ""),
     demoSlot: demoSlotLabel(doc.demoSlotDate, doc.demoSlotTime),
+    demoSlotDate: String(doc.demoSlotDate || ""),
+    demoSlotTime: String(doc.demoSlotTime || ""),
+    manualSource: String(doc.manualSource || ""),
     whatsappVerified: Boolean(doc.whatsappVerifiedAt),
     otpFailed: Boolean(doc.otpFailedAt),
     stage: demoLeadStage(doc.leadStage),
@@ -557,6 +566,99 @@ export async function addManualDemoLead(viewer: DemoLeadViewer, input: ManualLea
   const assigned: any = owner ? lead : await assignDemoLeadOwner(id);
   if (assigned?.salesOwner && String(assigned.salesOwner) !== viewer.id) await raiseDemoRequestTask(assigned);
   return { ok: true, id };
+}
+
+export type LeadEditResult = { ok: true; changed: number } | { ok: false; error: string };
+
+/**
+ * Corrects or fills in a lead's details (2026-11-14): anyone who may touch the
+ * lead, through the same scope as notes and calls. Every change is written to
+ * the lead's history as "Field: before → after", so nothing is lost silently.
+ *
+ * A new WhatsApp number must not be another lead's (one lead per number), and
+ * it drops the "Verified" mark: the code was checked on the old number. The
+ * open "call this parent" task is rewritten with the new details.
+ */
+export async function updateDemoLeadDetails(viewer: DemoLeadViewer, leadId: string, input: LeadDetailsInput): Promise<LeadEditResult> {
+  const match = ownLead(viewer, leadId);
+  if (!match) return { ok: false, error: "This lead is not yours to edit." };
+  await dbConnect();
+  const doc: any = await ContactMessage.findOne(match).lean();
+  if (!doc) return { ok: false, error: "This lead is not yours to edit." };
+
+  const manual = doc.leadEntry === "manual";
+  const before: LeadDetails = {
+    name: String(doc.name || ""),
+    email: String(doc.email || ""),
+    countryCode: String(doc.countryCode || ""),
+    phone: String(doc.phone || ""),
+    ageGroup: String(doc.ageGroup || ""),
+    childLevel: String(doc.childLevel || ""),
+    interest: String(doc.interest || ""),
+    preferredTime: String(doc.preferredTime || ""),
+    demoSlotDate: String(doc.demoSlotDate || ""),
+    demoSlotTime: String(doc.demoSlotTime || ""),
+    manualSource: manual ? String(doc.manualSource || "") : "",
+  };
+  const cleaned = normalizeLeadDetails(input, before, manual);
+  if (!cleaned.ok) return cleaned;
+  const after = cleaned.details;
+  const changes = describeLeadDetailChanges(before, after);
+  if (!changes.length) return { ok: true, changed: 0 };
+
+  const numberChanged = before.countryCode !== after.countryCode || before.phone !== after.phone;
+  if (numberChanged) {
+    const other: any = await ContactMessage.findOne({ _id: { $ne: doc._id }, kind: DEMO_REQUEST_KIND, countryCode: after.countryCode, phone: after.phone, ...SUBMITTED_DEMO_REQUEST })
+      .select("name salesOwnerName")
+      .lean();
+    if (other) {
+      return {
+        ok: false,
+        error: `${contactDisplayPhone(after.countryCode, after.phone)} is already another lead (${other.name || "no name"}${other.salesOwnerName ? `, with ${other.salesOwnerName}` : ""}). One lead per number.`,
+      };
+    }
+  }
+
+  const $set: Record<string, unknown> = {
+    name: after.name,
+    countryCode: after.countryCode,
+    phone: after.phone,
+    interest: after.interest,
+  };
+  const $unset: Record<string, ""> = {};
+  const setOrClear = (key: string, value: string) => {
+    if (value) $set[key] = value;
+    else $unset[key] = "";
+  };
+  setOrClear("email", after.email);
+  setOrClear("ageGroup", after.ageGroup);
+  setOrClear("childLevel", after.childLevel);
+  setOrClear("preferredTime", after.preferredTime);
+  setOrClear("demoSlotDate", after.demoSlotDate);
+  setOrClear("demoSlotTime", after.demoSlotTime);
+  if (after.demoSlotDate) $set.demoSlotAt = demoSlotStart(after.demoSlotDate, after.demoSlotTime);
+  else $unset.demoSlotAt = "";
+  if (manual) $set.manualSource = after.manualSource;
+  if (numberChanged && !manual) {
+    $unset.whatsappVerifiedAt = "";
+    $unset.otpFailedAt = "";
+  }
+
+  const note = numberChanged && !manual && doc.whatsappVerifiedAt ? " (the new number is not verified)" : "";
+  const updated: any = await ContactMessage.findOneAndUpdate(
+    match,
+    {
+      $set,
+      ...(Object.keys($unset).length ? { $unset } : {}),
+      $push: { leadLog: { kind: "details", text: `Details changed${note}:\n${changes.join("\n")}`, by: viewer.id, byName: viewer.name, at: new Date() } },
+    },
+    { new: true },
+  ).lean();
+  if (!updated) return { ok: false, error: "This lead is not yours to edit." };
+
+  if (before.name !== after.name) await DemoLeadReminder.updateMany({ lead: doc._id, status: { $in: ["scheduled", "sent"] } }, { $set: { leadName: after.name } });
+  await refreshDemoRequestTask(updated);
+  return { ok: true, changed: changes.length };
 }
 
 /** Admins only: hand a lead to the other salesperson. Does not move the rotation. */

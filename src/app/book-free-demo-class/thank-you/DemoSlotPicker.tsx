@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { CalendarDays, Check, ChevronDown, Loader2 } from "lucide-react";
 import { DEMO_THANKS_STORAGE_KEY, demoRequestEventId } from "@/lib/demoRequest";
+import { CONSENT_EVENT } from "@/lib/cookieConsent";
 import { trackMetaLead } from "@/lib/metaPixel";
 import { demoSlotDays, demoSlotLabel, demoSlotTimes } from "@/lib/demoRequestSlots";
 
@@ -44,19 +45,32 @@ export default function DemoSlotPicker() {
   const [error, setError] = useState("");
 
   useEffect(() => {
-    let stored = readHandoff();
-    // The one conversion Meta counts for the form: a Lead ("form submit") event,
-    // sent when a family lands here from the form. The mark in sessionStorage
-    // keeps a refresh, or coming back to this tab, from counting them twice,
-    // and a visit with no request behind it (a bookmark) sends nothing.
+    const stored = readHandoff();
+    // The browser half of the form's Lead event (the server sends the same event
+    // with the same id from /api/demo-request, and Meta keeps one). Sent when a
+    // family lands here from the form; a visit with no request behind it (a
+    // bookmark) sends nothing. The mark in sessionStorage is written only once
+    // the event has really gone out: without marketing consent the pixel sends
+    // nothing, so the page waits for a decision on the banner instead of marking
+    // the lead as counted and losing it.
+    let stopWaiting = () => {};
     if (stored?.id && !stored.tracked) {
-      stored = { ...stored, tracked: true };
-      try {
-        window.sessionStorage.setItem(DEMO_THANKS_STORAGE_KEY, JSON.stringify(stored));
-      } catch {
-        // Without storage a refresh sends it again; Meta drops the repeat by its event id.
+      const sendLead = () => {
+        if (!trackMetaLead(demoRequestEventId(stored.id))) return false;
+        try {
+          window.sessionStorage.setItem(DEMO_THANKS_STORAGE_KEY, JSON.stringify({ ...stored, tracked: true }));
+        } catch {
+          // Without storage a refresh sends it again; Meta drops the repeat by its event id.
+        }
+        return true;
+      };
+      if (!sendLead()) {
+        const onDecision = () => {
+          if (sendLead()) stopWaiting();
+        };
+        window.addEventListener(CONSENT_EVENT, onDecision);
+        stopWaiting = () => window.removeEventListener(CONSENT_EVENT, onDecision);
       }
-      trackMetaLead(demoRequestEventId(stored.id));
     }
     setHandoff(stored);
     setDays(demoSlotDays());
@@ -66,6 +80,7 @@ export default function DemoSlotPicker() {
       setSaved(stored.slot);
     }
     setReady(true);
+    return () => stopWaiting();
   }, []);
 
   const times = date ? demoSlotTimes(date) : [];

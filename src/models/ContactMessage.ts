@@ -79,6 +79,13 @@ const ContactMessageSchema = new Schema(
     /** When sales was told about this request. Claimed once - see src/lib/demoRequestLead.ts. */
     announcedAt: Date,
     /**
+     * The form's Lead event reaching Meta's Conversions API (src/lib/metaConversionsApi.ts):
+     * when Meta accepted it, or Meta's reason for refusing it. Neither is set while
+     * META_CAPI_ACCESS_TOKEN is missing.
+     */
+    metaLeadSentAt: Date,
+    metaLeadError: { type: String, trim: true },
+    /**
      * The demo time the family asked for on the thank-you page: an IST day
      * (YYYY-MM-DD) and hour (HH:mm) from src/lib/demoRequestSlots.ts. A
      * preference for sales to confirm, not a booking.
@@ -106,7 +113,7 @@ const ContactMessageSchema = new Schema(
     leadLog: [
       {
         _id: false,
-        kind: { type: String, enum: ["note", "stage", "owner", "call", "reminder"], default: "note" },
+        kind: { type: String, enum: ["note", "stage", "owner", "call", "reminder", "details"], default: "note" },
         /** Calls only: one of DEMO_LEAD_CALL_OUTCOMES. */
         outcome: { type: String, trim: true },
         text: { type: String, trim: true },

@@ -1,9 +1,12 @@
 import { pushLeadStage } from "@/lib/crm/client";
 import { crmPhoneNumber, phoneKey } from "@/lib/crm/identity";
 import { contactInterestLabel } from "@/lib/contactEnquiries";
+import { resolvePublicAppUrl } from "@/lib/appUrl";
 import { assignDemoLeadOwner } from "@/lib/demoLeadCrm";
 import { leadSourceLine } from "@/lib/leadSource";
-import { demoAgeGroupLabel, demoChildLevelLabel } from "@/lib/demoRequest";
+import { demoAgeGroupLabel, demoChildLevelLabel, demoRequestEventId } from "@/lib/demoRequest";
+import { metaRequestContext, sendMetaLead } from "@/lib/metaConversionsApi";
+import { getClientIp } from "@/lib/requestSecurity";
 import { raiseDemoRequestTask } from "@/lib/tasks/taskTriggers";
 import { ContactMessage } from "@/models/ContactMessage";
 import { CrmLeadRecord } from "@/models/CrmLeadRecord";
@@ -16,6 +19,9 @@ import { CrmLeadRecord } from "@/models/CrmLeadRecord";
  * family. The claim on `announcedAt` is what keeps it to one announcement.
  */
 export async function announceDemoRequest(leadId: string, request: Request) {
+  // Read now: the route has already answered the family by the time this runs.
+  const metaContext = metaRequestContext(request, getClientIp(request.headers));
+  const siteUrl = resolvePublicAppUrl(request);
   const claimed: any = await ContactMessage.findOneAndUpdate(
     { _id: leadId, announcedAt: null },
     { $set: { announcedAt: new Date() }, $unset: { awaitingCode: 1 } },
@@ -34,8 +40,9 @@ export async function announceDemoRequest(leadId: string, request: Request) {
 
   await raiseDemoRequestTask(lead);
 
-  // Nothing is sent to Meta from the server (2026-11-11): the thank-you page's
-  // browser pixel sends the one form-submit event counted for this form.
+  // The server copy of the form's Lead event (the thank-you page's pixel sends
+  // the same id, and Meta keeps one). Runs once, inside the announcedAt claim.
+  await sendDemoLeadToMeta(lead, metaContext, siteUrl);
 
   // A number the CRM already knows may be further along, even a current student's
   // parent asking about a sibling, and this push would move it back to the start.
@@ -58,4 +65,25 @@ export async function announceDemoRequest(leadId: string, request: Request) {
     ].join(" | "),
   });
   if (!push.ok && !push.skipped) console.error("[demo-request] CRM push failed", push.reason);
+}
+
+async function sendDemoLeadToMeta(lead: any, context: ReturnType<typeof metaRequestContext>, siteUrl: string) {
+  const id = String(lead._id);
+  const result = await sendMetaLead({
+    eventId: demoRequestEventId(id),
+    eventTime: Math.floor(Date.now() / 1000),
+    eventSourceUrl: `${siteUrl || "https://envisionchessacademy.com"}/book-free-demo-class/thank-you`,
+    email: lead.email,
+    phone: crmPhoneNumber(lead),
+    name: lead.name,
+    fbclid: lead.leadSource?.fbclid,
+    clickedAt: lead.createdAt ? new Date(lead.createdAt).getTime() : undefined,
+    context,
+  }).catch((error) => ({ ok: false as const, reason: String(error?.message || error) }));
+  if ("skipped" in result && result.skipped) return;
+  if (!result.ok) console.error("[demo-request] Meta Conversions API send failed", result.reason);
+  await ContactMessage.updateOne(
+    { _id: id },
+    result.ok ? { $set: { metaLeadSentAt: new Date() }, $unset: { metaLeadError: 1 } } : { $set: { metaLeadError: result.reason } },
+  ).catch(() => undefined);
 }

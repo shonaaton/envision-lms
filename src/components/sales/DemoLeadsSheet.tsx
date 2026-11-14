@@ -49,9 +49,27 @@ export type DemoLeadSheetRow = {
   reminders: Array<{ id: string; dueLabel: string; note: string; status: "scheduled" | "sent"; forName: string; mine: boolean; canCancel: boolean }>;
   /** Newest first. */
   log: Array<{ kind: string; outcome: string; text: string; byName: string; at: string }>;
+  /** The stored values, as the Edit details form starts from them. */
+  edit: {
+    name: string;
+    email: string;
+    /** Digits only, e.g. "91". */
+    countryCode: string;
+    phone: string;
+    ageGroup: string;
+    childLevel: string;
+    interest: string;
+    preferredTime: string;
+    demoSlotDate: string;
+    demoSlotTime: string;
+    manualSource: string;
+  };
 };
 
 export type ReminderFormState = { error: string; saved: number };
+
+type Option = { value: string; label: string };
+export type LeadEditOptions = { dialCodes: Option[]; ageGroups: Option[]; childLevels: Option[]; interests: Option[]; sources: Option[] };
 
 type Action = (formData: FormData) => void | Promise<void>;
 type ReminderAction = (state: ReminderFormState, formData: FormData) => Promise<ReminderFormState>;
@@ -74,6 +92,9 @@ type Props = {
   /** The earliest value the reminder box accepts (now, IST). */
   reminderMin: string;
   reminderPresets: Array<{ label: string; value: string }>;
+  /** Saves the Edit details form; same state shape as the reminder form. */
+  editLead: ReminderAction;
+  editOptions: LeadEditOptions;
   /** The lead to open on arrival: the one a reminder email links to. */
   initialOpen?: string | null;
 };
@@ -383,6 +404,133 @@ function ReminderPanel({ row, setReminder, cancelReminder, reminderMin, reminder
   );
 }
 
+const EDIT_LABEL = "mb-1 block text-[11px] font-semibold text-slate-500";
+const EDIT_FIELD = "h-10 w-full rounded-lg border border-slate-200 bg-white px-2.5 text-sm text-slate-950 outline-none focus:border-brand";
+
+/** Options for a select, keeping a value the lead already has that the list no longer offers (an old level). */
+function withCurrent(options: Option[], current: string, currentLabel: string) {
+  return current && !options.some((option) => option.value === current) ? [{ value: current, label: currentLabel }, ...options] : options;
+}
+
+function SaveDetailsButton() {
+  const { pending } = useFormStatus();
+  return (
+    <button type="submit" disabled={pending} className="btn-primary h-10 text-xs disabled:opacity-60">
+      {pending ? "Saving..." : "Save details"}
+    </button>
+  );
+}
+
+/**
+ * Correct or fill in the lead's details (2026-11-14). Starts from the stored
+ * values; the server re-checks everything and writes "before → after" to the
+ * lead's history. Closes itself once saved.
+ */
+function EditDetailsPanel({ row, editLead, editOptions }: Pick<Shared, "editLead" | "editOptions"> & { row: DemoLeadSheetRow }) {
+  const [open, setOpen] = useState(false);
+  const [state, action] = useFormState(editLead, { error: "", saved: 0 });
+  const values = row.edit;
+  const manual = row.verification === "manual";
+
+  useEffect(() => {
+    if (state.saved) setOpen(false);
+  }, [state.saved]);
+
+  if (!open) {
+    return (
+      <button type="button" onClick={() => setOpen(true)} className="btn-outline h-9 text-xs">
+        Edit details
+      </button>
+    );
+  }
+
+  return (
+    // Keyed on the stored values, so reopening after a save starts from what was saved.
+    <form key={JSON.stringify(values)} action={action} className="rounded-xl border border-brand/20 bg-white p-3">
+      <p className={SECTION_LABEL}>Edit details</p>
+      <input type="hidden" name="lead" value={row.id} />
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        <label>
+          <span className={EDIT_LABEL}>Parent&apos;s name *</span>
+          <input name="name" required minLength={2} maxLength={120} defaultValue={values.name} autoComplete="off" className={EDIT_FIELD} />
+        </label>
+        <div>
+          <span className={EDIT_LABEL}>WhatsApp number *</span>
+          <div className="flex gap-2">
+            <select name="countryCode" defaultValue={values.countryCode || "91"} aria-label="Country code" className={`${EDIT_FIELD} !w-20 shrink-0 px-1.5`}>
+              {withCurrent(editOptions.dialCodes, values.countryCode, `+${values.countryCode}`).map((option) => (
+                <option key={option.value} value={option.value}>{option.label}</option>
+              ))}
+            </select>
+            <input name="phone" required inputMode="tel" maxLength={20} defaultValue={values.phone} aria-label="WhatsApp number" autoComplete="off" className={EDIT_FIELD} />
+          </div>
+        </div>
+        <label>
+          <span className={EDIT_LABEL}>Email</span>
+          <input name="email" type="email" maxLength={160} defaultValue={values.email} autoComplete="off" className={EDIT_FIELD} />
+        </label>
+        <label>
+          <span className={EDIT_LABEL}>Child&apos;s age</span>
+          <select name="ageGroup" defaultValue={values.ageGroup} className={EDIT_FIELD}>
+            <option value="">Not known</option>
+            {withCurrent(editOptions.ageGroups, values.ageGroup, row.age).map((option) => (
+              <option key={option.value} value={option.value}>{option.label}</option>
+            ))}
+          </select>
+        </label>
+        <label>
+          <span className={EDIT_LABEL}>Child&apos;s level</span>
+          <select name="childLevel" defaultValue={values.childLevel} className={EDIT_FIELD}>
+            <option value="">Not known</option>
+            {withCurrent(editOptions.childLevels, values.childLevel, row.level).map((option) => (
+              <option key={option.value} value={option.value}>{option.label}</option>
+            ))}
+          </select>
+        </label>
+        <label>
+          <span className={EDIT_LABEL}>Class</span>
+          <select name="interest" defaultValue={values.interest || editOptions.interests[0]?.value} className={EDIT_FIELD}>
+            {withCurrent(editOptions.interests, values.interest, row.classPreference).map((option) => (
+              <option key={option.value} value={option.value}>{option.label}</option>
+            ))}
+          </select>
+        </label>
+        <label>
+          <span className={EDIT_LABEL}>Time to call</span>
+          <input name="preferredTime" maxLength={120} defaultValue={values.preferredTime} placeholder="e.g. Weekdays after 6 PM" className={EDIT_FIELD} />
+        </label>
+        <div className="sm:col-span-2">
+          <span className={EDIT_LABEL}>Demo slot (IST)</span>
+          <div className="flex gap-2">
+            <input type="date" name="demoSlotDate" defaultValue={values.demoSlotDate} aria-label="Demo slot date" className={`${EDIT_FIELD} !w-44`} />
+            <input type="time" name="demoSlotTime" defaultValue={values.demoSlotTime} aria-label="Demo slot time" className={`${EDIT_FIELD} !w-32`} />
+          </div>
+        </div>
+        {manual ? (
+          <label>
+            <span className={EDIT_LABEL}>How they reached us *</span>
+            <select name="manualSource" required defaultValue={values.manualSource} className={EDIT_FIELD}>
+              {editOptions.sources.map((option) => (
+                <option key={option.value} value={option.value}>{option.label}</option>
+              ))}
+            </select>
+          </label>
+        ) : (
+          <input type="hidden" name="manualSource" value="" />
+        )}
+      </div>
+      {row.verification === "verified" ? (
+        <p className="mt-2 text-[11px] text-slate-500">Changing the WhatsApp number removes the Verified mark, because the code was checked on the old number.</p>
+      ) : null}
+      <div className="mt-3 flex flex-wrap items-center gap-3">
+        <SaveDetailsButton />
+        <button type="button" onClick={() => setOpen(false)} className="btn-outline h-10 text-xs">Cancel</button>
+        {state.error ? <p role="alert" className="text-xs font-semibold text-rose-700">{state.error}</p> : null}
+      </div>
+    </form>
+  );
+}
+
 function LogEntry({ entry }: { entry: DemoLeadSheetRow["log"][number] }) {
   if (entry.kind === "call") {
     const [, ...remarks] = entry.text.split("\n");
@@ -397,7 +545,7 @@ function LogEntry({ entry }: { entry: DemoLeadSheetRow["log"][number] }) {
   }
   return (
     <li className="text-sm leading-6">
-      <span className={entry.kind === "note" ? "whitespace-pre-line text-slate-900" : "font-semibold text-slate-500"}>{entry.text}</span>
+      <span className={entry.kind === "note" ? "whitespace-pre-line text-slate-900" : entry.kind === "details" ? "whitespace-pre-line font-semibold text-slate-600" : "font-semibold text-slate-500"}>{entry.text}</span>
       <span className="block text-xs text-slate-500">{entry.byName || "System"} · {entry.at}</span>
     </li>
   );
@@ -408,6 +556,7 @@ function LeadDetails({ row, shared }: { row: DemoLeadSheetRow; shared: Shared })
   const { canManage, addNote } = shared;
   return (
     <div className="max-w-3xl space-y-3">
+      {canManage ? <EditDetailsPanel row={row} editLead={shared.editLead} editOptions={shared.editOptions} /> : null}
       {canManage ? (
         <div className="grid gap-3 lg:grid-cols-2">
           <CallLogForm row={row} logCall={shared.logCall} />
@@ -468,7 +617,8 @@ function LeadDetails({ row, shared }: { row: DemoLeadSheetRow; shared: Shared })
 const detailsLabel = (row: DemoLeadSheetRow, expanded: boolean) => {
   if (expanded) return "Hide";
   const count = row.callCount + row.noteCount;
-  return count ? `Calls & notes (${count})` : "Log call";
+  // "Details" first: this panel is also where the lead's details are edited.
+  return count ? `Details & calls (${count})` : "Details & calls";
 };
 
 /** Phones: one card per lead, the call buttons first, no sideways scrolling. */

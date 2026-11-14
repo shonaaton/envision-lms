@@ -23,6 +23,7 @@ import {
   reassignDemoLead,
   setDemoLeadReminder,
   setDemoLeadStage,
+  updateDemoLeadDetails,
 } from "@/lib/demoLeadCrm";
 import {
   DEMO_AGE_GROUPS,
@@ -100,6 +101,32 @@ async function addLead(previous: AddLeadFormState, formData: FormData): Promise<
   redirect(demoLeadsHref({ stage: "all", owner: "all", query: "", channel: "all", lead: result.id }));
 }
 
+/** Edit details: corrections and missing information, checked and logged in updateDemoLeadDetails. */
+async function editLead(previous: ReminderFormState, formData: FormData): Promise<ReminderFormState> {
+  "use server";
+  const viewer = await crmViewer();
+  if (!viewer?.canManage) return { ...previous, error: "You do not have permission to edit leads." };
+  const text = (key: string) => String(formData.get(key) || "");
+  const lead = text("lead");
+  const result = await updateDemoLeadDetails(viewer.lead, lead, {
+    name: text("name"),
+    email: text("email"),
+    countryCode: text("countryCode"),
+    phone: text("phone"),
+    ageGroup: text("ageGroup"),
+    childLevel: text("childLevel"),
+    interest: text("interest"),
+    preferredTime: text("preferredTime"),
+    demoSlotDate: text("demoSlotDate"),
+    demoSlotTime: text("demoSlotTime"),
+    manualSource: text("manualSource"),
+  });
+  if (!result.ok) return { ...previous, error: result.error };
+  if (result.changed) logSalesAction(viewer.sales, `${viewer.sales.name} edited a demo lead's details`, { lead, changed: result.changed });
+  revalidatePath("/sales/leads");
+  return { error: "", saved: previous.saved + 1 };
+}
+
 /** Picked up or Missed: the time is the server's clock when the button was pressed. */
 async function logCall(formData: FormData) {
   "use server";
@@ -164,6 +191,15 @@ async function deleteLead(formData: FormData) {
   revalidatePath("/sales/leads");
 }
 
+/** The choice lists shared by the Add lead form and each lead's Edit details form. */
+const leadFormOptions = {
+  dialCodes: DIAL_CODES.map((entry) => ({ value: entry.code, label: `+${entry.code}` })),
+  ageGroups: DEMO_AGE_GROUPS.map((item) => ({ value: item.value, label: item.label })),
+  childLevels: DEMO_CHILD_LEVELS.map((item) => ({ value: item.value, label: item.label })),
+  interests: contactInterests.map((item) => ({ value: item.value, label: item.label })),
+  sources: MANUAL_LEAD_SOURCES.map((item) => ({ value: item.value, label: item.label })),
+};
+
 const when = (iso: string) => new Date(iso).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short", timeZone: "Asia/Kolkata" });
 
 export default async function DemoLeadsPage({ searchParams }: { searchParams: Record<string, string | string[] | undefined> }) {
@@ -221,6 +257,19 @@ export default async function DemoLeadsPage({ searchParams }: { searchParams: Re
       })),
       // Newest first, so the latest call and its remarks are at the top.
       log: row.log.map((entry) => ({ ...entry, at: when(entry.at) })).reverse(),
+      edit: {
+        name: row.name,
+        email: row.email,
+        countryCode: row.countryCode.replace(/[^\d]/g, ""),
+        phone: row.phone,
+        ageGroup: row.ageGroup,
+        childLevel: row.childLevel,
+        interest: row.interest,
+        preferredTime: row.preferredTime,
+        demoSlotDate: row.demoSlotDate,
+        demoSlotTime: row.demoSlotTime,
+        manualSource: row.manualSource,
+      },
     };
   });
 
@@ -243,11 +292,7 @@ export default async function DemoLeadsPage({ searchParams }: { searchParams: Re
         {viewer.canManage ? (
           <AddDemoLeadForm
             addLead={addLead}
-            dialCodes={DIAL_CODES.map((entry) => ({ value: entry.code, label: `+${entry.code}` }))}
-            ageGroups={DEMO_AGE_GROUPS.map((item) => ({ value: item.value, label: item.label }))}
-            childLevels={DEMO_CHILD_LEVELS.map((item) => ({ value: item.value, label: item.label }))}
-            interests={contactInterests.map((item) => ({ value: item.value, label: item.label }))}
-            sources={MANUAL_LEAD_SOURCES.map((item) => ({ value: item.value, label: item.label }))}
+            {...leadFormOptions}
             owners={seesAll ? data.owners.map((owner) => ({ value: owner.id, label: owner.name })) : []}
           />
         ) : null}
@@ -366,6 +411,8 @@ export default async function DemoLeadsPage({ searchParams }: { searchParams: Re
               cancelReminder={cancelReminder}
               reminderMin={academyDateTimeLocalInput(now)}
               reminderPresets={presets}
+              editLead={editLead}
+              editOptions={leadFormOptions}
               initialOpen={filters.lead || (sheetRows.length === 1 ? sheetRows[0].id : null)}
             />
           ) : null}

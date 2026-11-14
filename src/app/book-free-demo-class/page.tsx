@@ -341,9 +341,9 @@ export default function BookFreeDemoClassPage() {
 
       <header className="bfd-top" data-topbar>
         <div className="wrap bfd-nav">
-          <Link href="/" className="bfd-logo" aria-label="Envision Chess Academy home">
+          <div className="bfd-logo">
             <Image src={academyLogoUrl()} alt="Envision Chess Academy" width={190} height={64} priority unoptimized />
-          </Link>
+          </div>
           <nav className="navlinks" aria-label="Page sections">
             <a href="#approach">Our approach</a>
             <a href="#curriculum">Curriculum</a>

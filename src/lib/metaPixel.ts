@@ -1,19 +1,22 @@
 "use client";
 
 import { readConsent } from "@/lib/cookieConsent";
+import { CAMPAIGN_PIXEL_ID } from "@/lib/metaCampaignPixel";
 
 /**
  * The site's only Meta pixel, and it lives on the free demo campaign alone:
  * the landing page, its form and its thank-you page. No other page loads Meta's
- * script or sends it anything, and the server sends Meta nothing at all.
+ * script or sends it anything.
  *
  * What it reports: a page view of each campaign page, and one Lead event from
- * the thank-you page when a family arrives there from the form.
+ * the thank-you page when a family arrives there from the form. The server
+ * sends the same Lead through the Conversions API (`lib/metaConversionsApi`)
+ * with the same event id, so Meta counts it once whichever arrives.
  *
  * Nothing loads until the visitor accepts marketing cookies. Every call here
  * checks that first, so callers need no consent logic of their own.
  */
-export const CAMPAIGN_PIXEL_ID = process.env.NEXT_PUBLIC_META_CAMPAIGN_PIXEL_ID || "1084805421260422";
+export { CAMPAIGN_PIXEL_ID };
 const CAMPAIGN_PIXEL_PATH = "/book-free-demo-class";
 
 type Fbq = ((...args: unknown[]) => void) & {
@@ -78,10 +81,15 @@ export function trackMetaPageView() {
   fbq("track", "PageView");
 }
 
-/** The form-submit conversion. The event id lets Meta drop an accidental repeat. */
+/**
+ * The form-submit conversion. The event id lets Meta drop an accidental repeat
+ * and pair it with the server's copy. False when nothing was sent (no marketing
+ * consent yet, or off the campaign pages), so the caller can try again later.
+ */
 export function trackMetaLead(eventId?: unknown) {
   const fbq = campaignPixel();
-  if (!fbq) return;
+  if (!fbq) return false;
   if (typeof eventId === "string" && eventId) fbq("track", "Lead", {}, { eventID: eventId });
   else fbq("track", "Lead");
+  return true;
 }

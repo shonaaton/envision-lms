@@ -336,7 +336,8 @@ export async function refreshDemoRequestTask(lead: any) {
     await dbConnect();
     await InternalTask.updateOne(
       { referenceType: "ContactEnquiry", referenceId: lead?._id, status: { $in: OPEN_TASK_STATUSES } },
-      { $set: { details: demoRequestDetails(lead) } },
+      // The title too: a salesperson may have corrected the parent's name in the CRM.
+      { $set: { title: `Call ${nameOf(lead, "a parent")} about their free demo request`, details: demoRequestDetails(lead) } },
     );
   } catch (error) {
     console.error("[tasks] could not add the demo slot to the task", error);

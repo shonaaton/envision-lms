@@ -31,6 +31,16 @@ function hasActiveTabConflict(game: any, playerKey: string, tabId: string) {
   return Boolean(activeAt && Date.now() - new Date(activeAt).getTime() <= 15_000);
 }
 
+/**
+ * A refused move, logged with its reason. On 14 Nov 2026 no student move ever
+ * reached the server and nothing said why; a refusal is now visible in
+ * `docker logs` as `[tournament] move refused`.
+ */
+function refused(game: any, reason: string, body: Record<string, any>, status: number, who = "") {
+  console.info(`[tournament] move refused game=${game?._id} reason=${reason} status=${status} player=${who || "-"}`);
+  return NextResponse.json(body, { status });
+}
+
 async function markActionTab(game: any, playerKey: string, tabId: string) {
   if (!tabId) return;
   const isWhite = game.whiteKey === playerKey;
@@ -61,7 +71,7 @@ export async function POST(req: Request, { params }: { params: { gameId: string 
   const normalizedGuest = guestUsername.toLowerCase();
   const isGuestWhite = Boolean(normalizedGuest) && String(game.whiteExternalUsername || "").toLowerCase() === normalizedGuest;
   const isGuestBlack = Boolean(normalizedGuest) && String(game.blackExternalUsername || "").toLowerCase() === normalizedGuest;
-  if (!session && !isGuestWhite && !isGuestBlack) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!session && !isGuestWhite && !isGuestBlack) return refused(game, "unauthorized", { error: "Unauthorized" }, 401);
 
   const userId = session ? String((session.user as any).id) : "";
   const role = session ? (session.user as any).role : "";
@@ -70,7 +80,7 @@ export async function POST(req: Request, { params }: { params: { gameId: string 
   if (!limit.allowed) return rateLimitedResponse(limit.retryAfterMs);
 
   if (role === "student" && !(await isCurrentStudent(userId))) {
-    return NextResponse.json({ error: inactiveStudentMessage }, { status: 403 });
+    return refused(game, "inactive_student", { error: inactiveStudentMessage }, 403, userId);
   }
 
   const isWhite = Boolean(userId) && String(game.whiteUser || "") === userId;
@@ -78,19 +88,19 @@ export async function POST(req: Request, { params }: { params: { gameId: string 
   // Only a player assigned to this board may move on it. An admin observing a
   // game is a spectator here; correcting a result is a separate, audited path.
   if (!isWhite && !isBlack && !isGuestWhite && !isGuestBlack) {
-    return NextResponse.json({ error: "You are not assigned to this game." }, { status: 403 });
+    return refused(game, "not_assigned", { error: "You are not assigned to this game." }, 403, userId || guestUsername);
   }
   const playsWhite = isWhite || isGuestWhite;
   const playsBlack = isBlack || isGuestBlack;
   if ((game.turn === "w" && !playsWhite) || (game.turn === "b" && !playsBlack)) {
-    return NextResponse.json({ error: "It is not your turn." }, { status: 400 });
+    return refused(game, "not_your_turn", { error: "It is not your turn." }, 400, userId || guestUsername);
   }
 
   const body = await req.json().catch(() => ({}));
   const tabId = String(body.tabId || "").slice(0, 120);
   const actorPlayerKey = playsWhite ? game.whiteKey : game.blackKey;
   if (hasActiveTabConflict(game, actorPlayerKey, tabId)) {
-    return NextResponse.json({ error: "This board is already active in another tab." }, { status: 409 });
+    return refused(game, "other_tab", { error: "This board is already active in another tab." }, 409, actorPlayerKey);
   }
 
   let updated: any;
@@ -103,15 +113,12 @@ export async function POST(req: Request, { params }: { params: { gameId: string 
   } catch (error: any) {
     if (error instanceof MoveConflictError) {
       const fresh: any = await TournamentGame.findById(params.gameId).lean();
-      return NextResponse.json(
-        { error: error.message, code: "move_conflict", game: fresh },
-        { status: 409 }
-      );
+      return refused(game, "move_conflict", { error: error.message, code: "move_conflict", game: fresh }, 409, actorPlayerKey);
     }
     if (error instanceof IllegalMoveError) {
-      return NextResponse.json({ error: "That move is not legal in this position.", code: "illegal_move" }, { status: 400 });
+      return refused(game, "illegal_move", { error: "That move is not legal in this position.", code: "illegal_move" }, 400, actorPlayerKey);
     }
-    return NextResponse.json({ error: error?.message || "Could not register move" }, { status: 400 });
+    return refused(game, "error", { error: error?.message || "Could not register move" }, 400, actorPlayerKey);
   }
 
   await markActionTab(updated, actorPlayerKey, tabId);

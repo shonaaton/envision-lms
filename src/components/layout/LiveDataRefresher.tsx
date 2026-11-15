@@ -38,6 +38,12 @@ const quietMutationPatterns = [
   /^\/api\/classrooms\/[^/]+\/live\/chat$/,
   /^\/api\/classrooms\/[^/]+\/live\/responses$/,
   /^\/api\/tournaments\/games\/[^/]+\/move$/,
+  // The tournament room keeps its board, clocks and queue state itself. Its
+  // board ping runs every 10 s per player, and a resign or a Resume click would
+  // otherwise re-render the whole dashboard on the server each time - load the
+  // free database tier felt during the 14 Nov 2026 Arena.
+  /^\/api\/tournaments\/games\/[^/]+\/(presence|result)$/,
+  /^\/api\/tournaments\/[^/]+\/queue$/,
   // The registration dialog shows its own confirmation; a remount would wipe it.
   /^\/api\/tournaments\/[^/]+\/join$/,
   // Monthly feedback updates its own list after every action. A router refresh

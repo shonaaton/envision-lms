@@ -6,6 +6,7 @@ import { Course } from "@/models/Course";
 import { User } from "@/models/User";
 import { Tournament } from "@/models/Tournament";
 import TournamentCreateForm from "@/components/tournaments/TournamentCreateForm";
+import { StudentAccessWarning } from "@/components/tournaments/StudentAccessWarning";
 import { redirect } from "next/navigation";
 import { Chess } from "chess.js";
 import { randomBytes } from "crypto";
@@ -249,6 +250,7 @@ export default async function NewTournamentPage({ searchParams }: { searchParams
         <h1 className="text-2xl font-semibold">Create Tournament</h1>
         <p className="mt-1 text-sm text-slate-500">Create Swiss or Arena tournaments and define student access.</p>
       </div>
+      <StudentAccessWarning className="mb-5" />
       <TournamentCreateForm
         error={errorMessage}
         action={createTournament}

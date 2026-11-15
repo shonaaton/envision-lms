@@ -21,6 +21,8 @@ const TournamentGameSchema = new Schema(
     blackRatingDiff: Number,
     /** Set once the game has been rated, so it is never rated twice. */
     ratedAt: Date,
+    /** A rating taken back afterwards (no-start forfeits rated before 15 Nov 2026); never rated again. */
+    ratingVoided: Boolean,
     fen: { type: String, default: "start" },
     /** Position the game began from. Standard games leave this empty. */
     startFen: { type: String, default: "" },

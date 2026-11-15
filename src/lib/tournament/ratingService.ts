@@ -36,6 +36,9 @@ function whiteScore(result: string) {
   return null;
 }
 
+/** Games with fewer plies than this are never rated: nobody played chess on them. */
+export const UNRATED_BELOW_PLIES = 2;
+
 /** Rate every finished, unrated game of a rated tournament. Returns how many were rated. */
 export async function rateFinishedGames(tournament: any) {
   if (!tournament?.rated) return 0;
@@ -47,6 +50,11 @@ export async function rateFinishedGames(tournament: any) {
       whiteUser: { $exists: true, $ne: null },
       blackUser: { $exists: true, $ne: null },
       termination: { $ne: "bye" },
+      // A board where fewer than two moves were made had no chess on it (a
+      // no-start forfeit). Rating it moved players by hundreds of points for a
+      // board they never reached (14 Nov 2026), so it is scored but not rated.
+      ply: { $gte: UNRATED_BELOW_PLIES },
+      ratingVoided: { $ne: true },
     },
     "_id whiteUser blackUser result endedAt"
   )

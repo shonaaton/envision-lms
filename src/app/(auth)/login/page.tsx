@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { toast } from "sonner";
 import Image from "next/image";
+import GuestTournamentLinkForm from "@/components/tournaments/GuestTournamentLinkForm";
 import {
   ArrowRight,
   AtSign,
@@ -371,11 +372,14 @@ export default function LoginPage() {
                 }`}
               >
                 <Trophy size={16} className="mt-1 shrink-0 text-brand" />
-                <p>
-                  <span className="font-semibold">Playing a tournament as a guest?</span> You don&apos;t need to sign in.
-                  Open your tournament invite link, or tap <span className="font-semibold">Enter Tournament Room</span> in
-                  your registration email. On a new phone or computer, enter the same username you joined with.
-                </p>
+                <div>
+                  <p>
+                    <span className="font-semibold">Playing a tournament as a guest?</span> You don&apos;t need to sign in.
+                    Open your tournament invite link, or tap <span className="font-semibold">Enter Tournament Room</span> in
+                    your registration email. On a new phone or computer, enter the same username you joined with.
+                  </p>
+                  <GuestTournamentLinkForm suggestedEmail={loginId} />
+                </div>
               </div>
 
               <div className="mt-5 grid gap-2 border border-slate-200 bg-slate-50/80 p-3 text-sm text-slate-600">

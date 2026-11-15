@@ -30,6 +30,7 @@ import { Tournament } from "@/models/Tournament";
 import { formatAcademyDateTime } from "@/lib/academyTime";
 import { formatTimeControl, resolveTimeControl } from "@/lib/tournament/timeControl";
 import { lateEntryOpen } from "@/lib/tournament/lichessRules";
+import { memberCanPlayTournaments } from "@/lib/tournament/studentAccess";
 
 const DAY = 86_400_000;
 const KEY_PATTERN = /^(campaign:[a-f0-9]{24}|auto:[a-z_]+:[A-Za-z0-9_-]+)$/;
@@ -79,6 +80,9 @@ const TOURNAMENT_LOOKAHEAD_DAYS = 30;
  * name.
  */
 async function tournamentCandidates(user: any, now: Date): Promise<PopupCandidate[]> {
+  // "Register now" opens a tournament page; a student without Tournaments
+  // view/join is sent straight back to the dashboard from there.
+  if (!(await memberCanPlayTournaments({ id: String(user._id), role: "student", accountStatus: user.accountStatus }))) return [];
   const audience = user.accountStatus === "demo"
     ? [{ "access.users": user._id }]
     : [{ "access.users": user._id }, { "access.allActiveStudents": true }];

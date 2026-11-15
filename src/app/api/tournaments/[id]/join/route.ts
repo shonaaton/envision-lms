@@ -12,6 +12,7 @@ import { recordActivity } from "@/lib/activity";
 import { lateEntryOpen } from "@/lib/tournament/lichessRules";
 import { inactiveStudentMessage } from "@/lib/studentAccess";
 import { emitTournamentUpdate } from "@/lib/tournamentSocketServer";
+import { memberCanPlayTournaments, STUDENT_TOURNAMENT_BLOCKED_MESSAGE } from "@/lib/tournament/studentAccess";
 
 export const dynamic = "force-dynamic";
 
@@ -69,6 +70,12 @@ export async function POST(_: Request, { params }: { params: { id: string } }) {
       (tournament.access?.users || []).map((id: any) => String(id)).includes(userId) ||
       (tournament.participants || []).some((player: any) => objectId(player) === userId);
     if (!eligible) return NextResponse.json({ error: "You are not eligible for this tournament." }, { status: 403 });
+    // The tournament room is a dashboard page that sends anyone without
+    // Tournaments view/join away; entering them would only get them paired
+    // and forfeited (14 Nov 2026). See lib/tournament/studentAccess.ts.
+    if (!(await memberCanPlayTournaments(session.user as any))) {
+      return NextResponse.json({ error: STUDENT_TOURNAMENT_BLOCKED_MESSAGE, code: "tournaments_not_open" }, { status: 403 });
+    }
     if (!(tournament.participants || []).some((player: any) => objectId(player) === userId)) {
       tournament.participants.push(userId);
       newlyRegistered = true;

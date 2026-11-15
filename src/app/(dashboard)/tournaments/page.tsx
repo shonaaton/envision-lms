@@ -7,6 +7,7 @@ import Link from "next/link";
 import { CalendarClock, CheckCircle2, Clock3, Plus, Trophy, Users } from "lucide-react";
 import { describeTournament, relativeTime, type TournamentSummary } from "@/lib/tournament/playerAction";
 import { formatAcademyDateTime } from "@/lib/academyTime";
+import { StudentAccessWarning } from "@/components/tournaments/StudentAccessWarning";
 
 export const dynamic = "force-dynamic";
 
@@ -154,6 +155,8 @@ export default async function TournamentsPage() {
           </Link>
         ) : null}
       </header>
+
+      {canCreate ? <StudentAccessWarning className="mb-6" /> : null}
 
       {sections.length ? (
         <div className="space-y-8">

@@ -49,6 +49,8 @@ function entryFor(tournamentId: string, playerKey: string) {
 export function playerSocketOpened(tournamentId: string, playerKey: string, now = Date.now()) {
   if (!tournamentId || !playerKey) return;
   const entry = entryFor(tournamentId, playerKey);
+  // Logged only on arrival, so pairing gaps can be explained afterwards.
+  if (entry.sockets === 0 && now - entry.seenAt > PRESENCE_GRACE_MS) console.info(`[tournament] presence ${tournamentId} ${playerKey} entered the room`);
   entry.sockets += 1;
   entry.seenAt = now;
 }
@@ -58,6 +60,7 @@ export function playerSocketClosed(tournamentId: string, playerKey: string, now 
   const entry = entryFor(tournamentId, playerKey);
   entry.sockets = Math.max(0, entry.sockets - 1);
   entry.seenAt = now;
+  if (entry.sockets === 0) console.info(`[tournament] presence ${tournamentId} ${playerKey} closed their last connection (present ${PRESENCE_GRACE_MS / 1000}s more)`);
 }
 
 /** An HTTP sign of life: the play room's state poll. */

@@ -7,6 +7,8 @@ import { resolvePublicAppUrl } from "@/lib/appUrl";
 import { tournamentRulesText } from "@/lib/tournament/rules";
 import { formatTimeControl, resolveTimeControl } from "@/lib/tournament/timeControl";
 import { notifyExternalTournamentParticipant } from "@/lib/tournamentNotifications";
+import { firstMoveSeconds } from "@/lib/tournament/lichessRules";
+import { memberCanPlayTournaments } from "@/lib/tournament/studentAccess";
 
 /**
  * Registration confirmations and the start reminders (30 and 10 minutes
@@ -61,7 +63,10 @@ function withdrawnKeys(tournament: any) {
 
 const GUEST_RETURN_HINT =
   "On another device, open the link, choose “I have already registered” and enter your email or WhatsApp number and your username.";
-const FIRST_MOVE_HINT = "Make your first move within 60 seconds of your board appearing, or you lose that game.";
+/** The real first-move limit for this event's clock (lichessRules), never a fixed guess. */
+function firstMoveHint(tournament: any) {
+  return `Make your first move within ${firstMoveSeconds(tournament || {})} seconds of your board appearing, or you lose that game.`;
+}
 
 function guestDedupKey(tournamentId: string, kind: string, username: string) {
   return `tournament:${tournamentId}:${kind}:${String(username).trim().toLowerCase()}`;
@@ -151,9 +156,15 @@ export async function sendTournamentReminder(tournament: any, minutes: Tournamen
     .map((item: any) => objectId(item))
     .filter((id: string) => id && !withdrawn.has(`user:${id}`));
   if (memberIds.length) {
-    const users: any[] = await User.find({ _id: { $in: memberIds }, isActive: { $ne: false } })
-      .select("_id name username email phone countryCode")
+    const found: any[] = await User.find({ _id: { $in: memberIds }, isActive: { $ne: false } })
+      .select("_id name username email phone countryCode role accountStatus")
       .lean();
+    // "Open the tournament page" is no use to a member that page bounces back
+    // to the dashboard (Feature Access); the organiser sees a warning instead.
+    const reachable = await Promise.all(
+      found.map((user) => memberCanPlayTournaments({ id: String(user._id), role: user.role, accountStatus: user.accountStatus }))
+    );
+    const users = found.filter((_, index) => reachable[index]);
     const link = memberTournamentLink(tournament);
     await Notification.insertMany(
       users.map((user) => ({
@@ -174,7 +185,7 @@ export async function sendTournamentReminder(tournament: any, minutes: Tournamen
     await Promise.all(users.filter((user) => user.email).map((user) => sendAutomationEmail({
       to: user.email,
       subject: `Starts in ${minutes} minutes: ${tournament.name}`,
-      message: `Hello ${user.name || user.username || "there"},\n\n${tournament.name} starts in ${minutes} minutes, at ${start}.\n\nOpen the tournament page now and keep it open: your first game appears automatically when the tournament begins. ${FIRST_MOVE_HINT}`,
+      message: `Hello ${user.name || user.username || "there"},\n\n${tournament.name} starts in ${minutes} minutes, at ${start}.\n\nOpen the tournament page now and keep it open: your first game appears automatically when the tournament begins. ${firstMoveHint(tournament)}`,
       metadata: { kind, tournamentId, userId: String(user._id), href: `/tournaments/${tournamentId}`, actionLabel: "Open the tournament" },
     }).catch(() => null)));
     members = users.length;
@@ -197,7 +208,7 @@ export async function sendTournamentReminder(tournament: any, minutes: Tournamen
       name: guest.displayName || guest.username,
       tournamentName: tournament.name,
       subject: `Starts in ${minutes} minutes: ${tournament.name}`,
-      message: `Hello ${guest.displayName || guest.username},\n\n${tournament.name} starts in ${minutes} minutes, at ${start}.\n\nOpen the tournament room now and keep it open: your first game appears automatically when the tournament begins. ${FIRST_MOVE_HINT}\n\nYour username: ${guest.username}\n${GUEST_RETURN_HINT}`,
+      message: `Hello ${guest.displayName || guest.username},\n\n${tournament.name} starts in ${minutes} minutes, at ${start}.\n\nOpen the tournament room now and keep it open: your first game appears automatically when the tournament begins. ${firstMoveHint(tournament)}\n\nYour username: ${guest.username}\n${GUEST_RETURN_HINT}`,
       href: link,
       tournamentId,
     }).catch(() => null)));

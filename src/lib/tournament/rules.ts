@@ -102,7 +102,7 @@ export function tournamentRuleSections(tournament: any): RuleSection[] {
     );
   }
   if (tournament?.rated) {
-    scoring.push("This tournament is rated: your tournament rating (Glicko-2, starting at 1500, as on Lichess) changes after every game against another academy player. Guest games are not rated.");
+    scoring.push("This tournament is rated: your tournament rating (Glicko-2, starting at 1500, as on Lichess) changes after every game against another academy player. Guest games are not rated, and neither is a game lost before both players have moved.");
   }
 
   const attendance: string[] = [

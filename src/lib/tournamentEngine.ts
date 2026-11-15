@@ -698,6 +698,7 @@ export async function enforceTournamentGameTimeouts(tournament: TournamentLike) 
 async function sitOutNoShows(tournament: TournamentLike, absent: Array<{ key: string; user?: string }>) {
   const now = new Date();
   for (const player of absent) {
+    console.info(`[tournament] no-start ${objectId(tournament)} ${player.key} lost on first-move time and is paused`);
     await Tournament.updateOne(
       { _id: tournament._id, "participantStates.playerKey": player.key },
       { $set: { "participantStates.$.status": "paused", "participantStates.$.pausedAt": now } }
@@ -721,6 +722,28 @@ async function sitOutNoShows(tournament: TournamentLike, absent: Array<{ key: st
 /* ------------------------------------------------------------------ */
 /* Arena pairing                                                       */
 /* ------------------------------------------------------------------ */
+
+declare global {
+  // eslint-disable-next-line no-var
+  var _tournamentArenaPassLog: Map<string, string> | undefined;
+}
+
+/**
+ * One log line per Arena pairing pass, but only when who is present, waiting or
+ * paired has changed - so a dead hour (14 Nov 2026, 20:30-21:30) can be
+ * explained from `docker logs` afterwards instead of guessed at. Presence lives
+ * only in memory, so this is the only record of it.
+ */
+function logArenaPass(
+  tournamentId: string,
+  pass: { players: number; present: number; paused: number; active: number; busy: number; waiting: string[]; pairs: string[] }
+) {
+  const seen = (globalThis._tournamentArenaPassLog ??= new Map());
+  const line = `players=${pass.players} present=${pass.present} paused=${pass.paused} active=${pass.active} busy=${pass.busy} waiting=[${pass.waiting.join(",")}] paired=[${pass.pairs.join(",")}]`;
+  if (!pass.pairs.length && seen.get(tournamentId) === line) return;
+  seen.set(tournamentId, line);
+  console.info(`[tournament] arena ${tournamentId} ${line}`);
+}
 
 async function acquirePairingLock(tournamentId: string) {
   const token = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
@@ -834,6 +857,16 @@ export async function syncArenaPairings(tournamentId: string) {
       waitSeconds: arenaWaitSeconds(tournament),
       smallTourActivePlayers: ranked.length < ARENA_SMALL_TOURNAMENT_PLAYERS ? active.length : null,
     }).map((pair) => ({ white: standingByKey.get(pair.white.playerKey), black: standingByKey.get(pair.black.playerKey) }));
+
+    logArenaPass(id, {
+      players: ranked.length,
+      present: ranked.filter((entry: any) => present.has(entry.playerKey)).length,
+      paused: ranked.filter((entry: any) => !isAvailableForPairing(states.get(entry.playerKey))).length,
+      active: active.length,
+      busy: busy.size,
+      waiting: waiting.map((player) => player.playerKey),
+      pairs: pairs.filter((pair) => pair.white && pair.black).map((pair) => `${pair.white.playerKey}-${pair.black.playerKey}`),
+    });
 
     // Board numbers continue from the games already loaded above, rather than
     // costing an extra count query on every pass.

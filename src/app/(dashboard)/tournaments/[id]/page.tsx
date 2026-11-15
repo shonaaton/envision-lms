@@ -6,6 +6,7 @@ import { User } from "@/models/User";
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { Link2, Trophy } from "lucide-react";
+import { StudentAccessWarning } from "@/components/tournaments/StudentAccessWarning";
 import { TournamentDetailClient } from "@/components/tournaments/TournamentDetailClient";
 import { SelectOnFocusInput } from "@/components/tournaments/SelectOnFocusInput";
 import { TournamentGame } from "@/models/TournamentGame";
@@ -129,8 +130,10 @@ export default async function TournamentDetailPage({ params }: { params: { id: s
    * standings, boards, information - is the client's, which used to duplicate
    * a header, a join button and a nine-tile stat grid rendered here as well.
    */
+  const eventOpen = !["completed", "finished", "cancelled"].includes(String(tournament.status || ""));
   return (
     <div>
+      {role === "admin" && eventOpen ? <StudentAccessWarning className="mx-auto max-w-6xl px-4 pt-5 sm:px-6 lg:px-8" /> : null}
       {role === "admin" && externalInviteUrl ? (
         <div className="mx-auto max-w-6xl px-4 pt-5 sm:px-6 lg:px-8">
           <div className="card border-brand/20 bg-brand-50/50">

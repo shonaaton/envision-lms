@@ -1,4 +1,5 @@
-import { playerSeen } from "@/lib/tournament/presence";
+import { playerSeen, presentPlayerKeys } from "@/lib/tournament/presence";
+import { memberCanPlayTournaments } from "@/lib/tournament/studentAccess";
 import { NextResponse } from "next/server";
 import mongoose from "mongoose";
 import { auth } from "@/lib/auth";
@@ -96,8 +97,9 @@ export async function GET(request: Request, { params }: { params: { id: string }
         (tournament.participants || []).some((player: any) => objectId(player) === String(userId))));
   if (!allowed) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   // The play room polls this while open: a sign of life for Arena pairing
-  // when the socket cannot connect.
-  playerSeen(params.id, myPlayerKey);
+  // when the socket cannot connect. Not for a member the dashboard bounces off
+  // the tournament pages (lib/tournament/studentAccess.ts).
+  if (isGuest || (session && (await memberCanPlayTournaments(session.user as any)))) playerSeen(params.id, myPlayerKey);
 
   const playerGames = {
     tournament: params.id,
@@ -141,6 +143,17 @@ export async function GET(request: Request, { params }: { params: { id: string }
   const seatFromRound = liveRound?.pairings?.find((p: any) => p.whiteKey === myPlayerKey || p.blackKey === myPlayerKey) || null;
   const fallbackGame = myGamesRaw[0] || null;
   const participantState = (tournament.participantStates || []).find((entry: any) => entry.playerKey === myPlayerKey) || null;
+  // How many other players an Arena could pair with right now: in the room and
+  // not paused. A lone player waited 50 minutes on 14 Nov 2026 with no hint why.
+  const unavailable = new Set(
+    (tournament.participantStates || [])
+      .filter((entry: any) => ["paused", "withdrawn"].includes(String(entry.status)))
+      .map((entry: any) => String(entry.playerKey))
+  );
+  const rankedKeys = new Set((tournament.standings || []).map((entry: any) => String(entry.playerKey)));
+  const otherPlayersInRoom = tournament.type === "arena"
+    ? Array.from(presentPlayerKeys(params.id)).filter((key) => key !== myPlayerKey && rankedKeys.has(key) && !unavailable.has(key)).length
+    : null;
 
   const roundProgress = liveRound
     ? {
@@ -239,6 +252,7 @@ export async function GET(request: Request, { params }: { params: { id: string }
     roundProgress,
     nextRoundAt,
     arenaEndsAt: tournament.arenaEndsAt || null,
+    otherPlayersInRoom,
     serverNow: Date.now(),
     health: {
       activeGames: Number(countsByStatus.active || 0),

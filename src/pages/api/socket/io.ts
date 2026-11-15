@@ -10,6 +10,7 @@ import { TournamentGame } from "@/models/TournamentGame";
 import { registerTournamentSocketServer, tournamentGameRoomName, tournamentRoomName } from "@/lib/tournamentSocketServer";
 import { pruneExpiredEntries } from "@/lib/requestSecurity";
 import { playerSocketClosed, playerSocketOpened } from "@/lib/tournament/presence";
+import { memberCanPlayTournaments } from "@/lib/tournament/studentAccess";
 
 type SocketServerWithIO = NextApiResponse["socket"] & {
   server: {
@@ -121,8 +122,11 @@ async function admitToTournamentRoom(tournamentId: string, headers: Record<strin
       memberAllowed = true;
       // Recorded even before they register: someone who opens the event and
       // then registers is already in the room. A spectator's key is never in
-      // the standings, so it pairs nobody.
-      playerKeys.push(`user:${userId}`);
+      // the standings, so it pairs nobody. A member the dashboard bounces off
+      // the tournament pages (no Tournaments view/join) is never counted as
+      // present: they were paired in the split second before the bounce, then
+      // forfeited (14 Nov 2026).
+      if (await memberCanPlayTournaments({ id: userId, role: role as any })) playerKeys.push(`user:${userId}`);
     }
   }
 

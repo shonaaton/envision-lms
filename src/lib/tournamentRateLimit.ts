@@ -29,6 +29,9 @@ export const TOURNAMENT_LIMITS = {
    * is throttled hard - ten tries, then one every ten seconds.
    */
   guestReturn: { capacity: 10, refillPerSecond: 0.1 },
+  /** "Email me my tournament link" on the login page: per address sending, then per inbox. */
+  guestLink: { capacity: 5, refillPerSecond: 1 / 120 },
+  guestLinkInbox: { capacity: 2, refillPerSecond: 1 / 900 },
 } as const;
 
 export type LimitName = keyof typeof TOURNAMENT_LIMITS;

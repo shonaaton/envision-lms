@@ -34,6 +34,8 @@ type PlayState = {
   roundProgress?: any;
   nextRoundAt?: number | null;
   arenaEndsAt?: string | null;
+  /** Arena: other players in the room and not paused, who could be paired now. */
+  otherPlayersInRoom?: number | null;
   berserkAvailable?: boolean;
   tieBreak?: { key: string; label: string } | null;
   maxRounds?: number | null;
@@ -1077,6 +1079,8 @@ function WaitingPanel({
 }) {
   const liveGames = state?.liveGames || [];
   const waitingForOpponent = Boolean(tournamentPlaying && isArena && state?.joined && !isPaused);
+  // Nobody else to play: say so, rather than a spinner that never resolves.
+  const aloneInRoom = waitingForOpponent && state?.otherPlayersInRoom === 0;
   const roundDone = Boolean(roundProgress && roundProgress.total > 0 && roundProgress.completed >= roundProgress.total);
 
   /* A Swiss player who finishes early moves through a definite sequence, and
@@ -1100,7 +1104,9 @@ function WaitingPanel({
         ? isArena
           ? "You are paused"
           : "You are sitting out"
-        : waitingForOpponent
+        : aloneInRoom
+          ? "Waiting for another player"
+          : waitingForOpponent
           ? "Finding your next opponent"
           : swissStage === "playing-round"
             ? `Waiting for round ${roundProgress.roundNumber} to finish`
@@ -1123,6 +1129,8 @@ function WaitingPanel({
           : "You can watch the event, but you will only be paired after joining from the tournament page."
         : tournamentFinished
           ? "Final standings are on the tournament page."
+          : aloneInRoom
+            ? "No other player is in the tournament room right now. Keep this page open: you are paired the moment someone joins or comes back."
           : waitingForOpponent
             ? "Your board opens here the moment an opponent is free. You do not need to refresh."
             : swissStage === "playing-round"

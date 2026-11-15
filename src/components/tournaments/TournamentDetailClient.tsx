@@ -159,6 +159,18 @@ export function TournamentDetailClient({
   );
   const { connected } = useTournamentSocket({ tournamentId, handlers });
 
+  /* Without the live connection a pairing event never arrives, and a player
+     waiting here would sit out their board until the first-move clock beat
+     them. Poll instead, as the play room does. */
+  const lobbyLive = ["live", "playing"].includes(String(state.tournament?.status || "")) && Boolean(state.joined);
+  useEffect(() => {
+    if (connected || !lobbyLive) return;
+    const timer = window.setInterval(() => {
+      if (document.visibilityState === "visible") void refresh();
+    }, 8_000);
+    return () => window.clearInterval(timer);
+  }, [connected, lobbyLive, refresh]);
+
   useEffect(() => {
     void refresh();
   }, [refresh]);

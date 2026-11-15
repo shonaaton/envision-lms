@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { canGiveFeedback, isJoinWindowOpen, nextPtmEligibleAt, ptmCreditSummary, ptmYearOf, requestPtmSchema, schedulePtmSchema, serializePtm } from "./ptmRules";
+import { canCreatePtm, canGiveFeedback, isJoinWindowOpen, nextPtmEligibleAt, ptmCreditSummary, ptmYearOf, requestPtmSchema, staffRequestPtmSchema, schedulePtmSchema, serializePtm } from "./ptmRules";
 const now = new Date("2026-10-01T00:00:00+05:30");
 const row = (status: string, extra: Record<string, any> = {}) => ({ _id: "ptm", student: "student", coach: "coach", status, ptmYear: "2026-27", preferredAt: "2026-10-04T10:00:00+05:30", ...extra });
 describe("PTM credit rules", () => {
@@ -44,6 +44,22 @@ describe("PTM access windows", () => {
   });
 });
 describe("PTM serialization and input", () => {
+  it("allows PTM managers to create, but not read-only staff or coaches", () => {
+    for (const role of ["admin", "sub-admin"] as const) {
+      expect(canCreatePtm({ id: role, role, canEdit: true })).toBe(true);
+      expect(canCreatePtm({ id: role, role, canCreate: true })).toBe(true);
+      expect(canCreatePtm({ id: role, role, canApprove: true })).toBe(false);
+    }
+    expect(canCreatePtm({ id: "coach", role: "instructor", canCreate: true, canEdit: true })).toBe(false);
+    expect(canCreatePtm({ id: "student", role: "student", canEdit: true })).toBe(false);
+  });
+  it("requires a student for staff creation and strips student impersonation from student requests", () => {
+    const input = { student: "b".repeat(24), coach: "a".repeat(24), preferredAt: "2026-11-20T17:00", reason: "Review student progress" };
+    expect(staffRequestPtmSchema.parse(input).student).toBe(input.student);
+    expect(staffRequestPtmSchema.safeParse({ ...input, student: undefined }).success).toBe(false);
+    expect(staffRequestPtmSchema.safeParse({ ...input, student: "invalid" }).success).toBe(false);
+    expect(requestPtmSchema.parse(input)).not.toHaveProperty("student");
+  });
   it("never leaks feedback or Meet URLs to coach or student, including unknown fields", () => {
     const p = row("completed", { meetingUrl: "https://meet.google.com/abc-defg-hij", feedback: { rating: 5, preparedness: 4, clarity: 3, comments: "Private", submittedAt: now }, privateExtra: "secret" });
     for (const role of ["student", "instructor"] as const) {

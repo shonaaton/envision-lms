@@ -14,7 +14,7 @@ import { StudentPause } from "@/models/StudentPause";
 import { User } from "@/models/User";
 import { Notification } from "@/models/Fee";
 import { InternalTask } from "@/models/InternalTask";
-import { CREDIT_HOLDING_STATUSES, OPEN_PTM_STATUSES, PTM_LAUNCH, PTM_STATUSES, canGiveFeedback, nextPtmEligibleAt, ptmCreditSummary, ptmYearOf, ptmActionSchema, requestPtmSchema, serializePtm, type PtmViewer } from "./ptmRules";
+import { CREDIT_HOLDING_STATUSES, OPEN_PTM_STATUSES, PTM_LAUNCH, PTM_STATUSES, canCreatePtm, canGiveFeedback, nextPtmEligibleAt, ptmCreditSummary, ptmYearOf, ptmActionSchema, requestPtmSchema, staffRequestPtmSchema, serializePtm, type PtmViewer } from "./ptmRules";
 
 export class PtmError extends Error { constructor(message: string, public status = 400) { super(message); } }
 const idOf = (v: any) => String(v?._id ?? v ?? "");
@@ -45,6 +45,20 @@ async function creditContext(studentId: string, now: Date, session?: ClientSessi
 }
 export async function getCreditSummary(studentId: string, now = new Date()) { await dbConnect(); return creditContext(studentId, now); }
 
+export async function getPtmCreateOptions(viewer: PtmViewer, { q = "", studentId = "" } = {}) {
+  if (!isStaff(viewer) || !canCreatePtm(viewer)) throw new PtmError("You cannot create a PTM.", 403);
+  await dbConnect();
+  const eligible = { role: "student", isActive: { $ne: false }, accountStatus: { $ne: "demo" } };
+  if (studentId) {
+    if (!Types.ObjectId.isValid(studentId) || !await User.exists({ ...eligible, _id: studentId })) throw new PtmError("Choose an enrolled student.", 400);
+    const [coaches, credits, pause] = await Promise.all([studentPtmCoaches(studentId), getCreditSummary(studentId), StudentPause.exists({ student: studentId, status: "active" })]);
+    return { coaches, credits, paused: Boolean(pause) };
+  }
+  const escaped = q.trim().slice(0, 60).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const students: any[] = await User.find({ ...eligible, ...(escaped ? { $or: [{ name: { $regex: escaped, $options: "i" } }, { username: { $regex: escaped, $options: "i" } }] } : {}) }).select("name username").sort({ name: 1, _id: 1 }).limit(50).lean();
+  return { students: students.map(s => ({ id: idOf(s), name: s.name || s.username || "Student", username: s.username || "" })) };
+}
+
 /** A write to the student serializes all credit mutations across app instances.
  * Transaction retries re-read the pool after a concurrent request/schedule.
  * No balance or credit ledger is stored. */
@@ -57,27 +71,29 @@ async function mutateStudent<T>(studentId: string, run: (session: ClientSession)
 }
 
 export async function requestPtm(viewer: PtmViewer, raw: unknown, now = new Date()) {
-  if (viewer.role !== "student" || !viewer.canCreate) throw new PtmError("You cannot request a PTM.", 403);
+  if (!canCreatePtm(viewer)) throw new PtmError("You cannot request a PTM.", 403);
+  const staff = isStaff(viewer);
+  const studentId = staff ? staffRequestPtmSchema.parse(raw).student : viewer.id;
   const input = requestPtmSchema.parse(raw);
   if (now < PTM_LAUNCH) throw new PtmError("PTMs start on 1 October 2026.");
   if (input.preferredAt <= now) throw new PtmError("Choose a future preferred time.");
   await dbConnect();
-  const coaches = await studentPtmCoaches(viewer.id);
+  const coaches = await studentPtmCoaches(studentId);
   const coach = coaches.find(c => c.id === input.coach);
-  if (!coach) throw new PtmError("Choose a coach from your running classrooms.");
-  const ptm = await mutateStudent(viewer.id, async session => {
-    const student: any = await User.findById(viewer.id).session(session).select("name username accountStatus isActive").lean();
-    if (!student || student.isActive === false || student.accountStatus === "demo") throw new PtmError("PTMs are available to enrolled students only.", 403);
-    if (await StudentPause.exists({ student: viewer.id, status: "active" }).session(session)) throw new PtmError("PTMs are unavailable while your enrolment is paused.");
-    const summary = await creditContext(viewer.id, now, session);
-    if (summary.openRequest) throw new PtmError("You already have an open PTM request.", 409);
-    if (!summary.remaining) throw new PtmError("You have used all 12 PTM credits for this academic year.");
-    if (summary.nextEligibleAt && input.preferredAt < new Date(summary.nextEligibleAt)) throw new PtmError(`Your next PTM can be from ${formatAcademyDateTime(summary.nextEligibleAt)} IST (30 days between PTMs).`);
-    const [doc] = await Ptm.create([{ ...input, student: viewer.id, classroom: coach.classroom, studentName: student.name || student.username, coachName: coach.name, ptmYear: ptmYearOf(now), status: "requested" }], { session });
+  if (!coach) throw new PtmError("Choose a coach from the student's running classrooms.");
+  const ptm = await mutateStudent(studentId, async session => {
+    const student: any = await User.findById(studentId).session(session).select("name username role accountStatus isActive").lean();
+    if (!student || student.role !== "student" || student.isActive === false || student.accountStatus === "demo") throw new PtmError("PTMs are available to enrolled students only.", 403);
+    if (await StudentPause.exists({ student: studentId, status: "active" }).session(session)) throw new PtmError("PTMs are unavailable while the student's enrolment is paused.");
+    const summary = await creditContext(studentId, now, session);
+    if (summary.openRequest) throw new PtmError("This student already has an open PTM request.", 409);
+    if (!summary.remaining) throw new PtmError("This student has used all 12 PTM credits for this academic year.");
+    if (summary.nextEligibleAt && input.preferredAt < new Date(summary.nextEligibleAt)) throw new PtmError(`The next PTM can be from ${formatAcademyDateTime(summary.nextEligibleAt)} IST (30 days between PTMs).`);
+    const [doc] = await Ptm.create([{ ...input, student: studentId, requestedBy: viewer.id, classroom: coach.classroom, studentName: student.name || student.username, coachName: coach.name, ptmYear: ptmYearOf(now), status: "requested" }], { session });
     return doc;
   });
   await raisePtmApprovalTask(ptm);
-  await notify(ptm, [idOf(ptm.coach)], "PTM requested", `${ptm.studentName} requested a PTM for ${formatAcademyDateTime(ptm.preferredAt)} IST.`);
+  await notify(ptm, staff ? [studentId, idOf(ptm.coach)] : [idOf(ptm.coach)], "PTM requested", `${staff ? `The academy requested a PTM for ${ptm.studentName}` : `${ptm.studentName} requested a PTM`} for ${formatAcademyDateTime(ptm.preferredAt)} IST.`);
   return serializePtm(ptm, viewer);
 }
 

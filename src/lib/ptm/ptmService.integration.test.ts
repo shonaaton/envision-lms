@@ -29,6 +29,41 @@ describe.skipIf(process.env.PTM_VERIFY_LOCAL !== "1")("PTM service on disposable
     await Classroom.updateOne({ _id: fixture.classroom }, { $addToSet: { students: student.id } });
   });
   afterAll(async () => { await mongoose.disconnect(); });
+  it("lets admins and sub-admin managers create for a student and schedule normally", async () => {
+    for (const role of ["admin", "sub-admin"] as const) {
+      const creator = { ...staff, role, id: role === "admin" ? users.admin : users.subadmin };
+      const options = await service.getPtmCreateOptions(creator, { studentId: student.id });
+      expect(options.coaches?.map((c: any) => c.id)).toContain(users.coach);
+      const p = await service.requestPtm(creator, { ...request(), student: student.id });
+      expect(p.student).toBe(student.id);
+      expect(p.status).toBe("requested");
+      expect(String((await Ptm.findById(p._id)).requestedBy)).toBe(creator.id);
+      expect((await service.listPtms(student)).ptms.some((row: any) => row._id === p._id)).toBe(true);
+      expect((await service.listPtms(coach)).ptms.some((row: any) => row._id === p._id)).toBe(true);
+      const { Notification } = await import("@/models/Fee");
+      expect(await Notification.countDocuments({ "metadata.ptmId": p._id, user: { $in: [student.id, users.coach] } })).toBe(2);
+      await expect(service.requestPtm(creator, { ...request(), student: student.id })).rejects.toMatchObject({ status: 409 });
+      const scheduled = await service.applyPtmAction(p._id, { action: "schedule", scheduledAt: preferredAt, durationMinutes: 30, meetingUrl: "meet.google.com/abc-defg-hij" }, creator);
+      expect(scheduled.status).toBe("scheduled");
+      await service.applyPtmAction(p._id, { action: "cancel", cancelReason: "Test complete" }, creator);
+    }
+  });
+  it("protects staff creation and student lookup from unauthorized roles", async () => {
+    for (const viewer of [coach, { ...staff, canEdit: false }]) {
+      await expect(service.requestPtm(viewer, { ...request(), student: student.id })).rejects.toMatchObject({ status: 403 });
+      await expect(service.getPtmCreateOptions(viewer)).rejects.toMatchObject({ status: 403 });
+    }
+    await expect(service.getPtmCreateOptions(student)).rejects.toMatchObject({ status: 403 });
+    await expect(service.requestPtm(staff, request())).rejects.toThrow();
+    await expect(service.requestPtm(staff, { ...request(), student: student.id, coach: users.othercoach })).rejects.toThrow("running classrooms");
+    await expect(service.getPtmCreateOptions(staff, { studentId: users.coach })).rejects.toThrow("enrolled student");
+    const options = await service.getPtmCreateOptions(staff, { q: "PTM Service Test" });
+    expect(options.students?.some((s: any) => s.id === student.id)).toBe(true);
+    expect(options.students?.find((s: any) => s.id === student.id)).not.toHaveProperty("email");
+    const p = await service.requestPtm(student, { ...request(), student: users.otherstudent });
+    expect(p.student).toBe(student.id);
+    await service.applyPtmAction(p._id, { action: "cancel", cancelReason: "Test complete" }, student);
+  });
   it("serializes concurrent requests, enforces ownership and returns credits on reject/cancel", async () => {
     const results = await Promise.allSettled([service.requestPtm(student, request()), service.requestPtm(student, request())]);
     expect(results.filter(r => r.status === "fulfilled")).toHaveLength(1);

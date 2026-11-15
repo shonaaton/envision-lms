@@ -7,6 +7,7 @@ const PtmSchema = new Schema({
   studentName: String, coachName: String, ptmYear: { type: String, required: true },
   status: { type: String, enum: PTM_STATUSES, default: "requested", required: true },
   preferredAt: { type: Date, required: true }, preferredNote: String, reason: { type: String, required: true, minlength: 10 },
+  requestedBy: ref(),
   approvedBy: ref(), approvedAt: Date, rejectedBy: ref(), rejectedAt: Date, rejectionReason: String,
   cancelledBy: ref(), cancelledAt: Date, cancelReason: String,
   scheduledAt: Date, durationMinutes: { type: Number, default: 30 }, meetingUrl: String, scheduledBy: ref(),

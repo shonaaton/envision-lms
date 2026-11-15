@@ -11,6 +11,8 @@ export const PTM_STATUSES = ["requested", "approved", "scheduled", "completed", 
 export const CREDIT_HOLDING_STATUSES = ["requested", "approved", "scheduled", "completed"];
 export const OPEN_PTM_STATUSES = ["requested", "approved"];
 export type PtmViewer = { id: string; role: "student" | "instructor" | "admin" | "sub-admin"; canCreate?: boolean; canApprove?: boolean; canEdit?: boolean };
+// Staff who already manage PTM scheduling can also initiate a meeting.
+export const canCreatePtm = (viewer: PtmViewer) => viewer.role === "student" ? Boolean(viewer.canCreate) : ["admin", "sub-admin"].includes(viewer.role) && Boolean(viewer.canCreate || viewer.canEdit);
 export type PtmLike = { _id?: unknown; student?: unknown; coach?: unknown; status: string; ptmYear?: string; preferredAt?: Date | string; scheduledAt?: Date | string; durationMinutes?: number; feedback?: { submittedAt?: unknown }; [key: string]: any };
 const ms = (value?: Date | string) => value ? new Date(value).getTime() : NaN;
 const idOf = (value: any) => String(value?._id ?? value ?? "");
@@ -49,6 +51,7 @@ export function canGiveFeedback(ptm: PtmLike, now = new Date()) {
 const date = z.union([z.string().min(1), z.date()]).transform(v => parseAcademyDateTimeLocal(v)).refine(v => Number.isFinite(v.getTime()), "Choose a valid date and time.");
 const note = z.string().trim().max(2000).optional().default("");
 export const requestPtmSchema = z.object({ coach: z.string().regex(/^[a-f0-9]{24}$/i, "Choose a coach."), preferredAt: date, preferredNote: note, reason: z.string().trim().min(10, "Please describe the topic in at least 10 characters.").max(2000) });
+export const staffRequestPtmSchema = requestPtmSchema.extend({ student: z.string().regex(/^[a-f0-9]{24}$/i, "Choose a student.") });
 export const approvePtmSchema = z.object({ action: z.literal("approve") });
 export const rejectPtmSchema = z.object({ action: z.literal("reject"), rejectionReason: z.string().trim().min(1, "Enter a rejection reason.").max(2000) });
 export const schedulePtmSchema = z.object({ action: z.enum(["schedule", "reschedule"]), scheduledAt: date, durationMinutes: z.number().int().min(5).max(120).default(30), meetingUrl: z.string().transform(normalizeGoogleMeetUrl).refine(Boolean, "Enter a valid Google Meet room URL.") });

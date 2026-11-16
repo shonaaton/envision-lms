@@ -13,6 +13,7 @@ import {
   addDemoLeadNote,
   addManualDemoLead,
   cancelDemoLeadReminder,
+  convertDemoLead,
   deleteDemoLead,
   demoLeadViewer,
   demoLeadsHref,
@@ -60,6 +61,19 @@ async function moveStage(formData: FormData) {
     logSalesAction(viewer.sales, `${viewer.sales.name} moved a demo lead to ${demoLeadStageLabel(stage)}`, { lead, stage });
   }
   revalidatePath("/sales/leads");
+}
+
+/** Converted needs the invoice: its total is the Purchase value sent to Meta. */
+async function convertLead(previous: ReminderFormState, formData: FormData): Promise<ReminderFormState> {
+  "use server";
+  const viewer = await crmViewer();
+  if (!viewer?.canManage) return { ...previous, error: "You do not have permission to change stages." };
+  const lead = String(formData.get("lead") || "");
+  const result = await convertDemoLead(viewer.lead, lead, String(formData.get("invoice") || ""));
+  if (!result.ok) return { ...previous, error: result.error };
+  logSalesAction(viewer.sales, `${viewer.sales.name} moved a demo lead to Converted`, { lead, stage: "converted" });
+  revalidatePath("/sales/leads");
+  return { error: "", saved: previous.saved + 1 };
 }
 
 async function addNote(formData: FormData) {
@@ -241,6 +255,7 @@ export default async function DemoLeadsPage({ searchParams }: { searchParams: Re
       callTime: row.preferredTime,
       demoSlot: row.demoSlot,
       stage: row.stage,
+      invoiceLabel: row.invoiceLabel,
       ownerId: row.ownerId,
       ownerName: row.ownerName,
       noteCount: row.log.filter((entry) => entry.kind === "note").length,
@@ -403,6 +418,7 @@ export default async function DemoLeadsPage({ searchParams }: { searchParams: Re
               seesAll={seesAll}
               canDelete={seesAll || viewer.canManage}
               moveStage={moveStage}
+              convertLead={convertLead}
               addNote={addNote}
               changeOwner={changeOwner}
               deleteLead={deleteLead}

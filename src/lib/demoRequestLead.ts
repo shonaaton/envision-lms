@@ -76,6 +76,7 @@ async function sendDemoLeadToMeta(lead: any, context: ReturnType<typeof metaRequ
     email: lead.email,
     phone: crmPhoneNumber(lead),
     name: lead.name,
+    externalId: id,
     fbclid: lead.leadSource?.fbclid,
     clickedAt: lead.createdAt ? new Date(lead.createdAt).getTime() : undefined,
     context,

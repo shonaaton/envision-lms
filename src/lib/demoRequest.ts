@@ -93,6 +93,25 @@ export function demoLeadStageLabel(value?: string | null) {
   return DEMO_LEAD_STAGES.find((item) => item.value === stage)!.label;
 }
 
+/**
+ * What each CRM stage tells Meta (2026-11-16, user: "qualified is a qualified
+ * lead, convert is a purchase with the invoice value and lost is lead lost";
+ * "demo taken is a lead who has taken demo"). Sent once per lead per stage, from
+ * the server, to the campaign pixel's dataset. "new" sends nothing: the form's
+ * own Lead already said it.
+ */
+export const DEMO_LEAD_META_EVENTS: Partial<Record<DemoLeadStage, string>> = {
+  qualified: "QualifiedLead",
+  demo_taken: "DemoTaken",
+  converted: "Purchase",
+  lost: "LeadLost",
+};
+
+/** One id per lead and stage, so a repeated send is counted once. */
+export function demoLeadStageEventId(id: string, stage: DemoLeadStage) {
+  return `demo_lead_${id}_${stage}`;
+}
+
 /** The Meta event id shared by the browser pixel and the server event, so one lead counts once. */
 export function demoRequestEventId(id: string) {
   return `demo_request_${id}`;

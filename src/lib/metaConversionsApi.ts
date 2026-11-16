@@ -14,6 +14,11 @@ import { CAMPAIGN_PIXEL_ID } from "@/lib/metaCampaignPixel";
  * fbclid), the browser id (`_fbp`) when the pixel set one, and the visitor's IP
  * and user agent, which Meta uses for matching only.
  *
+ * The Demo Leads CRM sends its later stages to the same dataset from the
+ * server only (src/lib/demoLeadCrm.ts): Qualified, Demo taken, Converted (a
+ * Purchase with the invoice value) and Lost. Every event carries the lead's id
+ * as `external_id`, so Meta can tie a lead's stages to its first Lead.
+ *
  * Off until `META_CAPI_ACCESS_TOKEN` is set (Events Manager → the campaign
  * dataset → Settings → Conversions API → Generate access token).
  * `META_CAPI_TEST_EVENT_CODE` sends to the Test Events tab instead of the
@@ -29,10 +34,19 @@ export type MetaRequestContext = {
 };
 
 export type MetaLeadInput = {
+  /** "Lead" when left out. */
+  eventName?: string;
+  /** "website" (the form) when left out; CRM stage moves are "system_generated". */
+  actionSource?: "website" | "system_generated";
   eventId: string;
   /** Seconds since the epoch. */
   eventTime: number;
-  eventSourceUrl: string;
+  /** Website events only. */
+  eventSourceUrl?: string;
+  /** The lead's own id, sent hashed so every event about one lead links up. */
+  externalId?: string | null;
+  /** value + currency on a Purchase, and anything else Meta reads from custom_data. */
+  customData?: Record<string, unknown>;
   email?: string | null;
   /** Digits only, with the country code, e.g. 919876543210. */
   phone?: string | null;
@@ -45,12 +59,13 @@ export type MetaLeadInput = {
 };
 
 type MetaEvent = {
-  event_name: "Lead";
+  event_name: string;
   event_time: number;
   event_id: string;
-  event_source_url: string;
-  action_source: "website";
+  event_source_url?: string;
+  action_source: "website" | "system_generated";
   user_data: Record<string, string | string[]>;
+  custom_data?: Record<string, unknown>;
 };
 
 async function sha256(value: string) {
@@ -105,20 +120,24 @@ export async function buildMetaLeadEvent(input: MetaLeadInput): Promise<MetaEven
   if (phone.length >= 8) userData.ph = [await sha256(phone)];
   const firstName = String(input.name || "").trim().split(/\s+/)[0]?.toLowerCase().replace(/[^\p{L}]/gu, "");
   if (firstName) userData.fn = [await sha256(firstName)];
+  const externalId = String(input.externalId || "").trim();
+  if (externalId) userData.external_id = [await sha256(externalId)];
   const fbc = input.context.fbc || fbcFromClickId(input.fbclid, input.clickedAt);
   if (fbc) userData.fbc = fbc;
   if (input.context.fbp) userData.fbp = input.context.fbp;
   if (input.context.ip) userData.client_ip_address = input.context.ip;
   if (input.context.userAgent) userData.client_user_agent = input.context.userAgent;
 
-  return {
-    event_name: "Lead",
+  const event: MetaEvent = {
+    event_name: input.eventName || "Lead",
     event_time: input.eventTime,
     event_id: input.eventId,
-    event_source_url: input.eventSourceUrl,
-    action_source: "website",
+    action_source: input.actionSource || "website",
     user_data: userData,
   };
+  if (input.eventSourceUrl) event.event_source_url = input.eventSourceUrl;
+  if (input.customData && Object.keys(input.customData).length) event.custom_data = input.customData;
+  return event;
 }
 
 function graphVersion() {
@@ -127,6 +146,11 @@ function graphVersion() {
 }
 
 export type MetaSendResult = { ok: true; eventsReceived: number } | { ok: false; skipped?: boolean; reason: string };
+
+/** Whether a send would go anywhere: callers skip their bookkeeping when it would not. */
+export function metaCapiConfigured() {
+  return Boolean(String(process.env.META_CAPI_ACCESS_TOKEN || "").trim() && CAMPAIGN_PIXEL_ID);
+}
 
 export async function sendMetaLead(input: MetaLeadInput): Promise<MetaSendResult> {
   const token = String(process.env.META_CAPI_ACCESS_TOKEN || "").trim();

@@ -4,14 +4,19 @@ import { Types } from "mongoose";
 import { dbConnect } from "@/lib/db";
 import { ownerCandidates } from "@/lib/demoLeadOwner";
 import { demoLeadOwnerForTurn, demoLeadRotationNames, resolveDemoLeadRotation } from "@/lib/demoLeadRotation";
+import { crmPhoneNumber } from "@/lib/crm/identity";
+import { metaCapiConfigured, sendMetaLead } from "@/lib/metaConversionsApi";
+import { formatINR } from "@/lib/utils";
 import {
   DEMO_AGE_GROUP_VALUES,
+  DEMO_LEAD_META_EVENTS,
   DEMO_CHILD_LEVEL_VALUES,
   DEMO_LEAD_STAGE_VALUES,
   DEMO_REQUEST_KIND,
   MANUAL_LEAD_SOURCES,
   SUBMITTED_DEMO_REQUEST,
   demoLeadStage,
+  demoLeadStageEventId,
   demoLeadStageLabel,
   manualLeadSourceLabel,
   type DemoLeadStage,
@@ -42,6 +47,7 @@ import {
   resolveDemoLeadReminderTasks,
 } from "@/lib/tasks/taskTriggers";
 import { ContactMessage, DemoLeadRotation } from "@/models/ContactMessage";
+import { Invoice } from "@/models/Fee";
 import { DemoLeadReminder } from "@/models/DemoLeadReminder";
 import { User } from "@/models/User";
 import { WhatsAppOtp } from "@/models/WhatsAppOtp";
@@ -180,6 +186,8 @@ export type DemoLeadRow = {
   /** Typed in by a salesperson, so there was never a WhatsApp code to check. */
   manual: boolean;
   stage: DemoLeadStage;
+  /** Converted leads: the invoice and its total, e.g. "INV-0042 · ₹5,900.00". */
+  invoiceLabel: string;
   ownerId: string;
   ownerName: string;
   createdAt: string;
@@ -291,6 +299,7 @@ export async function getDemoLeads(viewer: DemoLeadViewer, filters: DemoLeadFilt
     whatsappVerified: Boolean(doc.whatsappVerifiedAt),
     otpFailed: Boolean(doc.otpFailedAt),
     stage: demoLeadStage(doc.leadStage),
+    invoiceLabel: doc.convertedInvoiceNumber ? `${doc.convertedInvoiceNumber} · ${formatINR(Number(doc.convertedValue) || 0)}` : "",
     ownerId: doc.salesOwner ? String(doc.salesOwner) : "",
     ownerName: String(doc.salesOwnerName || ""),
     createdAt: new Date(doc.createdAt).toISOString(),
@@ -320,7 +329,8 @@ function ownLead(viewer: DemoLeadViewer, leadId: string) {
 
 export async function setDemoLeadStage(viewer: DemoLeadViewer, leadId: string, stage: string) {
   const match = ownLead(viewer, leadId);
-  if (!match || !(DEMO_LEAD_STAGE_VALUES as readonly string[]).includes(stage)) return false;
+  // Converted needs its invoice: see convertDemoLead.
+  if (!match || stage === "converted" || !(DEMO_LEAD_STAGE_VALUES as readonly string[]).includes(stage)) return false;
   await dbConnect();
   const now = new Date();
   const result = await ContactMessage.updateOne(
@@ -332,7 +342,116 @@ export async function setDemoLeadStage(viewer: DemoLeadViewer, leadId: string, s
   );
   if (!result.modifiedCount) return false;
   if (stage !== "new") await resolveDemoLeadCallTask(leadId, viewer.id);
+  queueDemoLeadStageEvent(leadId, stage as DemoLeadStage);
   return true;
+}
+
+export type ConvertLeadResult = { ok: true } | { ok: false; error: string };
+
+function escapeRegex(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/**
+ * Moves a lead to Converted with the invoice the family was billed. The
+ * invoice's total becomes the value of the Purchase sent to Meta, so it is
+ * looked up here, never typed: by invoice number or reference, not cancelled
+ * or a draft, and not already used to convert another lead.
+ */
+export async function convertDemoLead(viewer: DemoLeadViewer, leadId: string, invoiceNumber: string): Promise<ConvertLeadResult> {
+  const match = ownLead(viewer, leadId);
+  if (!match) return { ok: false, error: "Lead not found." };
+  const number = String(invoiceNumber || "").trim().slice(0, 80);
+  if (!number) return { ok: false, error: "Enter the invoice number." };
+  await dbConnect();
+
+  const exact = new RegExp(`^${escapeRegex(number)}$`, "i");
+  const invoice: any = await Invoice.findOne({ $or: [{ invoiceNumber: exact }, { referenceNumber: exact }] })
+    .sort({ createdAt: -1 })
+    .select("invoiceNumber referenceNumber totalAmount status")
+    .lean();
+  if (!invoice) return { ok: false, error: `No invoice ${number}. Create the invoice first, then mark the lead converted.` };
+  if (invoice.status === "cancelled" || invoice.status === "draft") return { ok: false, error: `Invoice ${number} is ${invoice.status}.` };
+  const value = Math.max(0, Math.round(Number(invoice.totalAmount) || 0));
+  if (!value) return { ok: false, error: `Invoice ${number} has no amount.` };
+
+  const taken: any = await ContactMessage.findOne({ convertedInvoice: invoice._id, _id: { $ne: match._id } }).select("name").lean();
+  if (taken) return { ok: false, error: `Invoice ${number} already converted ${taken.name || "another lead"}.` };
+
+  const label = String(invoice.invoiceNumber || invoice.referenceNumber || number);
+  const now = new Date();
+  const result = await ContactMessage.updateOne(
+    { ...match, leadStage: { $ne: "converted" } },
+    {
+      $set: { leadStage: "converted", leadStageAt: now, convertedInvoice: invoice._id, convertedInvoiceNumber: label, convertedValue: value },
+      $push: {
+        leadLog: { kind: "stage", text: `Moved to Converted (invoice ${label}, ${formatINR(value)})`, by: viewer.id, byName: viewer.name, at: now },
+      },
+    },
+  );
+  if (!result.modifiedCount) return { ok: false, error: "This lead is already converted." };
+  await resolveDemoLeadCallTask(leadId, viewer.id);
+  queueDemoLeadStageEvent(leadId, "converted");
+  return { ok: true };
+}
+
+/**
+ * The stage's event for Meta (DEMO_LEAD_META_EVENTS), after the move is saved.
+ * Not awaited, so a slow Meta never holds up the salesperson; the claim on
+ * metaStageSent keeps it to one send per lead and stage.
+ */
+function queueDemoLeadStageEvent(leadId: string, stage: DemoLeadStage) {
+  if (!DEMO_LEAD_META_EVENTS[stage] || !metaCapiConfigured()) return;
+  void sendDemoLeadStageEvent(leadId, stage).catch((error) => console.error("[demo-leads] Meta stage event failed", stage, error));
+}
+
+/**
+ * Form leads only, like the Lead itself: a family typed in by hand never came
+ * through the campaign, and its Purchase would count as the ads' work.
+ */
+export async function sendDemoLeadStageEvent(leadId: string, stage: DemoLeadStage) {
+  const eventName = DEMO_LEAD_META_EVENTS[stage];
+  if (!eventName || !metaCapiConfigured() || !Types.ObjectId.isValid(leadId)) return;
+  await dbConnect();
+  const claimedAt = new Date();
+  const lead: any = await ContactMessage.findOneAndUpdate(
+    { _id: new Types.ObjectId(leadId), kind: DEMO_REQUEST_KIND, leadEntry: { $ne: "manual" }, [`metaStageSent.${stage}`]: null },
+    { $set: { [`metaStageSent.${stage}`]: claimedAt } },
+    { new: true },
+  ).lean();
+  if (!lead) return;
+
+  const customData: Record<string, unknown> = { event_source: "crm", lead_event_source: "Envision Demo Leads CRM" };
+  if (stage === "converted") {
+    customData.currency = "INR";
+    customData.value = Math.round(Number(lead.convertedValue) || 0) / 100;
+    if (lead.convertedInvoiceNumber) customData.order_id = lead.convertedInvoiceNumber;
+  }
+  const result = await sendMetaLead({
+    eventName,
+    actionSource: "system_generated",
+    eventId: demoLeadStageEventId(leadId, stage),
+    eventTime: Math.floor(claimedAt.getTime() / 1000),
+    externalId: leadId,
+    email: lead.email,
+    phone: crmPhoneNumber(lead),
+    name: lead.name,
+    fbclid: lead.leadSource?.fbclid,
+    clickedAt: lead.createdAt ? new Date(lead.createdAt).getTime() : undefined,
+    customData,
+    context: {},
+  }).catch((error) => ({ ok: false as const, reason: String(error?.message || error) }));
+
+  if (result.ok) {
+    await ContactMessage.updateOne({ _id: lead._id }, { $unset: { metaStageError: 1 } });
+    return;
+  }
+  // Give the stage back, so the next move to it tries again.
+  console.error("[demo-leads] Meta refused", eventName, result.reason);
+  await ContactMessage.updateOne(
+    { _id: lead._id },
+    { $unset: { [`metaStageSent.${stage}`]: 1 }, $set: { metaStageError: `${eventName}: ${result.reason}`.slice(0, 300) } },
+  );
 }
 
 export async function addDemoLeadNote(viewer: DemoLeadViewer, leadId: string, text: string) {

@@ -106,6 +106,27 @@ const ContactMessageSchema = new Schema(
     leadStage: { type: String, trim: true, index: true },
     leadStageAt: Date,
     /**
+     * The invoice a Converted lead was billed. Converting asks for it, and its
+     * total is the value of the Purchase sent to Meta. One invoice converts one lead.
+     */
+    convertedInvoice: { type: Schema.Types.ObjectId, ref: "Invoice", index: true },
+    convertedInvoiceNumber: { type: String, trim: true },
+    /** Invoice total in paise, as it was when the lead was converted. */
+    convertedValue: Number,
+    /**
+     * When each stage's event (DEMO_LEAD_META_EVENTS) reached Meta. Set as the
+     * claim before the send and removed again if Meta refuses, so a stage is
+     * sent once however often a lead moves back and forth.
+     */
+    metaStageSent: {
+      _id: false,
+      qualified: Date,
+      demo_taken: Date,
+      converted: Date,
+      lost: Date,
+    },
+    metaStageError: { type: String, trim: true },
+    /**
      * Notes, calls, reminders, stage and owner moves, oldest first. A call's
      * `at` is the server's clock when the salesperson pressed Picked up or
      * Missed, and its remarks are in `text` after the first line.

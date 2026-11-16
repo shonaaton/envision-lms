@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useEffect, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import { useFormState, useFormStatus } from "react-dom";
 import { AlarmClock, MessageCircle, Phone, PhoneMissed, PhoneOutgoing, Trash2, X } from "lucide-react";
 import { DEFAULT_MISSED_CALL_REMINDER, MISSED_CALL_REMINDER_CHOICES } from "@/lib/demoLeadCalls";
@@ -40,6 +40,8 @@ export type DemoLeadSheetRow = {
   callTime: string;
   demoSlot: string;
   stage: string;
+  /** Converted leads: the invoice and its total. */
+  invoiceLabel: string;
   ownerId: string;
   ownerName: string;
   noteCount: number;
@@ -83,6 +85,8 @@ type Props = {
   /** Admins, and salespeople on their own leads (the page only lists those to them). */
   canDelete: boolean;
   moveStage: Action;
+  /** Converted asks for the invoice number first; same state shape as the reminder form. */
+  convertLead: ReminderAction;
   addNote: Action;
   changeOwner: Action;
   deleteLead: Action;
@@ -159,30 +163,100 @@ function CallSummary({ row }: { row: DemoLeadSheetRow }) {
   );
 }
 
-function StageControl({ row, stages, canManage, moveStage, className = "" }: Pick<Shared, "stages" | "canManage" | "moveStage"> & { row: DemoLeadSheetRow; className?: string }) {
+function InvoiceLine({ row }: { row: DemoLeadSheetRow }) {
+  if (row.stage !== "converted" || !row.invoiceLabel) return null;
+  return <span className="mt-1 block text-[11px] font-semibold leading-4 text-emerald-800">{row.invoiceLabel}</span>;
+}
+
+/**
+ * Converted is the one stage that does not save on pick: it asks for the
+ * invoice number, whose total is the Purchase value Meta receives.
+ */
+function ConvertForm({ row, convertLead, onClose }: Pick<Shared, "convertLead"> & { row: DemoLeadSheetRow; onClose: () => void }) {
+  const [state, action] = useFormState(convertLead, { error: "", saved: 0 });
+  useEffect(() => {
+    if (state.saved) onClose();
+  }, [state.saved, onClose]);
+  return (
+    <form action={action} className="mt-1 space-y-1 rounded-md border border-emerald-200 bg-emerald-50 p-1.5">
+      <input type="hidden" name="lead" value={row.id} />
+      <label className="block text-[10px] font-black uppercase tracking-[0.04em] text-emerald-900" htmlFor={`invoice-${row.id}`}>
+        Invoice number
+      </label>
+      <input
+        id={`invoice-${row.id}`}
+        name="invoice"
+        required
+        autoFocus
+        autoComplete="off"
+        maxLength={80}
+        placeholder="e.g. INV-0042"
+        className="h-8 w-full rounded border border-emerald-300 bg-white px-1.5 text-xs font-semibold text-slate-900 outline-none focus:border-brand"
+      />
+      {state.error ? <p className="text-[11px] font-semibold leading-4 text-rose-700">{state.error}</p> : null}
+      <div className="flex gap-1">
+        <ConvertButton />
+        <button type="button" onClick={onClose} className="h-7 rounded px-2 text-[11px] font-black text-slate-600 hover:bg-white">
+          Cancel
+        </button>
+      </div>
+    </form>
+  );
+}
+
+function ConvertButton() {
+  const { pending } = useFormStatus();
+  return (
+    <button type="submit" disabled={pending} className="h-7 rounded bg-emerald-700 px-2 text-[11px] font-black text-white disabled:opacity-60">
+      {pending ? "Saving…" : "Mark converted"}
+    </button>
+  );
+}
+
+function StageControl({ row, stages, canManage, moveStage, convertLead, className = "" }: Pick<Shared, "stages" | "canManage" | "moveStage" | "convertLead"> & { row: DemoLeadSheetRow; className?: string }) {
+  const [converting, setConverting] = useState(false);
+  // Bumped on Cancel, so the select drops back to the saved stage.
+  const [resetKey, setResetKey] = useState(0);
+  const closeConvert = useCallback(() => {
+    setConverting(false);
+    setResetKey((key) => key + 1);
+  }, []);
   if (!canManage) {
     return (
-      <span className={`inline-block rounded-md px-2 py-1 text-xs font-black ${STAGE_STYLES[row.stage] || ""}`}>
-        {stages.find((stage) => stage.value === row.stage)?.label || row.stage}
+      <span className="block">
+        <span className={`inline-block rounded-md px-2 py-1 text-xs font-black ${STAGE_STYLES[row.stage] || ""}`}>
+          {stages.find((stage) => stage.value === row.stage)?.label || row.stage}
+        </span>
+        <InvoiceLine row={row} />
       </span>
     );
   }
   return (
-    <form action={moveStage}>
-      <input type="hidden" name="lead" value={row.id} />
-      <select
-        key={row.stage}
-        name="stage"
-        defaultValue={row.stage}
-        aria-label={`Stage for ${row.name}`}
-        onChange={(event) => event.currentTarget.form?.requestSubmit()}
-        className={`w-full cursor-pointer rounded-md border border-transparent px-1 font-black outline-none focus:border-brand ${STAGE_STYLES[row.stage] || ""} ${className || "h-8 text-xs"}`}
-      >
-        {stages.map((stage) => (
-          <option key={stage.value} value={stage.value}>{stage.label}</option>
-        ))}
-      </select>
-    </form>
+    <div>
+      <form action={moveStage}>
+        <input type="hidden" name="lead" value={row.id} />
+        <select
+          key={`${row.stage}-${resetKey}`}
+          name="stage"
+          defaultValue={row.stage}
+          aria-label={`Stage for ${row.name}`}
+          onChange={(event) => {
+            if (event.currentTarget.value === "converted") {
+              setConverting(true);
+              return;
+            }
+            setConverting(false);
+            event.currentTarget.form?.requestSubmit();
+          }}
+          className={`w-full cursor-pointer rounded-md border border-transparent px-1 font-black outline-none focus:border-brand ${STAGE_STYLES[row.stage] || ""} ${className || "h-8 text-xs"}`}
+        >
+          {stages.map((stage) => (
+            <option key={stage.value} value={stage.value}>{stage.label}</option>
+          ))}
+        </select>
+      </form>
+      {converting && row.stage !== "converted" ? <ConvertForm row={row} convertLead={convertLead} onClose={closeConvert} /> : <InvoiceLine row={row} />}
+    </div>
   );
 }
 
@@ -623,7 +697,7 @@ const detailsLabel = (row: DemoLeadSheetRow, expanded: boolean) => {
 
 /** Phones: one card per lead, the call buttons first, no sideways scrolling. */
 function LeadCard({ row, expanded, toggle, openDetails, shared }: { row: DemoLeadSheetRow; expanded: boolean; toggle: () => void; openDetails: () => void; shared: Shared }) {
-  const { stages, owners, canManage, seesAll, canDelete, moveStage, changeOwner, deleteLead } = shared;
+  const { stages, owners, canManage, seesAll, canDelete, moveStage, convertLead, changeOwner, deleteLead } = shared;
   return (
     <li className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
       <div className="flex items-start justify-between gap-3">
@@ -687,7 +761,7 @@ function LeadCard({ row, expanded, toggle, openDetails, shared }: { row: DemoLea
       <div className={`mt-3 grid gap-2 ${seesAll ? "grid-cols-2" : "grid-cols-1"}`}>
         <div className="min-w-0">
           <p className="mb-1 text-[10px] font-black uppercase tracking-[0.06em] text-slate-500">Stage</p>
-          <StageControl row={row} stages={stages} canManage={canManage} moveStage={moveStage} className="h-10 text-sm" />
+          <StageControl row={row} stages={stages} canManage={canManage} moveStage={moveStage} convertLead={convertLead} className="h-10 text-sm" />
         </div>
         {seesAll ? (
           <div className="min-w-0 text-sm">
@@ -715,7 +789,7 @@ function LeadCard({ row, expanded, toggle, openDetails, shared }: { row: DemoLea
 }
 
 export function DemoLeadsSheet({ rows, initialOpen = null, ...shared }: Props) {
-  const { stages, owners, canManage, seesAll, canDelete, moveStage, changeOwner, deleteLead } = shared;
+  const { stages, owners, canManage, seesAll, canDelete, moveStage, convertLead, changeOwner, deleteLead } = shared;
   const [open, setOpen] = useState<string | null>(initialOpen);
   const columns = 10 + (seesAll ? 1 : 0) + (canDelete ? 1 : 0);
   const toggle = (id: string) => setOpen((current) => (current === id ? null : id));
@@ -804,7 +878,7 @@ export function DemoLeadsSheet({ rows, initialOpen = null, ...shared }: Props) {
                     <td className={TD}>{row.callTime || <span className="text-slate-400">Not given</span>}</td>
                     <td className={TD}>{row.demoSlot || <span className="text-slate-400">Not chosen</span>}</td>
                     <td className={TD}>
-                      <StageControl row={row} stages={stages} canManage={canManage} moveStage={moveStage} />
+                      <StageControl row={row} stages={stages} canManage={canManage} moveStage={moveStage} convertLead={convertLead} />
                     </td>
                     {seesAll ? (
                       <td className={TD}>

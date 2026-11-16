@@ -43,6 +43,22 @@ describe("buildMetaLeadEvent", () => {
     expect(event.user_data.fbc).toBe("fb.1.5.NEW");
   });
 
+  it("builds a CRM stage event: system generated, value on a Purchase, hashed lead id", async () => {
+    const event = await buildMetaLeadEvent({
+      eventName: "Purchase",
+      actionSource: "system_generated",
+      eventId: "demo_lead_abc_converted",
+      eventTime: 1_763_000_000,
+      externalId: "abc",
+      customData: { currency: "INR", value: 5900, order_id: "INV-0042" },
+      phone: "+919876543210",
+      context: {},
+    });
+    expect(event).toMatchObject({ event_name: "Purchase", action_source: "system_generated", custom_data: { currency: "INR", value: 5900, order_id: "INV-0042" } });
+    expect(event.user_data.external_id).toEqual([hash("abc")]);
+    expect(event).not.toHaveProperty("event_source_url");
+  });
+
   it("leaves out what it does not have", async () => {
     const event = await buildMetaLeadEvent({ ...base, email: "", phone: "", name: "" });
     expect(event.user_data).toEqual({});

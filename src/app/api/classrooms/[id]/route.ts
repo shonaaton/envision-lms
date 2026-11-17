@@ -28,6 +28,10 @@ import { kickExamAutoAssign } from "@/lib/exams/examService";
 import { writeRuntimeLog } from "@/lib/runtimeLogger";
 import { raiseSubstituteTask, resolveCoachMissingTask } from "@/lib/tasks/taskTriggers";
 import { syncLeaveCoverageForClassroom } from "@/lib/leave/leaveService";
+import { closeDemoBookingsForCancelledClassroom, isClassroomCancelAction } from "@/lib/demoClassroom";
+import { applyDemoNotDelivered, demoNotDeliveredOutcome } from "@/lib/demoNotDelivered";
+import { notifyDemoMissed } from "@/lib/demoWorkflow";
+import { Booking } from "@/models/Booking";
 import { planPermanentTimingChange, upcomingMovableSessions } from "@/lib/seriesTimingChange";
 
 export const dynamic = "force-dynamic";
@@ -1199,6 +1203,31 @@ async function patchClassroom(req: Request, { params }: { params: { id: string }
     ]);
   }
   await syncClassroomSessionInstances(params.id);
+  // Cancelling a demo class here must close the demo too, or it stays in
+  // Booked/Upcoming on the Demo Center and "Demo Booked" in the CRM.
+  if (isClassroomCancelAction(body.action, body.classOutcome)) {
+    await closeDemoBookingsForCancelledClassroom({
+      classroom: existing.toObject?.() ?? existing,
+      actorId: (session.user as any).id,
+      reason: String(body.reason || ""),
+    }).catch((error) => console.error("Closing the demo booking for a cancelled demo class failed", error));
+  }
+  // Correcting a demo's outcome to No Show / Absent here must write the demo off
+  // too, or the coach keeps being asked for an assessment of a class that never ran.
+  const demoWriteOff = body.action === "mark_session_outcome" && (existing.classroomType === "demo" || existing.demoBooking)
+    ? demoNotDeliveredOutcome(body.classOutcome)
+    : null;
+  if (demoWriteOff) {
+    try {
+      const demoBooking: any = existing.demoBooking
+        ? await Booking.findById(existing.demoBooking).select("_id").lean()
+        : await Booking.findOne({ classroom: existing._id, bookingType: "demo" }).select("_id").lean();
+      const changed = demoBooking ? await applyDemoNotDelivered({ bookingId: demoBooking._id, outcome: demoWriteOff }) : null;
+      if (changed) await notifyDemoMissed({ booking: changed, classroom: existing.toObject?.() ?? existing });
+    } catch (error) {
+      console.error("Writing off the demo booking for a corrected outcome failed", error);
+    }
+  }
   // A substitute, cancellation, reschedule or coach change may have covered a
   // class on an approved staff leave; this settles its "arrange substitutes" task.
   syncLeaveCoverageForClassroom(params.id);

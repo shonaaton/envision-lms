@@ -262,6 +262,7 @@ export function InvoiceCreationForm({
   const [clientAddress, setClientAddress] = useState("");
   const [invoiceDate, setInvoiceDate] = useState(today);
   const [dueDate, setDueDate] = useState(addDays(today, 7));
+  const [coverageMonths, setCoverageMonths] = useState("1");
   const [referenceNumber, setReferenceNumber] = useState("");
   const [notes, setNotes] = useState("");
   const [markPaid, setMarkPaid] = useState(false);
@@ -315,6 +316,8 @@ export function InvoiceCreationForm({
   if (!invoiceDate || !dueDate) missing.push("Set both dates");
   else if (dueDate < invoiceDate) missing.push("Due date is before the invoice date");
   if (!title.trim()) missing.push("Add a title");
+  const monthsCovered = Number(coverageMonths);
+  if (!plan && !(Number.isInteger(monthsCovered) && monthsCovered >= 1 && monthsCovered <= 36)) missing.push("Months covered must be 1 to 36");
   const paymentAllowed = canRecordPayment && (plan?.type !== "credits" || canRecordCreditPayment);
   const recordingPayment = markPaid && paymentAllowed;
   if (recordingPayment && !paidDate) missing.push("Set the payment date");
@@ -404,6 +407,7 @@ export function InvoiceCreationForm({
     formData.set("title", title.trim());
     formData.set("invoiceDate", invoiceDate);
     formData.set("dueDate", dueDate);
+    if (!plan) formData.set("coverageMonths", String(monthsCovered));
     formData.set("referenceNumber", referenceNumber.trim());
     formData.set("notes", notes.trim());
     if (recordingPayment) {
@@ -709,6 +713,13 @@ export function InvoiceCreationForm({
                   })}
                 </div>
               </div>
+              {!plan ? (
+                <div className="md:col-span-2">
+                  <Label htmlFor="invoice-coverage-months">Months this fee covers</Label>
+                  <input id="invoice-coverage-months" type="number" inputMode="numeric" min={1} max={36} step={1} value={coverageMonths} onChange={(event) => setCoverageMonths(event.target.value)} className={`${inputClass} md:w-40`} />
+                  <span className="mt-1 block text-xs text-slate-500">From the invoice month. A 12-month package is 12, and its fee is spread over those months in Coach Profitability.</span>
+                </div>
+              ) : null}
               <div>
                 <Label htmlFor="invoice-reference">Reference number <span className="font-normal text-slate-400">(optional)</span></Label>
                 <input id="invoice-reference" value={referenceNumber} onChange={(event) => setReferenceNumber(event.target.value)} placeholder="Receipt, transfer or PO number" className={inputClass} />

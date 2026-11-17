@@ -1,4 +1,6 @@
 import { academyTimeOfDay } from "@/lib/academyTime";
+import { recordActivity } from "@/lib/activity";
+import { demoClassroomCancelledReason } from "@/lib/demoReminderGuard";
 import { actualSessionMinutes, scheduledPaymentMinutes } from "@/lib/teachingStats";
 import { ensureDemoHomework } from "@/lib/demoHomework";
 import { normalizeGoogleMeetUrl } from "@/lib/meetingUrl";
@@ -62,6 +64,73 @@ export async function cancelDemoClassrooms(input: { bookingIds: Array<unknown>; 
   );
 
   return { cancelled: result.modifiedCount ?? 0 };
+}
+
+/**
+ * Demo stages that are still before the class. Only these are closed when the
+ * classroom is cancelled: a demo that was taught, missed or converted keeps the
+ * outcome it already has.
+ */
+const PRE_CLASS_DEMO_STATUSES = ["REQUESTED", "COACH_ASSIGNED", "APPROVED", "CLASSROOM_CREATED", "RESCHEDULE_REQUESTED"];
+
+/** The classroom-page actions that cancel a class. */
+export function isClassroomCancelAction(action: unknown, classOutcome?: unknown) {
+  const name = String(action || "");
+  if (["cancel_class", "cancel_series", "cancel_session"].includes(name)) return true;
+  return name === "mark_session_outcome" && String(classOutcome || "") === "cancelled";
+}
+
+/**
+ * The reverse of `cancelDemoClassrooms`: the demo was cancelled from the
+ * classroom page, so move its booking to Demo Closed the way the Demo Center
+ * "Close" button does.
+ *
+ * Cancelling a class there used to change only the Classroom. The booking stayed
+ * "confirmed", so the demo sat in Booked/Upcoming on the Demo Center and in the
+ * CRM's "Demo Booked" stage for a class that was no longer on. Only acts once
+ * the classroom has no class left to hold, and only on a demo still before its
+ * class. The update goes through `findOneAndUpdate`, so the Booking hook moves
+ * the CRM stage just as a Demo Center close does.
+ */
+export async function closeDemoBookingsForCancelledClassroom(input: { classroom: any; actorId?: string; reason?: string }) {
+  const classroom = input.classroom;
+  if (!classroom?._id || classroom.isSessionInstance) return { closed: 0 };
+  if (classroom.classroomType !== "demo" && !classroom.demoBooking) return { closed: 0 };
+  if (!demoClassroomCancelledReason(classroom)) return { closed: 0 };
+
+  const bookings: any[] = await Booking.find({
+    bookingType: "demo",
+    $or: [{ classroom: classroom._id }, ...(classroom.demoBooking ? [{ _id: classroom.demoBooking }] : [])],
+    demoStatus: { $in: PRE_CLASS_DEMO_STATUSES },
+    status: { $ne: "cancelled" },
+  })
+    .select("_id student")
+    .lean();
+
+  const given = String(input.reason || "").trim();
+  const reason = given ? `Demo class cancelled from the classroom page: ${given}` : "Demo class cancelled from the classroom page";
+  let closed = 0;
+  for (const booking of bookings) {
+    // Re-checks the stage in the update itself, so a booking that moved on in
+    // the meantime is left alone.
+    const updated = await Booking.findOneAndUpdate(
+      { _id: booking._id, demoStatus: { $in: PRE_CLASS_DEMO_STATUSES }, status: { $ne: "cancelled" } },
+      { status: "cancelled", approvalStatus: "rejected", demoStatus: "CLOSED", cancellationReason: reason },
+      { new: true }
+    );
+    if (!updated) continue;
+    closed += 1;
+    await recordActivity({
+      actor: input.actorId,
+      targetUser: String(booking.student || ""),
+      type: "demo.booking.closed",
+      label: "Moved demo to Demo Closed (class cancelled from the classroom)",
+      entityType: "Booking",
+      entityId: String(booking._id),
+      metadata: { reason, source: "classroom", classroomId: String(classroom._id), event: "DEMO_CLOSED" },
+    }).catch(() => undefined);
+  }
+  return { closed };
 }
 
 /**

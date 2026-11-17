@@ -143,6 +143,8 @@ export async function createInvoice(input: {
   dueDate: Date;
   referenceNumber?: string;
   credits?: number;
+  /** Custom invoices only: months the fee pays for (unset = 1). */
+  coverageMonths?: number;
   notes?: string;
   invoiceMode?: "included" | "excluded" | "non_gst";
   gstPercentage?: number;

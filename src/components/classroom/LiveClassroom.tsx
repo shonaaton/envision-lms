@@ -811,7 +811,9 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
   const [leavingClass, setLeavingClass] = useState(false);
   const [hiddenStudentQuizId, setHiddenStudentQuizId] = useState<string | null>(null);
   const [attendanceDraft, setAttendanceDraft] = useState<Record<string, AttendanceStatus>>({});
-  const [classOutcome, setClassOutcome] = useState<ClassOutcome>("completed");
+  // "" = not chosen yet. A demo never starts on "Present": defaulting to it sent
+  // coaches whose student never joined straight into an assessment form.
+  const [classOutcome, setClassOutcome] = useState<ClassOutcome | "">("completed");
   const [notCompletedConfirmed, setNotCompletedConfirmed] = useState(false);
   const [setupPosition, setSetupPosition] = useState<BoardPosition>({});
   const [modifier, setModifier] = useState<ModifierKey>("default");
@@ -2414,6 +2416,10 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
   }
 
   async function saveAttendanceAndClose() {
+    if (isDemoClassroom && !classOutcome) {
+      toast.error("Choose the demo result first: Present, Absent or No Show.");
+      return;
+    }
     if (needsNotCompletedConfirmation && !notCompletedConfirmed) {
       setNotCompletedConfirmed(true);
       return;
@@ -2934,7 +2940,7 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
       draft[entityId(row.student)] = isDemoClassroom && suggested === "late" ? "present" : suggested;
     }
     setAttendanceDraft(draft);
-    setClassOutcome(isDemoClassroom ? "completed" : classSummary.durationMinutes >= 30 ? "completed" : "abandoned");
+    setClassOutcome(isDemoClassroom ? "" : classSummary.durationMinutes >= 30 ? "completed" : "abandoned");
     setNotCompletedConfirmed(false);
   }, [classSummary.durationMinutes, classSummary.rows, isDemoClassroom, summaryOpen]);
 
@@ -4287,6 +4293,7 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
                 >
                   {isDemoClassroom ? (
                     <>
+                      <option value="" disabled>Choose the demo result</option>
                       <option value="completed">Present</option>
                       <option value="absent">Absent</option>
                       <option value="student_no_show">No Show</option>
@@ -4303,7 +4310,11 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
                   )}
                 </select>
                 <div className="mt-3 rounded-lg bg-white p-3 text-xs text-slate-600">
-                  {classOutcome === "completed"
+                  {!classOutcome
+                    ? attendingStudentCount === 0
+                      ? "The student was not seen in this classroom. Choose No Show or Absent unless they really attended."
+                      : "Choose what happened in the demo. Only Present asks you for an assessment."
+                    : classOutcome === "completed"
                     ? isDemoClassroom ? "The demo was attended. The assessment form will open next." : "Present/late students are charged and the topic is marked taught."
                     : classOutcome === "completed_continue_topic"
                       ? "Present/late students are charged. The same topic repeats next class, later topics shift down, and an extra class is added at the end."

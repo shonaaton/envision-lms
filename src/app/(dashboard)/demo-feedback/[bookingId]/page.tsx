@@ -62,6 +62,11 @@ async function submitDemoFeedback(formData: FormData) {
   const alreadySubmitted = Boolean(
     await DemoFeedback.exists({ booking: booking._id, classroom: booking.classroom, status: "submitted" })
   );
+  // Same rule as the page: a form left open while the demo was written off as
+  // a no show / absent must not file an assessment and flip it back to Completed.
+  if (!alreadySubmitted && !["ASSESSMENT_PENDING", "COMPLETED", "CONVERTED"].includes(String(booking.demoStatus || ""))) {
+    redirect(role === "instructor" ? "/classrooms" : "/admin/demo-center?tab=missed");
+  }
   const feedback = await DemoFeedback.findOneAndUpdate(
     { booking: booking._id, classroom: booking.classroom },
     {
@@ -148,7 +153,10 @@ export default async function DemoFeedbackPage({ params }: { params: { bookingId
   // to assess, and the leave guard below would otherwise trap whoever opened
   // this page in a form they cannot honestly fill in. Those leads belong in the
   // Demo Center's No Shows/Missed tab, where they can be rebooked or closed.
-  const isAssessable = ["ASSESSMENT_PENDING", "COMPLETED", "CONVERTED"].includes(String(booking.demoStatus || "")) || Boolean(feedback);
+  // Only a submitted assessment keeps the page open whatever the stage: an
+  // empty draft left over from a demo first marked Present and then corrected
+  // to No Show / Absent used to keep asking the coach to assess it.
+  const isAssessable = ["ASSESSMENT_PENDING", "COMPLETED", "CONVERTED"].includes(String(booking.demoStatus || "")) || feedback?.status === "submitted";
   if (!isAssessable) redirect(role === "instructor" ? "/classrooms" : "/admin/demo-center?tab=missed");
 
   const salesPeople = await salesPeopleOptions();

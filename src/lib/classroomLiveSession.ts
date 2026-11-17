@@ -9,6 +9,7 @@ import { notifyFailure } from "@/lib/failureNotifications";
 import { ensureTopicContinuationSession, normalizeSessionOutcome, recalculateFutureSessionTopics, settledSessionOutcome, shouldContinueTopic, topicCompletedForOutcome } from "@/lib/classroomLifecycle";
 import { actualSessionMinutes, punctualityBreakdown, scheduledPaymentMinutes } from "@/lib/teachingStats";
 import { raiseDemoAssessmentTask, raiseDemoRebookTask } from "@/lib/tasks/taskTriggers";
+import { withdrawDemoAssessment } from "@/lib/demoNotDelivered";
 import { scheduledSessionStartIsNoop } from "@/lib/liveClassroomPoll";
 
 export function getRequestedSessionId(req: Request) {
@@ -179,6 +180,7 @@ export async function markScheduledSessionFinished({
         demoStatus: outcome === "student_no_show" ? "STUDENT_NO_SHOW" : "ABSENT",
         feedbackStatus: "not_required",
       });
+      await withdrawDemoAssessment(booking._id, outcome === "student_no_show" ? "Demo marked as a no show." : "Demo marked as absent.");
       await raiseDemoRebookTask({ booking, student: null, ownerId: booking.salesOwner, reason: outcome === "student_no_show" ? "a no-show" : "missed" });
     }
   } else if (outcome === "completed") {

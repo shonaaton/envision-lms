@@ -57,7 +57,7 @@ export default async function CoachProfitabilityPage({
 
       <p className="text-sm text-slate-600">
         Revenue uses LMS fee collections excluding GST. Each student’s collections are split by completed classes with each coach in the selected month.
-        Fees use the billing month, including unpaid invoices, excluding GST and late fees. Fixed monthly salary is counted once, with zero additional cost for covered substitutions. Gain or loss is before overhead and payment processing fees.
+        Monthly fees count in the month they fall due, and custom invoices are spread over the months they cover, including unpaid invoices, excluding GST and late fees. Fixed monthly salary is counted once, with zero additional cost for covered substitutions. Gain or loss is before overhead and payment processing fees.
       </p>
       {report.unallocatedRevenue !== 0 && (
         <p className="rounded-lg border border-slate-200 bg-white p-3 text-sm">

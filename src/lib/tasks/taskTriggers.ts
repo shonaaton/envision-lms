@@ -365,6 +365,11 @@ export function raiseDemoAssessmentTask(input: { booking: any; coachId: unknown;
   });
 }
 
+/** The demo was not delivered after all (no show / absent): there is nothing to assess. */
+export function cancelDemoAssessmentTask(bookingId: unknown, reason: string) {
+  return withdraw("DemoAssessment", bookingId, reason);
+}
+
 export function resolveDemoAssessmentTask(bookingId: unknown, by?: unknown) {
   return settle("DemoAssessment", bookingId, by, "Assessment submitted.");
 }

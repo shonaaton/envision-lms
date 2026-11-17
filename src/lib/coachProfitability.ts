@@ -15,7 +15,49 @@ type StudentInvoice = {
   lateFee?: number;
   credits?: number;
   dueDate: Date;
+  issueDate?: Date;
+  coverageMonths?: number;
 };
+
+const IST_OFFSET_MS = 330 * 60 * 1000;
+const DAY_MS = 24 * 60 * 60 * 1000;
+/** The longest a single invoice can cover (Invoice.coverageMonths max). */
+const MAX_COVERAGE_MONTHS = 36;
+
+function istMonth(date: Date) {
+  const shifted = new Date(date.getTime() + IST_OFFSET_MS);
+  return shifted.getUTCFullYear() * 12 + shifted.getUTCMonth();
+}
+
+function istDay(date: Date) {
+  return Math.floor((date.getTime() + IST_OFFSET_MS) / DAY_MS);
+}
+
+/**
+ * The part of a fee invoice that belongs to the months `fromMonth`-`toMonth`,
+ * or null when it covers none of them.
+ *
+ * A monthly invoice belongs to the month it falls due. A custom invoice starts
+ * in its invoice month and is spread evenly over `coverageMonths` (one when
+ * unset), so a 12-month package counts a twelfth in each month it pays for.
+ */
+function feeShareInMonths(bill: StudentInvoice, fromMonth: number, toMonth: number): number | null {
+  const anchor = bill.type === "manual" ? bill.issueDate || bill.dueDate : bill.dueDate;
+  if (!anchor) return null;
+  const start = istMonth(new Date(anchor));
+  const months = Math.min(MAX_COVERAGE_MONTHS, Math.max(1, Math.floor(Number(bill.coverageMonths) || 1)));
+  const first = Math.max(start, fromMonth) - start;
+  const last = Math.min(start + months - 1, toMonth) - start;
+  if (last < first) return null;
+  const net = netTuition(bill);
+  return Math.round(net * (last + 1) / months) - Math.round(net * first / months);
+}
+
+/** When a credit purchase took effect: its invoice day, or its due day if that is earlier. */
+function creditStartDay(bill: StudentInvoice) {
+  const dates = [bill.issueDate, bill.dueDate].filter(Boolean).map((value) => new Date(value as Date).getTime());
+  return istDay(new Date(Math.min(...dates)));
+}
 
 export type ProfitabilityClass = {
   id: string;
@@ -98,25 +140,29 @@ export function buildCoachProfitability(
 
   let unallocatedRevenue = 0;
   const missingStudents = new Set<string>();
+  const fromMonth = istMonth(period.from);
+  const toMonth = istMonth(period.to);
   for (const [studentId, bills] of invoicesByStudent) {
-    const monthBills = bills.filter((bill) => bill.type === "monthly" &&
-      new Date(bill.dueDate) >= period.from && new Date(bill.dueDate) <= period.to);
+    const shares = bills.filter((bill) => bill.type === "monthly" || bill.type === "manual")
+      .map((bill) => feeShareInMonths(bill, fromMonth, toMonth))
+      .filter((share): share is number => share !== null);
     const enrolled = classesByStudent.get(studentId) || [];
-    const monthlyFee = monthBills.reduce((sum, bill) => sum + netTuition(bill), 0);
+    const monthlyFee = shares.reduce((sum, share) => sum + share, 0);
     if (!enrolled.length) {
       unallocatedRevenue += monthlyFee;
       continue;
     }
     enrolled.forEach((item, index) => {
       const student = item.students.find((entry) => entry.id === studentId)!;
-      if (monthBills.length) {
+      if (shares.length) {
         student.revenue = Math.round(monthlyFee * (index + 1) / enrolled.length) -
           Math.round(monthlyFee * index / enrolled.length);
       } else {
         // Credit invoices retain the purchased package price across later plan changes.
+        // Compared by IST day: a recharge raised later on the day of a class still paid for it.
         const creditBill = bills.filter((bill) => bill.type === "credits" && Number(bill.credits) > 0 &&
-          new Date(bill.dueDate) <= item.date)
-          .sort((a, b) => new Date(b.dueDate).getTime() - new Date(a.dueDate).getTime())[0];
+          creditStartDay(bill) <= istDay(item.date))
+          .sort((a, b) => creditStartDay(b) - creditStartDay(a) || new Date(b.dueDate).getTime() - new Date(a.dueDate).getTime())[0];
         if (creditBill) student.revenue = Math.round(netTuition(creditBill) / Number(creditBill.credits));
         else student.missingFee = true;
       }
@@ -157,14 +203,17 @@ export function buildCoachProfitability(
 
 export async function loadCoachProfitability(period: PayPeriod) {
   const { events, classrooms } = await loadCoachPay(period);
+  // A multi-month invoice raised up to MAX_COVERAGE_MONTHS earlier can still cover this period.
+  const lookback = new Date(Math.max(period.from.getTime() - (MAX_COVERAGE_MONTHS + 1) * 31 * DAY_MS, -8.64e15));
   const [invoices, people] = await Promise.all([
     Invoice.find({
       status: { $in: ["paid", "unpaid", "overdue"] },
       $or: [
-        { type: "monthly", dueDate: { $gte: period.from, $lte: period.to } },
-        { type: "credits", dueDate: { $lte: period.to } },
+        { type: "monthly", dueDate: { $gte: lookback, $lte: period.to } },
+        { type: "manual", issueDate: { $gte: lookback, $lte: period.to } },
+        { type: "credits", $or: [{ dueDate: { $lte: period.to } }, { issueDate: { $lte: period.to } }] },
       ],
-    }).select("student type totalAmount gstAmount lateFee credits dueDate").lean<StudentInvoice[]>(),
+    }).select("student type totalAmount gstAmount lateFee credits dueDate issueDate coverageMonths").lean<StudentInvoice[]>(),
     User.find({ $or: [{ role: "instructor" }, { _id: { $in: classrooms.flatMap((classroom) =>
       [...(classroom.students || []), ...(classroom.generatedSessions || []).flatMap((session: any) => session.students || [])]) } }] })
       .select("name role").lean<{ _id: unknown; name?: string; role?: string }[]>(),

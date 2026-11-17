@@ -11,6 +11,8 @@ import { courseTierLabel } from "@/lib/courseTiers";
 import { OVERALL_STRENGTH, scaleLabel } from "@/lib/demoAssessmentScales";
 import { Booking } from "@/models/Booking";
 import { Batch } from "@/models/Batch";
+import { Classroom } from "@/models/Classroom";
+import { demoReminderBlockReason } from "@/lib/demoReminderGuard";
 import { Notification } from "@/models/Fee";
 import { ensureAutoTask } from "@/lib/tasks/taskService";
 import { raiseDemoRebookTask } from "@/lib/tasks/taskTriggers";
@@ -513,6 +515,8 @@ export async function processDueDemoReminders(now = new Date()) {
     bookingType: "demo",
     status: "confirmed",
     demoStatus: { $in: ["APPROVED", "CLASSROOM_CREATED"] },
+    // Archiving a demo leaves it "confirmed", so it has to be ruled out here.
+    archivedAt: null,
     startAt: { $gt: now, $lte: horizon },
   })
     .populate("student instructor assignedCoach", "name email phone countryCode username role isActive")
@@ -520,12 +524,40 @@ export async function processDueDemoReminders(now = new Date()) {
     .limit(300)
     .lean();
 
+  // A demo cancelled from the classroom page cancels only the Classroom; the
+  // Booking stays "confirmed". Read the classrooms too, so a cancelled demo is
+  // never reminded about (see demoReminderGuard.ts).
+  const linkedClassroomIds = bookings.map((booking) => booking.classroom).filter(Boolean);
+  const classrooms: any[] = bookings.length
+    ? await Classroom.find({
+        $or: [
+          { demoBooking: { $in: bookings.map((booking) => booking._id) } },
+          ...(linkedClassroomIds.length ? [{ _id: { $in: linkedClassroomIds } }] : []),
+        ],
+        isSessionInstance: { $ne: true },
+      })
+        .select("status isActive demoBooking generatedSessions.status generatedSessions.actualEndedAt")
+        .lean()
+    : [];
+  const classroomById = new Map(classrooms.map((classroom) => [objectId(classroom._id), classroom]));
+  const classroomByBooking = new Map(
+    classrooms.filter((classroom) => classroom.demoBooking).map((classroom) => [objectId(classroom.demoBooking), classroom]),
+  );
+
   let sent = 0;
   let skipped = 0;
+  let cancelled = 0;
   for (const booking of bookings) {
     const startAt = new Date(booking.startAt);
     if (Number.isNaN(startAt.getTime())) {
       skipped += 1;
+      continue;
+    }
+    const linkedClassroomId = objectId(booking.classroom);
+    const classroom = (linkedClassroomId && classroomById.get(linkedClassroomId)) || classroomByBooking.get(objectId(booking._id)) || null;
+    const blockReason = demoReminderBlockReason({ booking, classroom, classroomLinked: Boolean(linkedClassroomId) });
+    if (blockReason) {
+      cancelled += 1;
       continue;
     }
     const bookingId = objectId(booking._id);
@@ -621,7 +653,7 @@ export async function processDueDemoReminders(now = new Date()) {
       }
     }
   }
-  return { checked: bookings.length, sent, skipped };
+  return { checked: bookings.length, sent, skipped, cancelled };
 }
 
 export async function notifyDemoMissed(input: { booking: any; student?: any; coach?: any; classroom?: any }) {

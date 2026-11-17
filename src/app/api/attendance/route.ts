@@ -17,6 +17,7 @@ import { academyDateKey } from "@/lib/academyTime";
 import { autoAssignHomeworkForSession } from "@/lib/assignmentAutomation";
 import { notifyHomeworkNotAssigned } from "@/lib/homeworkAutomationAlerts";
 import { notifyDemoMissed } from "@/lib/demoWorkflow";
+import { applyDemoNotDelivered, demoNotDeliveredOutcome, withdrawDemoAssessment } from "@/lib/demoNotDelivered";
 import { notifyFailure } from "@/lib/failureNotifications";
 import {
   notifyCoachNoShowIfThreshold,
@@ -446,11 +447,18 @@ export async function POST(req: Request) {
           });
         });
       }
-      if (isDemoClassroom && !existingAttendance) {
+      if (isDemoClassroom && (!existingAttendance || demoNotDeliveredOutcome(outcome))) {
         const demoBooking: any = classroomDoc.demoBooking
           ? await Booking.findById(classroomDoc.demoBooking)
           : await Booking.findOne({ classroom: classroomDoc._id, bookingType: "demo" });
-        if (demoBooking) {
+        const notDelivered = demoNotDeliveredOutcome(outcome);
+        if (demoBooking && existingAttendance && notDelivered) {
+          // A correction: the demo was first saved as attended (assessment
+          // pending) and is now a no show / absent. Without this the booking
+          // kept asking the coach for an assessment of a class that never ran.
+          const changed = await applyDemoNotDelivered({ bookingId: demoBooking._id, outcome: notDelivered });
+          if (changed) await notifyDemoMissed({ booking: changed, classroom: classroomDoc }).catch((error) => console.error("Demo missed WhatsApp failed", error));
+        } else if (demoBooking) {
           if (outcome === "completed") {
             await DemoFeedback.findOneAndUpdate(
               { booking: demoBooking._id, classroom: classroomDoc._id },
@@ -472,9 +480,11 @@ export async function POST(req: Request) {
             await raiseDemoAssessmentTask({ booking: demoBooking, coachId: assignedCoach, student: recordStudentId(normalizedRecords, classroomDoc.students || []) });
           } else if (outcome === "student_no_show") {
             await Booking.findByIdAndUpdate(demoBooking._id, { status: "pending", approvalStatus: "pending_admin", demoStatus: "STUDENT_NO_SHOW", feedbackStatus: "not_required" });
+            await withdrawDemoAssessment(demoBooking._id, "Demo marked as a no show.");
             await notifyDemoMissed({ booking: demoBooking, classroom: classroomDoc }).catch((error) => console.error("Demo no-show WhatsApp failed", error));
           } else if (outcome === "absent" || outcome === "missed" || outcome === "abandoned") {
             await Booking.findByIdAndUpdate(demoBooking._id, { status: "pending", approvalStatus: "pending_admin", demoStatus: "ABSENT", feedbackStatus: "not_required" });
+            await withdrawDemoAssessment(demoBooking._id, "Demo marked as absent.");
             await notifyDemoMissed({ booking: demoBooking, classroom: classroomDoc }).catch((error) => console.error("Demo missed WhatsApp failed", error));
           }
         }

@@ -8,6 +8,8 @@ import { importantContactWhatsAppRecipientsByKeys, importantContactsByRole } fro
 import { requestGoogleReview } from "@/lib/reviewRequests";
 import { resolveAudienceEmails } from "@/lib/studentContact";
 import { sendWhatsAppAutomationTemplate, sendWhatsAppAutomationTemplates, whatsappRecipientName } from "@/lib/whatsappAutomationEvents";
+import { demoClassroomOffForBookings } from "@/lib/demoReminderGuard";
+import { Booking } from "@/models/Booking";
 import { Classroom } from "@/models/Classroom";
 import { Notification } from "@/models/Fee";
 import { User } from "@/models/User";
@@ -325,6 +327,33 @@ export function reminderSweepFilter(lookBehind: Date, horizon: Date) {
 }
 
 /**
+ * Demo classrooms in this sweep whose demo is off on the booking side (closed,
+ * cancelled, archived or deleted). Closing a demo cancels its classroom too, but
+ * that step's failure is swallowed, so the booking is checked again here.
+ */
+async function cancelledDemoClassroomIds(classrooms: any[]) {
+  const demoClassrooms = classrooms.filter((classroom) => classroom.classroomType === "demo" || classroom.demoBooking);
+  if (!demoClassrooms.length) return new Set<string>();
+  const classroomIds = demoClassrooms.map((classroom) => classroom._id);
+  const referencedIds = demoClassrooms.map((classroom) => classroom.demoBooking).filter(Boolean);
+  const bookings: any[] = await Booking.find({
+    bookingType: "demo",
+    $or: [{ classroom: { $in: classroomIds } }, ...(referencedIds.length ? [{ _id: { $in: referencedIds } }] : [])],
+  })
+    .select("_id classroom status demoStatus archivedAt")
+    .lean();
+  const off = new Set<string>();
+  for (const classroom of demoClassrooms) {
+    const id = objectId(classroom._id);
+    const referenced = objectId(classroom.demoBooking);
+    const linked = bookings.filter((booking) => objectId(booking.classroom) === id || (referenced && objectId(booking._id) === referenced));
+    const referencedBookingMissing = Boolean(referenced) && !bookings.some((booking) => objectId(booking._id) === referenced);
+    if (demoClassroomOffForBookings({ bookings: linked, referencedBookingMissing })) off.add(id);
+  }
+  return off;
+}
+
+/**
  * One pass over the classes due to start soon, or already started without a
  * coach. Safe to run concurrently with itself and with platform cron: every
  * send is claimed first.
@@ -336,14 +365,19 @@ export async function processDueClassSessionReminders() {
   const lookBehind = new Date(now.getTime() - (COACH_ALERT_WINDOW_MINUTES + 1) * 60_000);
 
   const classrooms: any[] = await Classroom.find(reminderSweepFilter(lookBehind, horizon))
-    .select("title courseName meetingUrl coach instructor students generatedSessions")
+    .select("title courseName meetingUrl coach instructor students generatedSessions classroomType demoBooking")
     .limit(SWEEP_LIMIT)
     .lean();
+  const offDemoClassroomIds = await cancelledDemoClassroomIds(classrooms);
 
   let startReminders = 0;
   let coachAlerts = 0;
 
   for (const classroom of classrooms) {
+    // A demo closed on the booking side must not remind the coach (or alert
+    // admins that the coach "has not joined") even if its classroom was left
+    // open - see demoReminderGuard.ts.
+    if (offDemoClassroomIds.has(objectId(classroom._id))) continue;
     for (const session of classroom.generatedSessions || []) {
       if (!["scheduled", "ongoing", "in_progress"].includes(String(session.status || ""))) continue;
       const start = getSessionStart(session);

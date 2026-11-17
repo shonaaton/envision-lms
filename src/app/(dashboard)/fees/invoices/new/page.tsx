@@ -101,6 +101,10 @@ async function createManualInvoice(formData: FormData): Promise<CreateInvoiceRes
   const dueDate = new Date(String(formData.get("dueDate") || ""));
   if (Number.isNaN(issueDate.getTime()) || Number.isNaN(dueDate.getTime())) return { status: "error", error: "Enter a valid invoice date and due date." };
   if (dueDate < issueDate) return { status: "error", error: "The due date cannot be before the invoice date." };
+  const coverageMonths = invoiceType === "manual" ? Number(formData.get("coverageMonths") || 1) : undefined;
+  if (coverageMonths !== undefined && !(Number.isInteger(coverageMonths) && coverageMonths >= 1 && coverageMonths <= 36)) {
+    return { status: "error", error: "Months covered must be a whole number from 1 to 36." };
+  }
   const invoiceMode: "included" | "excluded" | "non_gst" = !isExport && (rawMode === "included" || rawMode === "excluded") ? rawMode : "non_gst";
   const gstPercentage = invoiceMode === "non_gst" ? 0 : Number(formData.get("gstPercentage") || 0);
   if (invoiceMode !== "non_gst" && (!Number.isFinite(gstPercentage) || gstPercentage <= 0 || gstPercentage > 100)) {
@@ -144,6 +148,7 @@ async function createManualInvoice(formData: FormData): Promise<CreateInvoiceRes
       dueDate,
       referenceNumber: String(formData.get("referenceNumber") || ""),
       credits: invoiceType === "credits" ? Number(plan?.credits || 0) : 0,
+      coverageMonths,
       notes: String(formData.get("notes") || "").trim(),
       invoiceMode,
       gstPercentage,

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isConfirmedDemo, syncDemoSession } from "@/lib/demoClassroom";
+import { isClassroomCancelAction, isConfirmedDemo, syncDemoSession } from "@/lib/demoClassroom";
 
 const newTime = {
   start: new Date("2026-09-15T08:50:00Z"),
@@ -80,5 +80,22 @@ describe("isConfirmedDemo", () => {
     expect(isConfirmedDemo({ status: "pending" })).toBe(false);
     expect(isConfirmedDemo(null)).toBe(false);
     expect(isConfirmedDemo(undefined)).toBe(false);
+  });
+});
+
+describe("isClassroomCancelAction", () => {
+  it("treats every classroom-page cancel as one", () => {
+    // These close the demo booking too, so the Demo Center and CRM stop
+    // showing a cancelled demo as booked.
+    for (const action of ["cancel_class", "cancel_series", "cancel_session"]) expect(isClassroomCancelAction(action)).toBe(true);
+    expect(isClassroomCancelAction("mark_session_outcome", "cancelled")).toBe(true);
+  });
+
+  it("leaves other outcomes and edits alone", () => {
+    expect(isClassroomCancelAction("mark_session_outcome", "student_no_show")).toBe(false);
+    expect(isClassroomCancelAction("mark_session_outcome", "completed")).toBe(false);
+    expect(isClassroomCancelAction("reschedule_session")).toBe(false);
+    expect(isClassroomCancelAction("delete_session")).toBe(false);
+    expect(isClassroomCancelAction(undefined)).toBe(false);
   });
 });

@@ -12,6 +12,7 @@ import { canExportDemoAssessments } from "@/lib/demoAssessmentExport";
 import { crmStagesForStudents, type StudentCrmStage } from "@/lib/crm/leadStage";
 import { reconcileDemoStagesFromCrm } from "@/lib/crm/reconcile";
 import { cancelLeadTasks, raiseDemoAssessmentTask, resolveConversionCallTasks } from "@/lib/tasks/taskTriggers";
+import { withdrawDemoAssessment } from "@/lib/demoNotDelivered";
 import { pendingDuplicateReviews, reviewDuplicateFlag } from "@/lib/duplicateAccounts";
 import { duplicateReasonSummary } from "@/lib/identityMatch";
 import { recordActivity } from "@/lib/activity";
@@ -364,6 +365,7 @@ async function markDemoMissed(formData: FormData) {
     // The class was never taught, so there is nothing for a coach to assess.
     feedbackStatus: "not_required",
   });
+  await withdrawDemoAssessment(booking._id, outcome === "absent" ? "Demo marked as absent." : "Demo marked as a no show.");
   const classroom = await markDemoClassroomMissed({ classroomId: booking.classroom, outcome, actorId }).catch((error) => {
     console.error("Demo classroom write-off failed", error);
     return null;

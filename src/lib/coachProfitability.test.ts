@@ -71,4 +71,39 @@ describe("coach profitability", () => {
     expect(report.revenue).toBe(100000);
     expect(report.missingFees).toBe(1);
   });
+
+  it("spreads a multi-month custom invoice evenly over the months it covers", () => {
+    const { classrooms, events } = fixture();
+    const report = buildCoachProfitability(period, events, classrooms, [
+      // A 12-month package raised in May: October is its sixth month.
+      { student: "s1", type: "manual", totalAmount: 1200000, coverageMonths: 12, issueDate: new Date("2026-05-14T06:00:00Z"), dueDate: new Date("2026-05-21T06:00:00Z") },
+      // One month by default, so a September custom invoice does not reach October.
+      { student: "s2", type: "manual", totalAmount: 300000, issueDate: new Date("2026-09-20T06:00:00Z"), dueDate: new Date("2026-10-20T06:00:00Z") },
+    ], people);
+    expect(report.revenue).toBe(100000);
+    expect(report.missingFees).toBe(1);
+    expect(report.rows.flatMap((row) => row.classes).flatMap((item) => item.students)
+      .filter((student) => student.id === "s1").map((student) => student.revenue)).toEqual([50000, 50000]);
+  });
+
+  it("counts a one-month custom invoice in its invoice month", () => {
+    const { classrooms, events } = fixture();
+    const report = buildCoachProfitability(period, events, classrooms, [
+      { student: "s1", type: "manual", totalAmount: 285000, issueDate: new Date("2026-10-07T06:00:00Z"), dueDate: new Date("2026-10-07T06:00:00Z") },
+      { student: "s2", type: "manual", totalAmount: 285000, issueDate: new Date("2026-11-07T06:00:00Z"), dueDate: new Date("2026-11-07T06:00:00Z") },
+    ], people);
+    expect(report.revenue).toBe(285000);
+    expect(report.missingFees).toBe(1);
+  });
+
+  it("uses a credit recharge raised later on the same day as the class", () => {
+    const { classrooms, events } = fixture();
+    const report = buildCoachProfitability(period, events, classrooms, [
+      // The class is at 15:30 IST on 5 Oct; the recharge was raised at 17:30 and falls due the next day.
+      { student: "s1", type: "credits", totalAmount: 400000, credits: 8, issueDate: new Date("2026-10-05T12:00:00Z"), dueDate: new Date("2026-10-06T12:00:00Z") },
+      { student: "s2", type: "monthly", totalAmount: 300000, dueDate: period.from },
+    ], people);
+    expect(report.missingFees).toBe(0);
+    expect(report.revenue).toBe(400000);
+  });
 });

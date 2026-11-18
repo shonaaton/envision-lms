@@ -17,6 +17,18 @@ describe("portal fee rule (non-GST = cash with Sayantan, LUT = bank)", () => {
     expect(paidInCash(gst)).toBe(false);
   });
 
+  it("leaves non-GST bills before October 2026 to the cash sheet", () => {
+    const septemberPaid = new Date("2026-09-20T06:30:00Z");
+    const september = { ...nonGst, paidAt: septemberPaid, paymentTransactions: [{ mode: "other", amount: 2_000_00, paidAt: septemberPaid }] };
+    expect(paidInCash(september)).toBe(false);
+    expect(cashReceipts(september)).toEqual([]);
+    expect(portalFeeCategoryFor(september)).toBeNull();
+    // Marked paid in cash in the portal: still cash, as before.
+    expect(cashReceipts({ ...september, paymentTransactions: [{ mode: "cash", amount: 2_000_00, paidAt: septemberPaid }] }).map((receipt) => receipt.amount)).toEqual([2_000_00]);
+    // 1 Oct 2026 IST is still 30 Sept in UTC: the academy month decides.
+    expect(paidInCash({ ...nonGst, paidAt: new Date("2026-09-30T19:00:00Z") })).toBe(true);
+  });
+
   it("counts a non-GST bill as cash whatever payment mode was typed", () => {
     const bill = { ...nonGst, paymentTransactions: [{ mode: "upi", amount: 1_000_00, paidAt }, { mode: "other", amount: 1_000_00, paidAt: new Date("2026-10-20T06:30:00Z") }] };
     expect(cashReceipts(bill).map((receipt) => receipt.amount)).toEqual([1_000_00, 1_000_00]);

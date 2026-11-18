@@ -3,7 +3,7 @@ import "server-only";
 import { dbConnect } from "@/lib/db";
 import { academyMonthOf, monthBounds } from "@/lib/feedback/feedbackCycleDates";
 import { categoryLabel } from "@/lib/accounts/categories";
-import { PORTAL_FEE_FIELDS, portalFeeKind } from "@/lib/accounts/portalFees";
+import { PORTAL_FEE_FIELDS, paidInCash as isCashBill, portalFeeKind } from "@/lib/accounts/portalFees";
 import { AccountEntry, BankTransaction } from "@/models/Accounts";
 import { Invoice } from "@/models/Fee";
 
@@ -93,9 +93,9 @@ export async function loadBankStatement(months: string[]) {
     const paidInCash = new Set((cashFees as any[]).flatMap((entry) => (entry.invoices || []).map((id: any) => String(id))));
     const pending: BankStatementLine[] = [];
     for (const bill of bills as any[]) {
-      // Non-GST bills are cash with Sayantan; a GST bill paid in cash is too.
+      // Non-GST bills from October 2026 are cash with Sayantan; so is any bill paid in cash.
       const kind = portalFeeKind(bill);
-      if (kind === "non_gst" || paidInCash.has(String(bill._id)) || (bill.paymentTransactions || []).some((transaction: any) => transaction.mode === "cash")) continue;
+      if (isCashBill(bill) || paidInCash.has(String(bill._id)) || (bill.paymentTransactions || []).some((transaction: any) => transaction.mode === "cash")) continue;
       const date = new Date(bill.paidAt);
       pending.push({
         date,

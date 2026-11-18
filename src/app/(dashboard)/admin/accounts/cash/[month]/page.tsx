@@ -4,6 +4,8 @@ import { ArrowLeft, ChevronLeft, ChevronRight, Landmark, Wallet } from "lucide-r
 import { AccountsNav, Forbidden } from "@/components/accounts/AccountsNav";
 import { monthLabel, rupees } from "@/components/accounts/format";
 import { DataPanel, PageHeader, StatCard } from "@/components/common/PageHeader";
+import { StatementDownload } from "@/components/accounts/StatementDownload";
+import { accountsStatementYears } from "@/lib/accounts/data";
 import { resolveAccountsViewer } from "@/lib/accounts/access";
 import { categoryLabel } from "@/lib/accounts/categories";
 import { loadCashMonth } from "@/lib/accounts/cashData";
@@ -77,6 +79,8 @@ export default async function CashMonthPage({ params }: { params: Promise<{ mont
           Whole month (bank and portal too)
         </Link>
       </div>
+
+      <StatementDownload className="mt-3" years={accountsStatementYears()} account="cash" period={month} />
 
       <div className="mt-3 grid gap-3 xl:grid-cols-[2fr_1fr]">
         <DataPanel title="Day by day" icon={Wallet}>

@@ -127,6 +127,28 @@ export async function loadCashMonth(month: string) {
   return { month, holder: settings.cashHolder, opening: row?.opening ?? settings.openingCash, closing: balance, row, items };
 }
 
+/**
+ * Every cash movement over `months` in date order, with the balance after each,
+ * plus the month-by-month book - the cash statement download.
+ */
+export async function loadCashStatement(months: string[]) {
+  const settings = await getAccountsSettings();
+  const moves = await cashMovements(monthBounds(months[months.length - 1]).end);
+  const allMonths = monthsBetween(ACCOUNTS_START_MONTH, months[months.length - 1]);
+  const book = buildCashBook(settings.openingCash, moves, allMonths);
+  const rows = book.rows.filter((row) => months.includes(row.month));
+  let balance = rows[0]?.opening ?? settings.openingCash;
+  const items = moves
+    .filter((move) => months.includes(move.month))
+    .sort((a, b) => (a.date?.getTime() || 0) - (b.date?.getTime() || 0) || (a.flow === b.flow ? 0 : a.flow === "in" ? -1 : 1))
+    .map((move) => {
+      const amount = Math.abs(move.amount);
+      balance += move.flow === "in" ? amount : -amount;
+      return { ...move, amount, balance };
+    });
+  return { holder: settings.cashHolder, opening: rows[0]?.opening ?? settings.openingCash, closing: balance, rows, items };
+}
+
 export async function loadReceivables(now = new Date()) {
   await dbConnect();
   const open: any[] = await Invoice.find({ status: { $in: ["unpaid", "overdue"] } })

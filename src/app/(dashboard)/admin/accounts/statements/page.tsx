@@ -5,6 +5,8 @@ import { AccountsNav, Forbidden } from "@/components/accounts/AccountsNav";
 import { rupees } from "@/components/accounts/format";
 import { DeleteRuleButton, DeleteStatementButton, StatementUpload } from "@/components/accounts/StatementClient";
 import { DataPanel, EmptyState, PageHeader } from "@/components/common/PageHeader";
+import { StatementDownload } from "@/components/accounts/StatementDownload";
+import { accountsStatementYears } from "@/lib/accounts/data";
 import { resolveAccountsViewer } from "@/lib/accounts/access";
 import { categoryLabel } from "@/lib/accounts/categories";
 import { listRules, listStatements } from "@/lib/accounts/statementData";
@@ -32,6 +34,8 @@ export default async function StatementsPage() {
       </PageHeader>
 
       <AccountsNav active="/admin/accounts/statements" />
+
+      <StatementDownload className="mt-3" years={accountsStatementYears()} account="bank" />
 
       <DataPanel className="mt-3" title="Uploaded statements" icon={FileSpreadsheet}>
         {statements.length === 0 ? (

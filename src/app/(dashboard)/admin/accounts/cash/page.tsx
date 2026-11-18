@@ -3,12 +3,13 @@ import { Landmark, Wallet } from "lucide-react";
 
 import { AccountsNav, Forbidden } from "@/components/accounts/AccountsNav";
 import { CashSettingsForm } from "@/components/accounts/CashClient";
+import { StatementDownload } from "@/components/accounts/StatementDownload";
 import { rupees, shortMonth } from "@/components/accounts/format";
 import { DataPanel, PageHeader, StatCard } from "@/components/common/PageHeader";
 import { resolveAccountsViewer } from "@/lib/accounts/access";
 import { categoryLabel } from "@/lib/accounts/categories";
 import { loadCashBook } from "@/lib/accounts/cashData";
-import { accountsFyOptions, accountsRangeForFy } from "@/lib/accounts/data";
+import { accountsFyOptions, accountsRangeForFy, accountsStatementYears } from "@/lib/accounts/data";
 import { monthsBetween } from "@/lib/accounts/metrics";
 import { financialYearLabel } from "@/lib/payPeriods";
 import { cn } from "@/lib/utils";
@@ -77,6 +78,8 @@ export default async function CashBookPage({ searchParams }: { searchParams?: Pr
           Show
         </button>
       </form>
+
+      <StatementDownload className="mt-3" years={accountsStatementYears()} account="cash" period={`fy:${fyStart}`} />
 
       <DataPanel className="mt-3" title="Month by month" subtitle="Click a month for every cash item in it. A negative balance means the holder paid academy costs from his own money." icon={Wallet}>
         <div className="overflow-x-auto">

@@ -58,6 +58,14 @@ export function accountsFyOptions(now = new Date()) {
   return out;
 }
 
+/** Every financial year the books cover with its months, newest first - for the statement download. */
+export function accountsStatementYears(now = new Date()) {
+  return accountsFyOptions(now).map((fyStart) => {
+    const range = accountsRangeForFy(fyStart, now);
+    return { fyStart, months: monthsBetween(range.from, range.to) };
+  });
+}
+
 function rangeBounds(range: AccountsRange) {
   return { start: monthBounds(range.from).start, end: monthBounds(range.to).end };
 }

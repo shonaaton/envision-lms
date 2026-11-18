@@ -6,6 +6,7 @@ import { isGstInvoice, joinedAt, leftAt } from "@/lib/feesMetrics";
 import { financialYearOf, resolvePayPeriod } from "@/lib/payPeriods";
 import { loadCoachPay } from "@/lib/coachPayData";
 import { PAYROLL_CATEGORIES, accountCategory } from "@/lib/accounts/categories";
+import { PORTAL_FEE_FIELDS, paidInCash } from "@/lib/accounts/portalFees";
 import {
   ACCOUNTS_START_MONTH,
   PORTAL_TEACHER_COST_FROM,
@@ -197,13 +198,14 @@ export async function bankFeesNotInPortal(lastMonth: string) {
   const [receipts, statementMonths, invoices, cashFees]: any[][] = await Promise.all([
     BankTransaction.aggregate([{ $match: { feeReceipt: true, date: { $gte: start, $lte: end } } }, { $group: { _id: "$month", total: { $sum: "$credit" } } }]),
     BankTransaction.distinct("month", { date: { $gte: start, $lte: end } }),
-    Invoice.find({ status: "paid", paidAt: { $gte: start, $lte: end } }).select("paidAt totalAmount paymentTransactions.mode").lean(),
+    Invoice.find({ status: "paid", paidAt: { $gte: start, $lte: end } }).select(`paidAt totalAmount paymentTransactions.mode ${PORTAL_FEE_FIELDS}`).lean(),
     AccountEntry.find({ voidedAt: null, category: "portal_cash_fee" }).select("invoices").lean(),
   ]);
-  const paidInCash = new Set(cashFees.flatMap((entry: any) => (entry.invoices || []).map(idOf)));
+  const cashFeeBills = new Set(cashFees.flatMap((entry: any) => (entry.invoices || []).map(idOf)));
   const portalBank: Record<string, number> = {};
   for (const invoice of invoices) {
-    const cash = paidInCash.has(idOf(invoice._id)) || (invoice.paymentTransactions || []).some((transaction: any) => transaction.mode === "cash");
+    // Non-GST bills are paid to Sayantan in cash, so they never reach the bank.
+    const cash = cashFeeBills.has(idOf(invoice._id)) || paidInCash(invoice) || (invoice.paymentTransactions || []).some((transaction: any) => transaction.mode === "cash");
     if (cash) continue;
     bump(portalBank, academyMonthOf(new Date(invoice.paidAt)), Number(invoice.totalAmount || 0));
   }

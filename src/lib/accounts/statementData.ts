@@ -9,6 +9,7 @@ import { academyMonthOf } from "@/lib/feedback/feedbackCycleDates";
 import { accountCategory, isPayrollCategory } from "@/lib/accounts/categories";
 import { AccountsError, saveEntry, voidEntry } from "@/lib/accounts/ledger";
 import { suggestFor, type MatchContext, type Suggestion } from "@/lib/accounts/match";
+import { PORTAL_FEE_FIELDS, paidInCash } from "@/lib/accounts/portalFees";
 import { parseStatementRows, StatementFormatError } from "@/lib/accounts/statement";
 import { readSpreadsheet, SpreadsheetFormatError } from "@/lib/sheetReader";
 import { AccountEntry, AccountRule, BankStatementImport, BankTransaction } from "@/models/Accounts";
@@ -31,7 +32,7 @@ export async function loadMatchContext(from: Date, to: Date): Promise<MatchConte
   const start = new Date(from.getTime() - 10 * DAY);
   const end = new Date(to.getTime() + 10 * DAY);
   const [invoices, payments, rules, staffUsers, profiles, staffInvoices, ledger, linkedEntries]: any[][] = await Promise.all([
-    Invoice.find({ status: "paid", paidAt: { $gte: start, $lte: end } }).select("invoiceNumber paidAt totalAmount paymentTransactions referenceNumber payment").lean(),
+    Invoice.find({ status: "paid", paidAt: { $gte: start, $lte: end } }).select(`invoiceNumber paidAt totalAmount paymentTransactions referenceNumber payment ${PORTAL_FEE_FIELDS}`).lean(),
     Payment.find({ status: "paid", paidAt: { $gte: start, $lte: end }, referenceNumber: { $nin: [null, ""] } }).select("referenceNumber invoiceNumber amount").lean(),
     AccountRule.find({}).lean(),
     User.find({ role: { $in: ["instructor", "admin", "sub-admin"] } }).select("name").lean(),
@@ -55,7 +56,8 @@ export async function loadMatchContext(from: Date, to: Date): Promise<MatchConte
     const label = invoice.invoiceNumber || "invoice";
     for (const transaction of invoice.paymentTransactions || []) {
       addRef(transaction.referenceNumber, idOf(invoice._id), null, label);
-      if (transaction.mode !== "cash") {
+      // Non-GST bills are paid in cash, whatever mode was typed, so no bank row pays them.
+      if (transaction.mode !== "cash" && !paidInCash(invoice)) {
         manualPayments.push({ invoiceId: idOf(invoice._id), amount: Number(transaction.amount || 0), date: new Date(transaction.paidAt), label });
       }
     }

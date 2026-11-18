@@ -8,8 +8,9 @@ import { academyDateKey } from "@/lib/academyTime";
 import { resolveAccountsViewer } from "@/lib/accounts/access";
 import { ACCOUNT_CATEGORIES, accountCategory } from "@/lib/accounts/categories";
 import { accountsFyOptions, accountsRangeForFy } from "@/lib/accounts/data";
-import { listEntries } from "@/lib/accounts/ledger";
+import { listEntries, listPortalFeeRows } from "@/lib/accounts/ledger";
 import { monthsBetween } from "@/lib/accounts/metrics";
+import { PORTAL_FEE_CATEGORIES, portalFeeCategory } from "@/lib/accounts/portalFees";
 import { financialYearLabel } from "@/lib/payPeriods";
 
 export const dynamic = "force-dynamic";
@@ -30,11 +31,16 @@ export default async function AccountsLedgerPage({ searchParams }: { searchParam
   const range = accountsRangeForFy(fyStart);
   const months = monthsBetween(range.from, range.to);
   const month = months.includes(param(params, "month")) ? param(params, "month") : "";
-  const category = accountCategory(param(params, "category"))?.key || "";
+  const category = accountCategory(param(params, "category"))?.key || portalFeeCategory(param(params, "category"))?.key || "";
 
-  const rows = await listEntries({ month, months, category });
+  const [entries, portalRows] = await Promise.all([listEntries({ month, months, category }), listPortalFeeRows({ month, months, category })]);
+  // Newest first, typed entries and portal bills together.
+  const rows = [...entries, ...portalRows].sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
   const totals = { income: 0, expense: 0, non_pl: 0 } as Record<string, number>;
-  for (const row of rows) totals[accountCategory(row.category)?.kind || row.kind] += row.amount;
+  for (const row of entries) totals[accountCategory(row.category)?.kind || row.kind] += row.amount;
+  // Portal bills are already revenue on the overview; shown apart so the income card stays what was typed or imported.
+  const portalCash = portalRows.filter((row) => row.account === "cash").reduce((sum, row) => sum + row.amount, 0);
+  const portalBank = portalRows.filter((row) => row.account === "bank").reduce((sum, row) => sum + row.amount, 0);
 
   return (
     <div className="min-h-screen bg-slate-50 px-4 py-4 text-slate-950 sm:px-6 lg:px-8">
@@ -44,10 +50,11 @@ export default async function AccountsLedgerPage({ searchParams }: { searchParam
         icon={Landmark}
         subtitle="Everything the portal does not already know: costs, coach pay before September 2026, offline fees, and GST / TDS paid to the government."
       >
-        <div className="grid gap-2 sm:grid-cols-3">
+        <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
           <StatCard label="Costs" value={rupees(totals.expense)} note={`${month ? shortMonth(month) : range.label}`} icon={BookOpen} tone="amber" />
-          <StatCard label="Offline / other income" value={rupees(totals.income)} note={`${rows.filter((row) => accountCategory(row.category)?.kind === "income").length} entries`} icon={BookOpen} tone="green" />
+          <StatCard label="Offline / other income" value={rupees(totals.income)} note={`${entries.filter((row) => accountCategory(row.category)?.kind === "income").length} entries`} icon={BookOpen} tone="green" />
           <StatCard label="Not profit / loss" value={rupees(totals.non_pl)} note="GST, TDS, owner money, transfers" icon={BookOpen} tone="blue" />
+          <StatCard label="Portal fees: cash / bank" value={`${rupees(portalCash)} / ${rupees(portalBank)}`} note="Non-GST bills with Sayantan / export (LUT) bills in HDFC" icon={BookOpen} tone="green" />
         </div>
       </PageHeader>
 
@@ -84,6 +91,11 @@ export default async function AccountsLedgerPage({ searchParams }: { searchParam
                 {item.label}
               </option>
             ))}
+            {PORTAL_FEE_CATEGORIES.map((item) => (
+              <option key={item.key} value={item.key}>
+                {item.label}
+              </option>
+            ))}
           </select>
         </label>
         <button type="submit" className="btn-outline h-9 px-4 text-xs">
@@ -95,7 +107,7 @@ export default async function AccountsLedgerPage({ searchParams }: { searchParam
         <LedgerImport />
       </div>
 
-      <DataPanel className="mt-3" title="Entries" subtitle={`${rows.length} entries`} icon={BookOpen}>
+      <DataPanel className="mt-3" title="Entries" subtitle={`${entries.length} entries${portalRows.length ? `, ${portalRows.length} portal bills` : ""}`} icon={BookOpen}>
         <LedgerWorkspace rows={rows} categories={ACCOUNT_CATEGORIES} today={academyDateKey(new Date())} />
       </DataPanel>
     </div>

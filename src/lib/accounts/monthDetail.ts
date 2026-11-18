@@ -6,6 +6,8 @@ import { isGstInvoice } from "@/lib/feesMetrics";
 import { accountCategory } from "@/lib/accounts/categories";
 import { bankFeesNotInPortal, loadAccounts } from "@/lib/accounts/data";
 import { PORTAL_TEACHER_COST_FROM } from "@/lib/accounts/metrics";
+import { PORTAL_FEE_FIELDS, paidInCash } from "@/lib/accounts/portalFees";
+import { isExportInvoice } from "@/lib/exportInvoice";
 import { AccountEntry, BankTransaction } from "@/models/Accounts";
 import "@/models/AccessRole";
 import { Invoice } from "@/models/Fee";
@@ -40,7 +42,7 @@ export async function loadMonthDetail(month: string) {
   const [accounts, bills, payments, refunds, entries, staffInvoices, receipts, surplus]: any[] = await Promise.all([
     loadAccounts({ from: month, to: month, label: month, fyStart: null }),
     Invoice.find({ status: "paid", paidAt: { $gte: start, $lte: end } })
-      .select("invoiceNumber title student paidAt totalAmount gstAmount gstPercentage invoiceMode paymentTransactions")
+      .select(`invoiceNumber title student paidAt totalAmount paymentTransactions ${PORTAL_FEE_FIELDS}`)
       .populate("student", "name")
       .sort({ paidAt: 1 })
       .lean(),
@@ -66,7 +68,7 @@ export async function loadMonthDetail(month: string) {
   const portalNonGst: DetailLine[] = [];
   for (const bill of bills as any[]) {
     const modes = Array.from(new Set((bill.paymentTransactions || []).map((transaction: any) => transaction.mode)));
-    const cash = cashBills.has(idOf(bill._id)) || modes.includes("cash");
+    const cash = cashBills.has(idOf(bill._id)) || paidInCash(bill) || modes.includes("cash");
     const line: DetailLine = {
       id: idOf(bill._id),
       date: new Date(bill.paidAt).toISOString(),
@@ -74,7 +76,7 @@ export async function loadMonthDetail(month: string) {
       detail: [bill.invoiceNumber, bill.title].filter(Boolean).join(" - "),
       amount: Number(bill.totalAmount || 0),
       tax: Number(bill.gstAmount || 0) || undefined,
-      tag: cash ? "cash" : modes.join(", ") || "not recorded",
+      tag: cash ? "cash" : isExportInvoice(bill) ? "bank (export, LUT)" : modes.join(", ") || "not recorded",
     };
     (isGstInvoice(bill) ? portalGst : portalNonGst).push(line);
   }

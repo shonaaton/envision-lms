@@ -9,6 +9,7 @@ import { saveEntryAction, voidEntryAction } from "@/app/(dashboard)/admin/accoun
 import { rupees } from "@/components/accounts/format";
 import { MONEY_ACCOUNTS, PAYROLL_CATEGORIES, defaultFlow, moneyAccountLabel, type AccountCategory } from "@/lib/accounts/categories";
 import type { LedgerRow } from "@/lib/accounts/ledger";
+import { portalFeeCategory } from "@/lib/accounts/portalFees";
 import type { PreviewRow } from "@/lib/accounts/ledgerImport";
 
 type Props = {
@@ -250,6 +251,7 @@ export function LedgerWorkspace({ rows, categories, today }: Props) {
             <tbody>
               {rows.map((row) => {
                 const category = byKey.get(row.category);
+                const portal = row.source === "portal";
                 return (
                   <tr key={row.id} className="border-b border-slate-100 align-top last:border-0">
                     <td className="whitespace-nowrap px-3 py-2 tabular-nums">
@@ -257,8 +259,8 @@ export function LedgerWorkspace({ rows, categories, today }: Props) {
                       {row.month !== istDay(row.date).slice(0, 7) && <div className="text-xs text-slate-500">for {row.month}</div>}
                     </td>
                     <td className="px-3 py-2">
-                      <div className="font-semibold text-slate-950">{category?.label || row.category}</div>
-                      <div className="text-xs text-slate-500">{KIND_LABEL[category?.kind || row.kind]}</div>
+                      <div className="font-semibold text-slate-950">{category?.label || portalFeeCategory(row.category)?.label || row.category}</div>
+                      <div className="text-xs text-slate-500">{portal ? "Income, already in revenue" : KIND_LABEL[category?.kind || row.kind]}</div>
                     </td>
                     <td className="max-w-md px-3 py-2 text-slate-700">
                       <div className="truncate">{row.description || "-"}</div>
@@ -275,17 +277,20 @@ export function LedgerWorkspace({ rows, categories, today }: Props) {
                     </td>
                     <td className="px-3 py-2 text-xs text-slate-500">
                       <div className="font-semibold text-slate-700">{moneyAccountLabel(row.account)}</div>
-                      {row.source === "bank_statement" ? "Bank statement" : row.source === "csv_import" ? "Sheet import" : "Typed"}
+                      {portal ? "From Fees, automatic" : row.source === "bank_statement" ? "Bank statement" : row.source === "csv_import" ? "Sheet import" : "Typed"}
                     </td>
                     <td className="whitespace-nowrap px-3 py-2 text-right">
-                      {row.source !== "bank_statement" && (
+                      {/* A portal bill is changed or cancelled in Fees, not here. */}
+                      {!portal && row.source !== "bank_statement" && (
                         <button type="button" className="btn-ghost h-8 px-2" onClick={() => edit(row)} aria-label="Edit">
                           <Pencil size={13} />
                         </button>
                       )}
-                      <button type="button" className="btn-ghost h-8 px-2 text-rose-700" onClick={() => remove(row)} disabled={pending} aria-label="Remove">
-                        <Trash2 size={13} />
-                      </button>
+                      {!portal && (
+                        <button type="button" className="btn-ghost h-8 px-2 text-rose-700" onClick={() => remove(row)} disabled={pending} aria-label="Remove">
+                          <Trash2 size={13} />
+                        </button>
+                      )}
                     </td>
                   </tr>
                 );

@@ -7,6 +7,7 @@ import { recordActivity } from "@/lib/activity";
 import { academyMonthOf, monthBounds } from "@/lib/feedback/feedbackCycleDates";
 import { defaultFlow } from "@/lib/accounts/categories";
 import { buildCashBook, type CashMovement } from "@/lib/accounts/cashbook";
+import { PORTAL_FEE_FIELDS, cashReceipts, paidInCash } from "@/lib/accounts/portalFees";
 import { AccountsError } from "@/lib/accounts/ledger";
 import { ACCOUNTS_START_MONTH, monthsBetween } from "@/lib/accounts/metrics";
 import { bucketFor, classifyStudent, summarizeReceivables, type ReceivableStudent } from "@/lib/accounts/receivables";
@@ -35,17 +36,18 @@ export async function saveAccountsSettings(input: { openingCash: number; cashHol
 }
 
 /**
- * Every cash movement since the books started: portal bills marked paid in
- * "Cash", and cash entries in the ledger. "Others" is not cash: the bills
- * back-filled in Aug-Sep 2026 used it for UPI and bank payments. A cash fee on
- * a bill already paid in the portal is a "Cash fee already paid in the portal"
- * entry, so that bill is not counted a second time here.
+ * Every cash movement since the books started: paid non-GST portal bills
+ * (all paid to Sayantan in cash, lib/accounts/portalFees.ts), payments marked
+ * "Cash" on other bills, and cash entries in the ledger. Export (LUT) bills
+ * went to the bank. A cash fee on a bill already paid in the portal is a "Cash
+ * fee already paid in the portal" entry, so that bill is not counted a second
+ * time here.
  */
 async function cashMovements(until: Date): Promise<CashMovement[]> {
   const start = monthBounds(ACCOUNTS_START_MONTH).start;
   const [invoices, payments, entries]: any[][] = await Promise.all([
-    Invoice.find({ status: "paid", "paymentTransactions.mode": "cash", paidAt: { $gte: start, $lte: until } })
-      .select("paymentTransactions invoiceNumber student")
+    Invoice.find({ status: "paid", paidAt: { $gte: start, $lte: until } })
+      .select(`paymentTransactions invoiceNumber student paidAt totalAmount ${PORTAL_FEE_FIELDS}`)
       .populate("student", "name")
       .lean(),
     Payment.find({ status: "paid", purpose: { $ne: "invoice" }, method: "cash", paidAt: { $gte: start, $lte: until } }).select("amount paidAt purpose").lean(),
@@ -57,17 +59,16 @@ async function cashMovements(until: Date): Promise<CashMovement[]> {
   const moves: CashMovement[] = [];
   for (const invoice of invoices) {
     if (coveredByEntry.has(idOf(invoice._id))) continue;
-    for (const transaction of invoice.paymentTransactions || []) {
-      if (transaction.mode !== "cash") continue;
-      const paidAt = new Date(transaction.paidAt);
+    for (const receipt of cashReceipts(invoice)) {
+      const paidAt = receipt.paidAt;
       if (paidAt < start || paidAt > until) continue;
       moves.push({
         month: academyMonthOf(paidAt),
         flow: "in",
-        amount: Number(transaction.amount || 0),
+        amount: receipt.amount,
         group: "fees",
         date: paidAt,
-        label: `${invoice.student?.name || "Student"} - portal bill ${invoice.invoiceNumber || ""} paid in cash`,
+        label: `${invoice.student?.name || "Student"} - portal bill ${invoice.invoiceNumber || ""} ${paidInCash(invoice) ? "(non-GST, cash)" : "paid in cash"}`,
         category: "fees",
         source: "portal",
       });

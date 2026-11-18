@@ -3,11 +3,13 @@ import "server-only";
 import { Types, isValidObjectId } from "mongoose";
 
 import { dbConnect } from "@/lib/db";
-import { academyMonthOf } from "@/lib/feedback/feedbackCycleDates";
+import { academyMonthOf, monthBounds } from "@/lib/feedback/feedbackCycleDates";
 import { accountCategory, defaultFlow, isPayrollCategory, type MoneyAccount } from "@/lib/accounts/categories";
 import { parseEntryAmount, parseEntryDate, teacherPayAmounts } from "@/lib/accounts/entryInput";
 import { recordActivity } from "@/lib/activity";
+import { PORTAL_FEE_FIELDS, portalFeeCategory, portalFeeCategoryFor } from "@/lib/accounts/portalFees";
 import { AccountEntry } from "@/models/Accounts";
+import { Invoice } from "@/models/Fee";
 import { User } from "@/models/User";
 
 export class AccountsError extends Error {}
@@ -229,4 +231,58 @@ export async function listEntries(filter: { month?: string; category?: string; m
     account: entry.account || "bank",
     flow: entry.flow || defaultFlow(entry.category, Number(entry.amount) < 0),
   }));
+}
+
+/**
+ * Paid non-GST bills (cash with Sayantan) and export (LUT) bills (bank), read
+ * live from Fees for the Entries list. They are already revenue on the
+ * overview, so they are shown here, never stored. A bill a "Cash fee already
+ * paid in the portal" entry covers is left out: that entry is its row.
+ */
+export async function listPortalFeeRows(filter: { month?: string; category?: string; months?: string[] }): Promise<LedgerRow[]> {
+  if (filter.category && !portalFeeCategory(filter.category)) return [];
+  const months = filter.month ? [filter.month] : filter.months || [];
+  if (!months.length) return [];
+  await dbConnect();
+  const sorted = [...months].sort();
+  const [invoices, covering]: any[][] = await Promise.all([
+    Invoice.find({
+      status: "paid",
+      paidAt: { $gte: monthBounds(sorted[0]).start, $lte: monthBounds(sorted[sorted.length - 1]).end },
+    })
+      .select(`invoiceNumber title student paidAt totalAmount paymentTransactions.mode ${PORTAL_FEE_FIELDS}`)
+      .populate("student", "name")
+      .lean(),
+    AccountEntry.find({ voidedAt: null, category: "portal_cash_fee", "invoices.0": { $exists: true } }).select("invoices").lean(),
+  ]);
+  const covered = new Set(covering.flatMap((entry) => (entry.invoices || []).map((id: any) => String(id))));
+  const rows: LedgerRow[] = [];
+  for (const invoice of invoices) {
+    const category = portalFeeCategoryFor(invoice);
+    if (!category || covered.has(String(invoice._id))) continue;
+    if (filter.category && filter.category !== category.key) continue;
+    const paidAt = new Date(invoice.paidAt);
+    const month = academyMonthOf(paidAt);
+    if (!months.includes(month)) continue;
+    const modes = Array.from(new Set((invoice.paymentTransactions || []).map((transaction: any) => transaction.mode).filter(Boolean)));
+    rows.push({
+      id: `portal:${invoice._id}`,
+      kind: "income",
+      category: category.key,
+      month,
+      date: paidAt.toISOString(),
+      amount: Number(invoice.totalAmount || 0),
+      gstAmount: 0,
+      tdsAmount: 0,
+      description: [invoice.invoiceNumber, invoice.title].filter(Boolean).join(" - "),
+      counterparty: "",
+      paymentMode: category.account === "cash" ? "" : modes.join(", "),
+      studentId: invoice.student?._id ? String(invoice.student._id) : "",
+      studentName: invoice.student?.name || "",
+      source: "portal",
+      account: category.account,
+      flow: "in",
+    });
+  }
+  return rows;
 }

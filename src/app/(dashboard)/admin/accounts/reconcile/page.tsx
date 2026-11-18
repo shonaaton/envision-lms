@@ -77,16 +77,16 @@ export default async function ReconcilePage({ searchParams }: { searchParams?: P
 
   const feeLines: Line[] = [
     { label: "Portal: fees paid", value: (r) => r.portal.total, strong: true },
-    { label: "Paid in cash", value: (r) => r.portal.cash, note: "Bills marked paid in Cash, or matched to the cash sheet" },
+    { label: "Paid in cash", value: (r) => r.portal.cash, note: "Non-GST bills, bills marked paid in Cash, or matched to the cash sheet" },
     { label: "Should have reached the bank", value: (r) => r.portal.intoBank },
     { label: "Bank: student fees received", value: (r) => r.bank.feeReceipts, strong: true },
     { label: "of which Razorpay settlements", value: (r) => r.bank.razorpay },
     { label: "Bank minus portal", value: (r) => (r.hasStatement ? r.bank.feeReceipts - r.portal.intoBank : 0), note: "Positive: fees reached the bank that the portal never billed. Negative: the portal dates a payment later than the bank." },
     {
-      label: "Bank fees not in the portal (P&L)",
+      label: "Correction to the HDFC statement (P&L)",
       value: (r) => r.notInPortal,
       strong: true,
-      note: "Running total of bank minus portal, never below zero - what the P&L adds to revenue before taking out GST",
+      note: "Bank minus portal for months a statement fully covers - what the P&L adds so bank fees equal the statement, before taking out GST",
     },
     { label: "Other money in: owner, loans, refunds", value: (r) => r.bank.nonPl + r.bank.otherIncome },
     { label: "Not classified yet", value: (r) => r.bank.unclassified, flag: (r) => r.bank.unclassified > 0 },
@@ -98,7 +98,7 @@ export default async function ReconcilePage({ searchParams }: { searchParams?: P
       label: "Paid beyond the portal's bills",
       value: (r) => Math.max(0, r.gstPaid - r.portal.gstTax),
       flag: (r) => r.gstPaid - r.portal.gstTax > 100_00,
-      note: "GST-billed fees the portal does not have. The P&L takes this GST out of the bank fees not in the portal.",
+      note: "GST-billed fees the portal does not have. The P&L takes this GST out of the correction to the HDFC statement.",
     },
     { label: "GST-billed fees implied (GST paid / 18%)", value: (r) => Math.round(r.gstPaid / 0.18) },
     { label: "GST bills in the portal, before GST", value: (r) => r.portal.gstGross - r.portal.gstTax },

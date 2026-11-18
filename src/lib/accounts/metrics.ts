@@ -369,18 +369,16 @@ export function monthsBetween(from: string, to: string): string[] {
 }
 
 /**
- * Bank fee receipts beyond the portal's paid bills, month by month, on a
- * running total that never drops below zero: a later month where the portal
- * shows more than the bank gives back an earlier surplus (the portal's payment
- * dates trail the bank) instead of being ignored or double-counted.
+ * The last month the bank statements cover in full, from the last day they
+ * reach ("YYYY-MM-DD", academy date). A statement ending on the 29th or later
+ * covers its month; the last day or two often has no rows. One ending earlier
+ * leaves that month to the portal.
  */
-export function runningSurplus(rows: { month: string; bank: number; portal: number }[]) {
-  const out: Record<string, number> = {};
-  let running = 0;
-  for (const row of rows) {
-    const before = Math.max(0, running);
-    running += row.bank - row.portal;
-    out[row.month] = Math.max(0, running) - before;
-  }
-  return out;
+export function lastFullStatementMonth(lastDay: string) {
+  const [year, month, day] = lastDay.split("-").map(Number);
+  if (!year || !month || !day) return "";
+  const days = new Date(Date.UTC(year, month, 0)).getUTCDate();
+  if (day >= Math.min(29, days - 1)) return lastDay.slice(0, 7);
+  const previous = new Date(Date.UTC(year, month - 2, 1));
+  return `${previous.getUTCFullYear()}-${String(previous.getUTCMonth() + 1).padStart(2, "0")}`;
 }

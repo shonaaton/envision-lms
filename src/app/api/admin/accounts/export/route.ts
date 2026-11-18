@@ -45,7 +45,7 @@ export async function GET(req: Request) {
       line("GST invoices (net of GST)", (m) => m.revenue.gstPortalNet),
       line("Non-GST invoices (portal)", (m) => m.revenue.nonGstPortal),
       line("Offline fees (non-GST)", (m) => m.revenue.offline),
-      line("Bank fees not in the portal", (m) => m.revenue.bankNotInPortal),
+      line("Correction to the HDFC statement", (m) => m.revenue.bankNotInPortal),
       line("Other portal payments", (m) => m.revenue.otherPortal),
       line("Refunds", (m) => -m.revenue.refunds),
       line("Other income", (m) => m.revenue.otherIncome),

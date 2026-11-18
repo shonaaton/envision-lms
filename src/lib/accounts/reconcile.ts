@@ -4,6 +4,8 @@ import { dbConnect } from "@/lib/db";
 import { academyMonthOf, monthBounds } from "@/lib/feedback/feedbackCycleDates";
 import { isGstInvoice } from "@/lib/feesMetrics";
 import { bankFeesNotInPortal } from "@/lib/accounts/data";
+import { FEE_RECEIPT_TYPES } from "@/lib/accounts/match";
+import { PORTAL_FEE_FIELDS, paidInCash as isCashBill } from "@/lib/accounts/portalFees";
 import { AccountEntry, BankTransaction } from "@/models/Accounts";
 import { Invoice } from "@/models/Fee";
 
@@ -44,7 +46,7 @@ export async function loadReconciliation(months: string[]) {
   const end = monthBounds(months[months.length - 1]).end;
 
   const [invoices, bankRows, cashLinks, gstPaid, offline, surplus]: any[] = await Promise.all([
-    Invoice.find({ status: "paid", paidAt: { $gte: start, $lte: end } }).select("paidAt totalAmount gstAmount gstPercentage invoiceMode paymentTransactions.mode").lean(),
+    Invoice.find({ status: "paid", paidAt: { $gte: start, $lte: end } }).select(`paidAt totalAmount paymentTransactions.mode ${PORTAL_FEE_FIELDS}`).lean(),
     BankTransaction.find({ date: { $gte: start, $lte: end } })
       .select("month credit status feeReceipt suggestion.type entry")
       .populate("entry", "category kind voidedAt")
@@ -75,7 +77,8 @@ export async function loadReconciliation(months: string[]) {
       row.portal.gstGross += total;
       row.portal.gstTax += Number(invoice.gstAmount || 0);
     } else row.portal.nonGstGross += total;
-    const cash = paidInCash.has(idOf(invoice._id)) || (invoice.paymentTransactions || []).some((transaction: any) => transaction.mode === "cash");
+    // Non-GST bills are paid to Sayantan in cash (lib/accounts/portalFees.ts).
+    const cash = paidInCash.has(idOf(invoice._id)) || isCashBill(invoice) || (invoice.paymentTransactions || []).some((transaction: any) => transaction.mode === "cash");
     if (cash) row.portal.cash += total;
     else row.portal.intoBank += total;
   }
@@ -85,7 +88,7 @@ export async function loadReconciliation(months: string[]) {
     if (!row || !tx.credit) continue;
     const amount = Number(tx.credit || 0);
     row.bank.credits += amount;
-    if (tx.feeReceipt) {
+    if (tx.feeReceipt || (tx.status === "unclassified" && FEE_RECEIPT_TYPES.includes(tx.suggestion?.type))) {
       row.bank.feeReceipts += amount;
       if (tx.suggestion?.type === "razorpay") row.bank.razorpay += amount;
     } else if (tx.status === "classified" && tx.entry && !tx.entry.voidedAt) {

@@ -130,16 +130,16 @@ export default async function MonthDetailPage({ params }: { params: Promise<{ mo
             </Block>
             <Block
               id="revenue-bank"
-              title="Bank fees not in the portal"
+              title="Correction to the HDFC statement"
               total={m.revenue.bankNotInPortal}
               note={
                 data.bankVsPortal
-                  ? `Student fees into HDFC ${rupees(data.bankVsPortal.bank)} against portal bills paid into the bank ${rupees(data.bankVsPortal.portal)}, on the running total since April${
+                  ? `Student fees into HDFC ${rupees(data.bankVsPortal.bank)} against portal bills paid into the bank ${rupees(data.bankVsPortal.portal)}, ${
                       data.bankVsPortal.notInPortal !== m.revenue.bankNotInPortal
                         ? ` (${rupees(data.bankVsPortal.notInPortal)}), less ${rupees(data.bankVsPortal.notInPortal - m.revenue.bankNotInPortal)} GST paid beyond the portal's GST bills`
                         : ""
                     }. The bank's fee receipts this month:`
-                  : "No bank statement covers this month."
+                  : "No bank statement covers this whole month yet, so the portal's bills stand."
               }
             >
               <Lines lines={data.bankReceipts} empty="No fee receipts on the statement this month." />

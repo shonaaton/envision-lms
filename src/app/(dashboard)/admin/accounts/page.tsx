@@ -131,11 +131,11 @@ export default async function AccountsPage({ searchParams }: { searchParams?: Pr
     { label: "Non-GST invoices (portal)", value: (m) => m.revenue.nonGstPortal, indent: true, anchor: "revenue-nongst" },
     { label: "Offline fees (non-GST)", value: (m) => m.revenue.offline, indent: true, anchor: "revenue-offline" },
     {
-      label: "Bank fees not in the portal",
+      label: "Correction to the HDFC statement",
       value: (m) => m.revenue.bankNotInPortal,
       indent: true,
       anchor: "revenue-bank",
-      note: "Student fees that reached HDFC beyond the portal's paid bills (students never billed in the portal), less the GST paid beyond the portal's GST bills. A negative month gives back an earlier surplus when the portal's payment dates trail the bank.",
+      note: "For each month a bank statement fully covers: student fees the statement shows received, minus the portal bills paid into the bank. With it, the month's bank fees equal the statement exactly. Less any GST paid beyond the portal's GST bills. Blank for months no full statement covers yet.",
     },
     ...(hasOther
       ? ([

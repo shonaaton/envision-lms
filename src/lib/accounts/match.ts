@@ -162,7 +162,7 @@ function creditSuggestion(tx: MatchTransaction, context: MatchContext): Suggesti
     const label =
       nearby.length === 1
         ? `Student fee - same amount as ${nearby[0].label}`
-        : "Student fee - counted through the portal; anything beyond it shows as bank fees not in the portal";
+        : "Student fee - counted through the portal; the month's bank fees follow the HDFC statement";
     return { type: "fee_receipt", label, invoices: nearby.length === 1 ? [nearby[0].invoiceId] : undefined };
   }
   if (booking) return booked(tx, booking.category, booking.monthShift ? shiftMonth(tx.month, -1) : undefined);

@@ -5,6 +5,7 @@ import { monthBounds } from "@/lib/feedback/feedbackCycleDates";
 import { isGstInvoice } from "@/lib/feesMetrics";
 import { accountCategory } from "@/lib/accounts/categories";
 import { bankFeesNotInPortal, loadAccounts } from "@/lib/accounts/data";
+import { FEE_RECEIPT_TYPES } from "@/lib/accounts/match";
 import { PORTAL_TEACHER_COST_FROM } from "@/lib/accounts/metrics";
 import { PORTAL_FEE_FIELDS, paidInCash } from "@/lib/accounts/portalFees";
 import { isExportInvoice } from "@/lib/exportInvoice";
@@ -55,7 +56,7 @@ export async function loadMonthDetail(month: string) {
           .populate({ path: "staff", select: "name role accessRole", populate: { path: "accessRole", select: "name" } })
           .lean()
       : [],
-    BankTransaction.find({ feeReceipt: true, month }).select("date narration reference credit label suggestion.type").sort({ date: 1 }).lean(),
+    BankTransaction.find({ month, credit: { $gt: 0 }, $or: [{ feeReceipt: true }, { status: "unclassified", "suggestion.type": { $in: FEE_RECEIPT_TYPES } }] }).select("date narration reference credit label suggestion.type").sort({ date: 1 }).lean(),
     bankFeesNotInPortal(month),
   ]);
 

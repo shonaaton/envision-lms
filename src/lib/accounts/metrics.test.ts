@@ -8,7 +8,7 @@ import {
   grossFromNetPayout,
   growthOf,
   monthsBetween,
-  runningSurplus,
+  lastFullStatementMonth,
   tdsOn,
   type MonthInputs,
 } from "@/lib/accounts/metrics";
@@ -170,29 +170,17 @@ describe("isAccountsAdmin", () => {
   });
 });
 
-describe("runningSurplus", () => {
-  it("adds bank fees beyond the portal and gives them back when the portal catches up later", () => {
-    // The academy's 2026 figures, in thousands.
-    const surplus = runningSurplus([
-      { month: "2026-04", bank: 123.6, portal: 66.6 },
-      { month: "2026-05", bank: 128.0, portal: 75.7 },
-      { month: "2026-08", bank: 144.3, portal: 173.2 },
-      { month: "2026-09", bank: 75.0, portal: 86.1 },
-    ]);
-    expect(surplus["2026-04"]).toBeCloseTo(57.0);
-    expect(surplus["2026-05"]).toBeCloseTo(52.3);
-    expect(surplus["2026-08"]).toBeCloseTo(-28.9);
-    expect(surplus["2026-09"]).toBeCloseTo(-11.1);
-    const total = Object.values(surplus).reduce((sum, value) => sum + value, 0);
-    expect(total).toBeCloseTo(123.6 + 128.0 + 144.3 + 75.0 - (66.6 + 75.7 + 173.2 + 86.1));
+describe("lastFullStatementMonth", () => {
+  it("counts a month whose statement runs to the 29th or later", () => {
+    expect(lastFullStatementMonth("2026-10-31")).toBe("2026-10");
+    expect(lastFullStatementMonth("2026-10-29")).toBe("2026-10");
+    expect(lastFullStatementMonth("2026-02-27")).toBe("2026-02");
   });
 
-  it("never goes below zero when the portal shows more than the bank from the start", () => {
-    const surplus = runningSurplus([
-      { month: "2026-04", bank: 10, portal: 30 },
-      { month: "2026-05", bank: 40, portal: 10 },
-    ]);
-    expect(surplus).toEqual({ "2026-04": 0, "2026-05": 10 });
+  it("leaves a part-covered month to the portal", () => {
+    expect(lastFullStatementMonth("2026-11-10")).toBe("2026-10");
+    expect(lastFullStatementMonth("2027-01-05")).toBe("2026-12");
+    expect(lastFullStatementMonth("")).toBe("");
   });
 });
 

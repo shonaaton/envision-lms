@@ -13,11 +13,13 @@ import {
   computeAccounts,
   emptyMonthInputs,
   monthsBetween,
-  runningSurplus,
+  lastFullStatementMonth,
   type AccountsReport,
   type MonthInputs,
 } from "@/lib/accounts/metrics";
-import { AccountEntry, BankTransaction } from "@/models/Accounts";
+import { AccountEntry, BankStatementImport, BankTransaction } from "@/models/Accounts";
+import { FEE_RECEIPT_TYPES } from "@/lib/accounts/match";
+import { academyDateKey } from "@/lib/academyTime";
 // Registered for the staff invoice populate (a staff member's named role).
 import "@/models/AccessRole";
 import { Invoice } from "@/models/Fee";
@@ -180,41 +182,56 @@ async function portalRevenue(range: AccountsRange) {
 }
 
 /**
- * Student fees that reached the bank beyond what the portal shows as paid
- * into it, per month - fees from students who left without ever being billed
- * in the portal (user, 2026-10-07: all fees go to HDFC or cash).
+ * Student fees per month as the HDFC statement shows them (user, 2026-11-19:
+ * "make the fees received according to the bank statement").
  *
- * Worked out on a running total from the start of the books, because the
- * portal's payment dates often trail the bank (bills back-filled weeks later):
- * a later month where the portal shows more than the bank gives back an
- * earlier month's surplus instead of being ignored. Only months with a bank
- * statement count. The result can be negative for a month; it never takes the
- * running total below zero.
+ * For a month the uploaded statements fully cover, `notInPortal` is the
+ * statement's fee credits minus the portal bills paid into the bank that
+ * month, so the portal's bank-paid bills plus this line equal exactly what the
+ * statement received. Nothing carries over between months. A month the
+ * statements do not reach (or reach only part of) keeps the portal's figure.
+ *
+ * A fee credit counts once the admin accepts it, or while it is still waiting
+ * for review with a fee suggestion; rows booked as something else or ignored
+ * do not.
  */
 export async function bankFeesNotInPortal(lastMonth: string) {
   const allMonths = monthsBetween(ACCOUNTS_START_MONTH, lastMonth);
   const start = monthBounds(allMonths[0]).start;
   const end = monthBounds(lastMonth).end;
-  const [receipts, statementMonths, invoices, cashFees]: any[][] = await Promise.all([
-    BankTransaction.aggregate([{ $match: { feeReceipt: true, date: { $gte: start, $lte: end } } }, { $group: { _id: "$month", total: { $sum: "$credit" } } }]),
+  const [receipts, statementMonths, lastImport, invoices, cashFees]: any[] = await Promise.all([
+    BankTransaction.aggregate([
+      {
+        $match: {
+          date: { $gte: start, $lte: end },
+          credit: { $gt: 0 },
+          $or: [{ feeReceipt: true }, { status: "unclassified", "suggestion.type": { $in: FEE_RECEIPT_TYPES } }],
+        },
+      },
+      { $group: { _id: "$month", total: { $sum: "$credit" } } },
+    ]),
     BankTransaction.distinct("month", { date: { $gte: start, $lte: end } }),
+    BankStatementImport.findOne({ periodTo: { $ne: null } }).sort({ periodTo: -1 }).select("periodTo").lean(),
     Invoice.find({ status: "paid", paidAt: { $gte: start, $lte: end } }).select(`paidAt totalAmount paymentTransactions.mode ${PORTAL_FEE_FIELDS}`).lean(),
     AccountEntry.find({ voidedAt: null, category: "portal_cash_fee" }).select("invoices").lean(),
   ]);
-  const cashFeeBills = new Set(cashFees.flatMap((entry: any) => (entry.invoices || []).map(idOf)));
+  const cashFeeBills = new Set((cashFees as any[]).flatMap((entry: any) => (entry.invoices || []).map(idOf)));
   const portalBank: Record<string, number> = {};
-  for (const invoice of invoices) {
+  for (const invoice of invoices as any[]) {
     // Non-GST bills are paid to Sayantan in cash, so they never reach the bank.
     const cash = cashFeeBills.has(idOf(invoice._id)) || paidInCash(invoice) || (invoice.paymentTransactions || []).some((transaction: any) => transaction.mode === "cash");
     if (cash) continue;
     bump(portalBank, academyMonthOf(new Date(invoice.paidAt)), Number(invoice.totalAmount || 0));
   }
-  const bank = new Map(receipts.map((row: any) => [row._id, Number(row.total || 0)]));
-  const covered = new Set(statementMonths);
-  const rows = allMonths.filter((month) => covered.has(month)).map((month) => ({ month, bank: Number(bank.get(month) || 0), portal: portalBank[month] || 0 }));
-  const surplus = runningSurplus(rows);
+  const bank = new Map((receipts as any[]).map((row: any) => [row._id, Number(row.total || 0)]));
+  const lastFull = lastImport?.periodTo ? lastFullStatementMonth(academyDateKey(new Date(lastImport.periodTo))) : "";
+  const covered = new Set((statementMonths as string[]).filter((month) => lastFull && month <= lastFull));
   const out: Record<string, { bank: number; portal: number; notInPortal: number }> = {};
-  for (const row of rows) out[row.month] = { ...row, notInPortal: surplus[row.month] };
+  for (const month of allMonths) {
+    if (!covered.has(month)) continue;
+    const row = { bank: Number(bank.get(month) || 0), portal: portalBank[month] || 0 };
+    out[month] = { ...row, notInPortal: row.bank - row.portal };
+  }
   return out;
 }
 

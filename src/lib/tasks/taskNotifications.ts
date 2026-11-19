@@ -56,13 +56,14 @@ async function userRecipient(userId: unknown): Promise<Recipient | null> {
   return { _id: String(user._id), name: user.name || "", email: user.email || "" };
 }
 
-/** The assignee, or every member of the pool for an unassigned task. */
+/** Shared tasks reach every pool member, including previously claimed tasks. */
 export async function taskAudience(task: any): Promise<Recipient[]> {
+  if (task.pool) return poolMembers(task.pool);
   if (task.assignedTo) {
     const one = await userRecipient(task.assignedTo);
     return one ? [one] : [];
   }
-  return task.pool ? poolMembers(task.pool) : [];
+  return poolMembers("admins");
 }
 
 function dueLine(task: any) {

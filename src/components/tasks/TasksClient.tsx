@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   AlertTriangle,
   ArrowUpRight,
@@ -52,7 +52,23 @@ type Assignee = { _id: string; name: string; email: string; label: string };
 type Summary = { pendingCount: number; overdueCount: number; completedThisWeek: number; assignedByMeOpen: number };
 type TabKey = "open" | "completed" | "cancelled" | "assigned" | "all";
 
-const POOL_LABEL: Record<string, string> = { admins: "Admin team", sales: "Sales team" };
+const POOL_LABEL: Record<string, string> = { admins: "Sub-admin team (shared)", sales: "Sales team (shared)" };
+
+function useTaskRefresh(refresh: () => void) {
+  useEffect(() => {
+    const refreshVisible = () => {
+      if (document.visibilityState === "visible") refresh();
+    };
+    const timer = window.setInterval(refreshVisible, 10_000);
+    window.addEventListener("focus", refreshVisible);
+    document.addEventListener("visibilitychange", refreshVisible);
+    return () => {
+      window.clearInterval(timer);
+      window.removeEventListener("focus", refreshVisible);
+      document.removeEventListener("visibilitychange", refreshVisible);
+    };
+  }, [refresh]);
+}
 
 function formatWhen(value?: string | null) {
   if (!value) return "";
@@ -92,6 +108,7 @@ function SourceChip({ task }: { task: TaskRow }) {
 }
 
 function ownerLabel(task: TaskRow) {
+  if (task.pool) return POOL_LABEL[task.pool];
   if (task.assignedTo) return task.assignedTo.name || task.assignedTo.email || "Assigned";
   return POOL_LABEL[task.pool || "admins"] || "Team";
 }
@@ -116,6 +133,7 @@ export default function TasksClient({ canCreate, isAdmin, currentUserId }: { can
   const [completeTarget, setCompleteTarget] = useState<TaskRow | null>(null);
   const [cancelTarget, setCancelTarget] = useState<TaskRow | null>(null);
   const [detailId, setDetailId] = useState<string | null>(null);
+  const loadVersion = useRef(0);
 
   const tabs: Array<{ key: TabKey; label: string }> = [
     { key: "open", label: "Pending" },
@@ -125,8 +143,9 @@ export default function TasksClient({ canCreate, isAdmin, currentUserId }: { can
     ...(isAdmin ? [{ key: "all" as TabKey, label: "All tasks" }] : []),
   ];
 
-  const load = useCallback(async () => {
-    setLoading(true);
+  const load = useCallback(async (silent = false) => {
+    const version = ++loadVersion.current;
+    if (!silent) setLoading(true);
     const params = new URLSearchParams();
     if (tab === "open") params.set("status", "open");
     if (tab === "completed") params.set("status", "completed");
@@ -146,24 +165,34 @@ export default function TasksClient({ canCreate, isAdmin, currentUserId }: { can
     if (q) params.set("q", q);
     if (source) params.set("source", source);
     if (priority) params.set("priority", priority);
-    const [listResponse, summaryResponse] = await Promise.all([
-      fetch(`/api/tasks?${params}`, { cache: "no-store" }),
-      fetch("/api/tasks?summary=1", { cache: "no-store" }),
-    ]);
-    setLoading(false);
-    if (!listResponse.ok) {
-      toast.error("Could not load tasks.");
-      return;
+    try {
+      const [listResponse, summaryResponse] = await Promise.all([
+        fetch(`/api/tasks?${params}`, { cache: "no-store" }),
+        fetch("/api/tasks?summary=1", { cache: "no-store" }),
+      ]);
+      if (!listResponse.ok) throw new Error("Could not load tasks.");
+      const data = await listResponse.json();
+      const summaryData = summaryResponse.ok ? await summaryResponse.json() : null;
+      if (version !== loadVersion.current) return;
+      setTasks(data.tasks || []);
+      setTotal(data.total || 0);
+      if (summaryData) setSummary(summaryData);
+    } catch {
+      if (!silent && version === loadVersion.current) toast.error("Could not load tasks.");
+    } finally {
+      if (version === loadVersion.current) setLoading(false);
     }
-    const data = await listResponse.json();
-    setTasks(data.tasks || []);
-    setTotal(data.total || 0);
-    if (summaryResponse.ok) setSummary(await summaryResponse.json());
   }, [isAdmin, priority, q, source, tab]);
+
+  const refresh = useCallback(() => { void load(true); }, [load]);
+  useTaskRefresh(refresh);
 
   useEffect(() => {
     const timer = setTimeout(load, q ? 300 : 0);
-    return () => clearTimeout(timer);
+    return () => {
+      clearTimeout(timer);
+      loadVersion.current += 1;
+    };
   }, [load, q]);
 
   // Deep link from a notification: /tasks?id=<taskId>
@@ -197,7 +226,7 @@ export default function TasksClient({ canCreate, isAdmin, currentUserId }: { can
         eyebrow="Tasks"
         icon={ListChecks}
         title="Task Manager"
-        subtitle="Everything waiting on you: tasks the academy raises automatically (demos, attendance, reviews, payments) and tasks colleagues assign to you. Automatic tasks close themselves once the work is done."
+        subtitle="Shared team tasks are resolved for everyone when one person completes them. This list refreshes automatically. Automatic tasks also close when the underlying work is done."
       >
         <div className="grid grid-cols-2 gap-2 lg:grid-cols-4">
           <StatCard label="Pending" value={summary?.pendingCount ?? "–"} icon={ClipboardList} tone="amber" />
@@ -537,23 +566,35 @@ function TaskDetailModal({
   const [reassignTo, setReassignTo] = useState("");
   const [busy, setBusy] = useState(false);
   const assignees = useAssignees(canCreate);
+  const detailVersion = useRef(0);
 
-  useEffect(() => {
+  const refreshDetail = useCallback(() => {
+    const version = ++detailVersion.current;
     fetch(`/api/tasks/${taskId}`, { cache: "no-store" })
       .then(async (response) => {
         const data = await response.json().catch(() => ({}));
         if (!response.ok) throw new Error(data.error || "Task not found.");
+        if (version !== detailVersion.current) return;
         setTask(data.task);
         setCanManage(Boolean(data.canManage));
+        setError("");
       })
-      .catch((err) => setError(err.message));
+      .catch((err) => {
+        if (version === detailVersion.current) setError(err.message);
+      });
   }, [taskId]);
+  useEffect(() => {
+    refreshDetail();
+    return () => { detailVersion.current += 1; };
+  }, [refreshDetail]);
+  useTaskRefresh(refreshDetail);
 
   async function act(body: Record<string, unknown>, success: string) {
     if (!task) return;
     setBusy(true);
     try {
       const updated = await patchTask(task._id, body);
+      detailVersion.current += 1;
       setTask(updated);
       toast.success(success);
       onChanged();

@@ -7,8 +7,8 @@ import { Classroom } from "@/models/Classroom";
 import "@/models/Batch";
 import { Booking } from "@/models/Booking";
 import { User } from "@/models/User";
-import { CoachPayPlan, CoachPayProposal, CoachRate, NoShowRuling, SessionPayOverride, type PayKind, type RateUnit } from "@/models/CoachPay";
-import { buildPayEvents, coachBatchRate, withoutDeletedDemos, planFor, resolveRate, summarizePayEvents, REVIEWABLE_SESSION_STATUSES, type CoachPaySummary, type ResolvedRate } from "@/lib/coachPay";
+import { CoachNoShowRuling, CoachPayPlan, CoachPayProposal, CoachRate, NoShowRuling, SessionPayOverride, type PayKind, type RateUnit } from "@/models/CoachPay";
+import { buildPayEvents, coachBatchRate, freeClassesForClassroom, withoutDeletedDemos, planFor, resolveRate, summarizePayEvents, REVIEWABLE_SESSION_STATUSES, type CoachPaySummary, type ResolvedRate } from "@/lib/coachPay";
 import { StaffInvoice } from "@/models/StaffInvoice";
 import { academyMonthOf, monthLabel } from "@/lib/feedback/feedbackCycleDates";
 import { effectiveSessionCoachId, scheduledPaymentMinutes, scheduledStartDate } from "@/lib/teachingStats";
@@ -114,7 +114,7 @@ export async function loadCoachPay(period: PayPeriod, filters: CoachPayFilters =
     query.$and = [...(query.$and || []), windowed];
   }
 
-  const [classrooms, rates, overrides, rulings] = await Promise.all([
+  const [classrooms, rates, overrides, rulings, coachRulings] = await Promise.all([
     Classroom.find(query)
       .select(
         "title level classroomType demoBooking coach instructor batches students studentExits durationMinutes classDate startDate startTime generatedSessions isSessionInstance"
@@ -126,6 +126,7 @@ export async function loadCoachPay(period: PayPeriod, filters: CoachPayFilters =
     CoachRate.find({ isActive: { $ne: false } }).lean(),
     SessionPayOverride.find({}).lean(),
     NoShowRuling.find({}).lean(),
+    CoachNoShowRuling.find(filters.coachId ? { coach: filters.coachId } : {}).populate("coach", "name username").lean(),
   ]);
   const plans = await CoachPayPlan.find(filters.coachId ? { coach: filters.coachId } : {}).populate("coach", "name username").lean();
 
@@ -145,6 +146,7 @@ export async function loadCoachPay(period: PayPeriod, filters: CoachPayFilters =
     rates: rates as any[],
     overrides: overrides as any[],
     rulings: rulings as any[],
+    coachRulings: coachRulings as any[],
     conversions,
     range: { from: period.from, to: period.to },
     coachId: filters.coachId,
@@ -672,4 +674,128 @@ export async function loadProposals(filters: { status?: string; coachId?: string
 export async function countPendingProposals() {
   await dbConnect();
   return CoachPayProposal.countDocuments({ status: "pending" });
+}
+
+export type CoachNoShowItem = {
+  classroomId: string;
+  classroomTitle: string;
+  batchName: string;
+  sessionId: string;
+  sessionNumber: number;
+  topicName: string;
+  date: Date;
+  coachId: string;
+  coachName: string;
+  students: Array<{ id: string; name: string }>;
+  /** The class's normal pay, a sensible starting point for a fine. Paise; 0 when unpriced. */
+  classValue: number;
+  /** The class the free make-up landed on, once the coach has taught it. */
+  freeClass: { sessionId: string; date: Date; topicName: string } | null;
+  ruling: {
+    chargeFine: boolean;
+    fineAmount: number;
+    freeNextClass: boolean;
+    note: string;
+    credited: number;
+    familiesNotifiedAt: Date | null;
+    decidedAt: Date | null;
+    decidedByName: string;
+  } | null;
+};
+
+/**
+ * Classes the coach missed (`coach_no_show`), with any ruling on them.
+ *
+ * Demo classrooms are left out: a demo the coach missed is a sales problem,
+ * handled in Demo Center, and nobody was billed for it.
+ */
+export async function loadCoachNoShowReviews(period: PayPeriod) {
+  await dbConnect();
+
+  const query: Record<string, any> = {
+    isSessionInstance: { $ne: true },
+    isTestClassroom: { $ne: true },
+    classroomType: { $ne: "demo" },
+    "generatedSessions.status": "coach_no_show",
+  };
+  if (isBounded(period)) {
+    query["generatedSessions.scheduledFor"] = { $gte: period.from, $lte: period.to };
+  }
+
+  const [classrooms, rulings, rates, plans] = await Promise.all([
+    Classroom.find(query)
+      .select("title classroomType coach instructor batches students durationMinutes classDate startDate startTime generatedSessions")
+      .populate("coach instructor", "name username role")
+      .populate("batches", "name")
+      .populate("students", "name username")
+      .populate("generatedSessions.substituteCoach generatedSessions.conductedBy generatedSessions.assignedCoach generatedSessions.students", "name username role")
+      .lean(),
+    CoachNoShowRuling.find({}).populate("decidedBy", "name username").lean(),
+    CoachRate.find({ isActive: { $ne: false } }).lean(),
+    CoachPayPlan.find({}).lean(),
+  ]);
+
+  const items: CoachNoShowItem[] = [];
+  for (const classroom of classrooms as any[]) {
+    const classroomRulings = (rulings as any[]).filter((ruling) => idOf(ruling.classroom) === idOf(classroom._id));
+    const free = freeClassesForClassroom(classroom, classroomRulings);
+    const batchIds = (classroom.batches || []).map(idOf).filter(Boolean);
+    for (const session of classroom.generatedSessions || []) {
+      if (String(session.status || "") !== "coach_no_show") continue;
+      const date = scheduledStartDate(session, classroom);
+      if (isBounded(period) && (date < period.from || date > period.to)) continue;
+      const sessionId = idOf(session._id);
+      const ruling = classroomRulings.find((item) => String(item.sessionId) === sessionId);
+      const coachId = effectiveSessionCoachId(session, classroom);
+      const coachSource = [session.substituteCoach, session.assignedCoach, classroom.coach, classroom.instructor].find(
+        (candidate: any) => idOf(candidate) === coachId
+      );
+      const roster = (session.students?.length ? session.students : classroom.students) || [];
+
+      let freeClass: CoachNoShowItem["freeClass"] = null;
+      for (const [freeSessionId, freeRuling] of Array.from(free.entries())) {
+        if (String(freeRuling.sessionId) !== sessionId) continue;
+        const freeSession = (classroom.generatedSessions || []).find((item: any) => idOf(item._id) === freeSessionId);
+        if (freeSession) freeClass = { sessionId: freeSessionId, date: scheduledStartDate(freeSession, classroom), topicName: freeSession.topicName || "" };
+      }
+
+      const plan = planFor(plans as any[], coachId, date);
+      let classValue = 0;
+      if (plan?.type !== "monthly") {
+        const rate = resolveRate({ kind: "regular", coachId, classroomId: idOf(classroom._id), batchIds, date, rates: rates as any[] });
+        if (rate) {
+          const minutes = scheduledPaymentMinutes(session, classroom);
+          classValue = rate.unit === "per_hour" ? Math.round((rate.amount * minutes) / 60) : rate.amount;
+        }
+      }
+
+      items.push({
+        classroomId: idOf(classroom._id),
+        classroomTitle: classroom.title || "Classroom",
+        batchName: (classroom.batches || []).map((batch: any) => batch?.name).filter(Boolean).join(", ") || "Unassigned",
+        sessionId,
+        sessionNumber: Number(session.sessionNumber || 0),
+        topicName: session.topicName || "",
+        date,
+        coachId,
+        coachName: coachSource?.name || coachSource?.username || "Coach",
+        students: roster.map((student: any) => ({ id: idOf(student), name: student?.name || student?.username || "Student" })),
+        classValue,
+        freeClass,
+        ruling: ruling
+          ? {
+              chargeFine: Boolean(ruling.chargeFine),
+              fineAmount: Number(ruling.fineAmount || 0),
+              freeNextClass: Boolean(ruling.freeNextClass),
+              note: ruling.note || "",
+              credited: (ruling.compensation || []).filter((entry: any) => entry.action === "credited").length,
+              familiesNotifiedAt: ruling.familiesNotifiedAt ? new Date(ruling.familiesNotifiedAt) : null,
+              decidedAt: ruling.decidedAt ? new Date(ruling.decidedAt) : null,
+              decidedByName: ruling.decidedBy?.name || ruling.decidedBy?.username || "",
+            }
+          : null,
+      });
+    }
+  }
+  return items.sort((a, b) => b.date.getTime() - a.date.getTime());
 }

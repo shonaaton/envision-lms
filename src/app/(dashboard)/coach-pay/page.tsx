@@ -169,6 +169,11 @@ export default async function CoachPayPage({
             )}
           </Link>
         )}
+        {viewer.canRuleCoachNoShow && (
+          <Link href="/coach-pay/coach-no-shows" className="btn-outline h-9 px-4 text-xs">
+            <Gavel size={14} /> Coach no-shows
+          </Link>
+        )}
         {viewer.canRule && (
           <Link href="/coach-pay/reviews" className="btn-outline h-9 px-4 text-xs">
             <Gavel size={14} /> No-show rulings

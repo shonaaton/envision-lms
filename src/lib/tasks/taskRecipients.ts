@@ -27,7 +27,7 @@ async function salesRoleIds(): Promise<string[]> {
 
 /**
  * Which shared queues a person works from, resolved from their live platform
- * identity rather than a static contact list: admins and plain sub-admins
+ * identity rather than a static contact list: admins and non-sales sub-admins
  * share the "admins" pool, sub-admins on the Sales role share "sales".
  */
 export async function poolsForActor(actor: TaskActor): Promise<TaskPool[]> {
@@ -35,7 +35,7 @@ export async function poolsForActor(actor: TaskActor): Promise<TaskPool[]> {
   if (actor.role !== "sub-admin") return [];
   if (!actor.accessRoleId) return ["admins"];
   const sales = await salesRoleIds();
-  return sales.includes(String(actor.accessRoleId)) ? ["sales"] : [];
+  return sales.includes(String(actor.accessRoleId)) ? ["sales"] : ["admins"];
 }
 
 /** Everyone who currently works a pool. Sales falls back to admins so a task never lands with nobody. */
@@ -49,9 +49,10 @@ export async function poolMembers(pool: TaskPool): Promise<TaskStaffMember[]> {
       : [];
     if (!users.length) return poolMembers("admins");
   } else {
+    const sales = await salesRoleIds();
     users = await User.find({
       isActive: { $ne: false },
-      $or: [{ role: "admin" }, { role: "sub-admin", $or: [{ accessRole: null }, { accessRole: { $exists: false } }] }],
+      $or: [{ role: "admin" }, { role: "sub-admin", accessRole: { $nin: sales } }],
     })
       .select(STAFF_FIELDS)
       .lean();

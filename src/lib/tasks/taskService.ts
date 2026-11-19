@@ -262,7 +262,8 @@ async function scopeQuery(actor: TaskActor, scope: TaskScope) {
   const pools = await poolsForActor(actor);
   const clauses: any[] = [{ assignedTo: me }];
   // Unassigned tasks with no pool (older CRM-raised ones) belong to the admin team.
-  if (pools.length) clauses.push({ assignedTo: null, pool: { $in: pools.includes("admins") ? [...pools, null] : pools } });
+  if (pools.length) clauses.push({ pool: { $in: pools } });
+  if (pools.includes("admins")) clauses.push({ assignedTo: null, pool: null });
   return { $or: clauses };
 }
 
@@ -382,12 +383,10 @@ export async function applyTaskAction(id: string, input: TaskActionInput, actor:
       if (!open) throw new TaskError("This task is already closed.");
       if (task.source === "manual" && !input.notes) throw new TaskError("Add a short note on what was done so the assigner knows.");
       update = { status: "completed", completedAt: new Date(), completedBy: me, completionNotes: input.notes || "", completionAuto: false };
-      // Picking up a pool task makes it yours.
-      if (!task.assignedTo) update.assignedTo = me;
       break;
     case "start":
       if (task.status !== "pending") throw new TaskError("Only a pending task can be started.");
-      update = { status: "in_progress", ...(task.assignedTo ? {} : { assignedTo: me }) };
+      update = { status: "in_progress" };
       break;
     case "reopen":
       if (open) throw new TaskError("This task is already open.");
@@ -399,7 +398,6 @@ export async function applyTaskAction(id: string, input: TaskActionInput, actor:
       // required reason stays on the task for admins to review later.
       if (!open) throw new TaskError("This task is already closed.");
       update = { status: "cancelled", cancelledAt: new Date(), cancelledBy: me, cancelReason: input.reason };
-      if (!task.assignedTo) update.assignedTo = me;
       break;
     case "reassign": {
       if (!open) throw new TaskError("Reopen the task before reassigning it.");

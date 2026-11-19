@@ -17,6 +17,8 @@ export type CoachPayViewer = {
   canViewProfitability: boolean;
   canManageRates: boolean;
   canRule: boolean;
+  /** Admins and sub-admins rule on classes a coach missed (fine, free next class). */
+  canRuleCoachNoShow: boolean;
   canExport: boolean;
 };
 
@@ -46,6 +48,7 @@ export async function resolveCoachPayViewer(): Promise<CoachPayViewer | null> {
     canViewProfitability: canViewAll && isAccountsAdmin(user),
     canManageRates: Boolean(permissions.manage_rates),
     canRule: Boolean(permissions.rule),
+    canRuleCoachNoShow: user.role === "admin" || user.role === "sub-admin",
     canExport: Boolean(permissions.export),
   };
 }
@@ -57,6 +60,19 @@ export async function requireCoachPayPermission(permission: CoachPayPermission) 
   if (!user?.id) return null;
   if (user.role !== "admin" && user.role !== "sub-admin") return null;
   return (await canAccessFeature(COACH_PAY_FEATURE, user, permission)) ? session : null;
+}
+
+/**
+ * Guard for coach no-show rulings. Decided by any admin or sub-admin who can
+ * open Coach Pay - not held back behind `rule` like the student no-show
+ * rulings, because the academy wants sub-admins to settle these on the day.
+ */
+export async function requireCoachNoShowRuler() {
+  const session = await auth();
+  const user = session?.user as any;
+  if (!user?.id) return null;
+  if (user.role !== "admin" && user.role !== "sub-admin") return null;
+  return (await canAccessFeature(COACH_PAY_FEATURE, user, "view")) ? session : null;
 }
 
 /**

@@ -134,6 +134,62 @@ const NoShowRulingSchema = new Schema(
 
 NoShowRulingSchema.index({ classroom: 1, sessionId: 1 }, { unique: true });
 
+/**
+ * An admin's decision about a class the COACH missed (`coach_no_show`).
+ *
+ * The mirror of `NoShowRuling`, which covers the student's side. The missed
+ * class itself is never paid and never charged to the family; what is decided
+ * here is the penalty, as two independent answers:
+ *
+ * - `chargeFine` / `fineAmount` - a fixed amount taken off the coach's pay,
+ *   as a negative line dated on the missed class.
+ * - `freeNextClass` - the next class this coach teaches in that classroom
+ *   costs nobody: the family gets a make-up credit, and the coach is not paid
+ *   for that class. Which class that is gets worked out by the pay engine from
+ *   the classes actually taught, so a cancelled or missed "next" class simply
+ *   rolls the free class on to the one after.
+ */
+const CoachNoShowRulingSchema = new Schema(
+  {
+    classroom: { type: Schema.Types.ObjectId, ref: "Classroom", required: true, index: true },
+    sessionId: { type: String, required: true, index: true },
+    sessionDate: { type: Date, index: true },
+    coach: { type: Schema.Types.ObjectId, ref: "User", required: true, index: true },
+    /** Snapshots, so the fine still reads sensibly if the classroom is renamed. */
+    classroomTitle: { type: String, default: "" },
+    coachName: { type: String, default: "" },
+
+    chargeFine: { type: Boolean, default: false },
+    fineAmount: { type: Number, default: 0 }, // paise, positive
+    freeNextClass: { type: Boolean, default: true },
+
+    // The family half of "free next class": one credit back per credit-plan
+    // student. Monthly-plan students have no balance to move.
+    compensation: [
+      new Schema(
+        {
+          student: { type: Schema.Types.ObjectId, ref: "User", required: true },
+          action: { type: String, enum: ["credited", "reversed", "none"], default: "none" },
+          credits: { type: Number, default: 0 },
+          balanceAfter: { type: Number, default: 0 },
+          ledger: { type: Schema.Types.ObjectId, ref: "CreditLedger" },
+        },
+        { _id: false }
+      ),
+    ],
+
+    note: String,
+    familiesNotifiedAt: { type: Date },
+    coachNotifiedAt: { type: Date },
+    decidedBy: { type: Schema.Types.ObjectId, ref: "User", index: true },
+    decidedByRole: { type: String, enum: ["admin", "sub-admin"] },
+    decidedAt: { type: Date, default: Date.now, index: true },
+  },
+  { timestamps: true }
+);
+
+CoachNoShowRulingSchema.index({ classroom: 1, sessionId: 1 }, { unique: true });
+
 export const PROPOSAL_KINDS = ["session", "classroom_rate", "coach_rate"] as const;
 export type ProposalKind = (typeof PROPOSAL_KINDS)[number];
 
@@ -252,6 +308,8 @@ export type CoachPayProposalDoc = InferSchemaType<typeof CoachPayProposalSchema>
 export const CoachRate = models.CoachRate || model("CoachRate", CoachRateSchema);
 export const SessionPayOverride = models.SessionPayOverride || model("SessionPayOverride", SessionPayOverrideSchema);
 export const NoShowRuling = models.NoShowRuling || model("NoShowRuling", NoShowRulingSchema);
+export const CoachNoShowRuling = models.CoachNoShowRuling || model("CoachNoShowRuling", CoachNoShowRulingSchema);
+export type CoachNoShowRulingDoc = InferSchemaType<typeof CoachNoShowRulingSchema> & { _id: any };
 export const CoachPayProposal = models.CoachPayProposal || model("CoachPayProposal", CoachPayProposalSchema);
 export const CoachPayPlan = models.CoachPayPlan || model("CoachPayPlan", CoachPayPlanSchema);
 export type CoachPayPlanDoc = InferSchemaType<typeof CoachPayPlanSchema> & { _id: any };

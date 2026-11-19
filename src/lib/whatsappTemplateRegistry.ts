@@ -2380,6 +2380,41 @@ export const WHATSAPP_TEMPLATE_DEFINITIONS = [
     ]
   },
   {
+    "name": "coach_no_show_family_free",
+    "language": "en",
+    "sourceAutomation": "Coach No-Show Ruling - Student/Parent (free next class)",
+    "body": "Hello {{1}},\n\nWe are sorry. The {{2}} chess class on {{3}} did not take place because the coach could not join. You have not been charged for it.\n\nAs an apology, the next class is free of cost: one class credit has been added for {{4}}.\n\nFor any questions, please contact the academy team.\n\nRegards,\nTeam Envision Chess Academy",
+    "variables": [
+      { "position": 1, "key": "recipient_name", "sample": "Mr. Sharma" },
+      { "position": 2, "key": "class_name", "sample": "I2-100" },
+      { "position": 3, "key": "class_date", "sample": "Tuesday, 18 November" },
+      { "position": 4, "key": "student_name", "sample": "Viaan" }
+    ]
+  },
+  {
+    "name": "coach_no_show_family",
+    "language": "en",
+    "sourceAutomation": "Coach No-Show Ruling - Student/Parent",
+    "body": "Hello {{1}},\n\nWe are sorry. The {{2}} chess class on {{3}} did not take place because the coach could not join. You have not been charged for it, and the academy team is making sure it does not happen again.\n\nFor any questions, please contact the academy team.\n\nRegards,\nTeam Envision Chess Academy",
+    "variables": [
+      { "position": 1, "key": "recipient_name", "sample": "Mr. Sharma" },
+      { "position": 2, "key": "class_name", "sample": "I2-100" },
+      { "position": 3, "key": "class_date", "sample": "Tuesday, 18 November" }
+    ]
+  },
+  {
+    "name": "coach_no_show_coach",
+    "language": "en",
+    "sourceAutomation": "Coach No-Show Ruling - Coach",
+    "body": "Hello {{1}},\n\nYou did not join the {{2}} class scheduled on {{3}}, so it has been recorded as a coach no-show.\n\nDecision: {{4}}\n\nPlease join every scheduled class on time, or tell the academy in advance so a substitute can be arranged.\n\nRegards,\nTeam Envision Chess Academy",
+    "variables": [
+      { "position": 1, "key": "coach_name", "sample": "Coach Sanjib" },
+      { "position": 2, "key": "class_name", "sample": "I2-100" },
+      { "position": 3, "key": "class_date", "sample": "Tuesday, 18 November" },
+      { "position": 4, "key": "decision", "sample": "a fine of Rs 300 is deducted from your pay, and your next class in this batch is unpaid because it is free for the family." }
+    ]
+  },
+  {
     "name": "weekly_progress_digest",
     "language": "en",
     "sourceAutomation": "weeklyEngagementJob.deliver",

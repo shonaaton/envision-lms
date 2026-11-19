@@ -519,6 +519,25 @@ export function resolveNoShowRulingTask(sessionId: unknown, by?: unknown) {
   return settle("NoShowRuling", sessionId, by, "No-show ruling saved.");
 }
 
+/** A class ended as a coach no-show: an admin or sub-admin decides the fine and the free class. */
+export function raiseCoachNoShowRulingTask(input: { classroom: any; sessionId: unknown; scheduledFor?: unknown; coachName?: string }) {
+  return raise({
+    kind: "coach_no_show_ruling",
+    referenceType: "CoachNoShowRuling",
+    referenceId: input.sessionId,
+    title: `Coach missed a class: ${String(input.classroom?.title || "class")}`,
+    details: `${input.coachName || "The coach"} did not take the class${input.scheduledFor ? ` on ${when(input.scheduledFor)}` : ""}. Decide whether to fine the coach and whether the next class is free, then the family and coach are messaged.`,
+    pool: "admins",
+    priority: "high",
+    actionHref: "/coach-pay/coach-no-shows",
+    metadata: { classroomId: idOf(input.classroom), sessionId: idOf(input.sessionId) },
+  });
+}
+
+export function resolveCoachNoShowRulingTask(sessionId: unknown, by?: unknown) {
+  return settle("CoachNoShowRuling", sessionId, by, "Coach no-show ruling saved.");
+}
+
 export async function raisePayProposalTask(input: { proposal: any; coachName?: string }) {
   let coachName = input.coachName;
   if (!coachName && input.proposal?.coach) {

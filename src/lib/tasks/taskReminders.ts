@@ -55,7 +55,7 @@ export async function processDailyTaskReminders(now = new Date()) {
   const pools = new Map<TaskPool, TaskStaffMember[]>();
   const people = new Map<string, TaskStaffMember>();
   for (const task of open) {
-    if (task.assignedTo) {
+    if (task.assignedTo && !task.pool) {
       add(String(task.assignedTo), task);
       continue;
     }

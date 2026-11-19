@@ -15,11 +15,11 @@ describe("canActOnTask", () => {
     expect(canActOnTask({ assignedTo: other, createdBy: creator }, staff)).toBe(false);
   });
 
-  it("opens an unassigned task to its pool only", () => {
+  it("keeps pool tasks shared even when an older record has an assignee", () => {
     expect(canActOnTask({ assignedTo: null, pool: "sales" }, staff)).toBe(true);
     expect(canActOnTask({ assignedTo: null, pool: "admins" }, staff)).toBe(false);
-    // A pool task someone has already picked up is theirs.
-    expect(canActOnTask({ assignedTo: other, pool: "sales" }, staff)).toBe(false);
+    expect(canActOnTask({ assignedTo: other, pool: "sales" }, staff)).toBe(true);
+    expect(canActOnTask({ assignedTo: other, pool: "admins" }, staff)).toBe(false);
   });
 
   it("treats an unassigned task with no pool as the admin team's", () => {

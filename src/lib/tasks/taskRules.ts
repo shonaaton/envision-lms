@@ -49,7 +49,11 @@ export function canActOnTask(task: TaskAccessSubject, actor: TaskAccessActor) {
   if (isTaskAdmin(actor)) return true;
   if (idOf(task.assignedTo) === actor.id) return true;
   if (idOf(task.createdBy) === actor.id) return true;
-  return Boolean(!task.assignedTo && actor.pools.includes(task.pool || "admins"));
+  // Older pool tasks may still carry the person who clicked Start. They remain
+  // shared; explicit reassignment clears the pool and makes a task personal.
+  return task.pool
+    ? actor.pools.includes(task.pool)
+    : Boolean(!task.assignedTo && actor.pools.includes("admins"));
 }
 
 /**

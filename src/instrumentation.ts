@@ -14,6 +14,7 @@ export async function register() {
   const { processDueHomeworkEmailReminders } = await import("@/lib/homeworkEmailReminders");
   const { processDueAskCoachWhatsAppReminders, processAskCoachNightlyDigest } = await import("@/lib/askCoachWhatsAppReminders");
   const { processDueClassSessionReminders } = await import("@/lib/classSessionNotifications");
+  const { processCoachNoShowSweep } = await import("@/lib/coachNoShowAutoClose");
   const { processDueAttendanceNudges, sendMonthlyAttendanceSummaries } = await import("@/lib/attendanceNotifications");
   const { processDuePauseExpiryNotices } = await import("@/lib/studentLifecycleNotifications");
   const { academyDateKey } = await import("@/lib/academyTime");
@@ -42,6 +43,16 @@ export async function register() {
   startScheduler([
     { name: "whatsapp_broadcasts", intervalMs: 30_000, run: () => processWhatsAppCampaigns((actor) => canAccessFeature("whatsapp", actor, "manage")) },
     { name: "whatsapp_follow_ups", intervalMs: 60_000, run: processWhatsAppFollowUps },
+    {
+      /**
+       * A student joined, the coach never did, and the student left before the
+       * grace ran out: nobody is left in the room to trigger the live room's
+       * own close, so this records the class as a coach no-show on a timer.
+       */
+      name: "coach_no_show_close",
+      intervalMs: 5 * 60_000,
+      run: () => processCoachNoShowSweep(),
+    },
     { name: "ptm_sweep", intervalMs: 60 * 60_000, run: () => processPtmSweep() },
     {
       /**

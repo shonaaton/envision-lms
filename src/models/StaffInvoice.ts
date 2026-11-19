@@ -49,8 +49,8 @@ const BankSnapshotSchema = new Schema(
 
 const StaffInvoiceLineSchema = new Schema(
   {
-    group: { type: String, enum: ["class", "demo", "bonus", "monthly", "manual"], required: true },
-    kind: { type: String, enum: ["regular", "demo", "demoConversionBonus", "substitute", "monthly", "manual"], required: true },
+    group: { type: String, enum: ["class", "demo", "bonus", "monthly", "fine", "manual"], required: true },
+    kind: { type: String, enum: ["regular", "demo", "demoConversionBonus", "substitute", "monthly", "noShowFine", "manual"], required: true },
     classroom: { type: Schema.Types.ObjectId, ref: "Classroom" },
     title: { type: String, required: true },
     batchName: String,

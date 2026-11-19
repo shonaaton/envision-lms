@@ -14,6 +14,7 @@ export const CREDIT_SOURCES = [
   "manual_admin",
   "class_attendance",
   "no_show_ruling",
+  "coach_no_show",
   "import",
   "system",
 ] as const;
@@ -27,6 +28,7 @@ export const CREDIT_SOURCE_LABELS: Record<CreditSource, string> = {
   manual_admin: "Manual adjustment",
   class_attendance: "Automatic - class attendance",
   no_show_ruling: "No-show ruling",
+  coach_no_show: "Coach no-show - free class",
   import: "Data import",
   system: "System",
 };
@@ -39,6 +41,7 @@ const ACTOR_PREFIX: Record<CreditSource, string> = {
   manual_admin: "By",
   class_attendance: "Attendance marked by",
   no_show_ruling: "Ruled by",
+  coach_no_show: "Ruled by",
   import: "Imported by",
   system: "By",
 };
@@ -63,6 +66,7 @@ export function inferCreditSource(
   const sourceType = String(ledger.sourceType || "");
   if (sourceType === "manual_credit" || sourceType === "manual_credit_reversal") return "manual_admin";
   if (sourceType === "coach_pay_deduction" || sourceType === "coach_pay_refund") return "no_show_ruling";
+  if (sourceType.startsWith("coach_no_show_")) return "coach_no_show";
   if (sourceType === "LegacyImport") return "import";
   if (ledger.type === "attendance_consumption" || sourceType === "Attendance") return "class_attendance";
   if (ledger.type === "purchase" || sourceType === "Invoice") {

@@ -276,7 +276,9 @@ export function InvoiceBuilder(props: InvoiceBuilderProps) {
                             ? group.note || "Trial classes across all demo classrooms"
                             : group.group === "bonus"
                               ? "Demo students who enrolled"
-                              : group.note}
+                              : group.group === "fine"
+                                ? "Deducted for classes the coach missed"
+                                : group.note}
                       </div>
                     </td>
                     <td className="px-3 py-2 text-right tabular-nums">{group.group === "monthly" ? "-" : group.quantity}</td>

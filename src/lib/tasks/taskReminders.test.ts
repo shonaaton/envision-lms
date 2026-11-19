@@ -14,6 +14,7 @@ vi.mock("@/models/InternalTask", () => ({ InternalTask: { find: mocks.taskFind, 
 vi.mock("@/models/User", () => ({ User: { find: mocks.userFind } }));
 vi.mock("@/lib/tasks/taskRecipients", () => ({ poolMembers: mocks.poolMembers }));
 vi.mock("@/lib/tasks/taskNotifications", () => ({ sendTaskDigest: mocks.sendTaskDigest, notifyTaskOverdue: mocks.notifyTaskOverdue }));
+vi.mock("@/lib/tasks/taskTriggers", () => ({ moveInvoiceTasksToOwner: vi.fn() }));
 
 import { digestMessage, processDailyTaskReminders } from "@/lib/tasks/taskReminders";
 
@@ -26,7 +27,7 @@ function query(rows: any[]) {
 }
 
 beforeEach(() => {
-  vi.clearAllMocks();
+  vi.resetAllMocks();
   mocks.sendTaskDigest.mockResolvedValue(true);
   mocks.notifyTaskOverdue.mockResolvedValue(undefined);
   mocks.poolMembers.mockResolvedValue([{ _id: ADMIN, name: "Admin", email: "admin@example.com" }]);
@@ -80,6 +81,19 @@ describe("processDailyTaskReminders", () => {
     const second = await processDailyTaskReminders(new Date("2026-09-25T02:40:00Z"));
     expect(second.overdueSent).toBe(0);
     expect(mocks.notifyTaskOverdue).toHaveBeenCalledTimes(1);
+  });
+
+  it("sends a previously claimed shared task to both sub-admins", async () => {
+    mocks.poolMembers.mockResolvedValue([
+      { _id: ADMIN, name: "First admin", email: "first@example.com" },
+      { _id: COACH, name: "Second admin", email: "second@example.com" },
+    ]);
+    mocks.taskFind.mockReturnValueOnce(query([])).mockReturnValueOnce(query([
+      { title: "Coach hasn't joined", status: "in_progress", assignedTo: ADMIN, pool: "admins" },
+    ]));
+    const result = await processDailyTaskReminders(new Date("2026-09-25T04:00:00Z"));
+    expect(result.digests).toBe(2);
+    expect(mocks.sendTaskDigest.mock.calls.map(([person]) => person._id)).toEqual([ADMIN, COACH]);
   });
 });
 

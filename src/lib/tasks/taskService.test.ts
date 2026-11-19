@@ -3,6 +3,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
   findOneAndUpdate: vi.fn(),
   findById: vi.fn(),
+  find: vi.fn(),
+  countDocuments: vi.fn(),
   create: vi.fn(),
   userFindById: vi.fn(),
   notifyTaskCreated: vi.fn(),
@@ -14,7 +16,7 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock("@/lib/db", () => ({ dbConnect: vi.fn() }));
 vi.mock("@/models/InternalTask", () => ({
-  InternalTask: { findOneAndUpdate: mocks.findOneAndUpdate, findById: mocks.findById, create: mocks.create },
+  InternalTask: { findOneAndUpdate: mocks.findOneAndUpdate, findById: mocks.findById, create: mocks.create, find: mocks.find, countDocuments: mocks.countDocuments },
 }));
 vi.mock("@/models/User", () => ({ User: { findById: mocks.userFindById } }));
 vi.mock("@/lib/tasks/taskNotifications", () => ({
@@ -25,7 +27,7 @@ vi.mock("@/lib/tasks/taskNotifications", () => ({
 }));
 vi.mock("@/lib/tasks/taskRecipients", () => ({ poolsForActor: mocks.poolsForActor }));
 
-import { TaskError, applyTaskAction, createManualTask, ensureAutoTask, resolveAutoTask } from "@/lib/tasks/taskService";
+import { TaskError, applyTaskAction, createManualTask, ensureAutoTask, getTaskForActor, listTasks, resolveAutoTask, taskSummary } from "@/lib/tasks/taskService";
 
 const ME = "aaaaaaaaaaaaaaaaaaaaaaa1";
 const BOSS = "aaaaaaaaaaaaaaaaaaaaaaa2";
@@ -34,7 +36,7 @@ const REF = "ccccccccccccccccccccccc1";
 
 /** A chainable stand-in for `findById(...).populate(...)...lean()`. */
 function chain(value: any) {
-  const query: any = { populate: () => query, select: () => query, lean: () => Promise.resolve(value) };
+  const query: any = { populate: () => query, select: () => query, sort: () => query, skip: () => query, limit: () => query, lean: () => Promise.resolve(value) };
   return query;
 }
 
@@ -44,6 +46,29 @@ beforeEach(() => {
   mocks.notifyTaskCompleted.mockResolvedValue(undefined);
   mocks.notifyTaskCancelled.mockResolvedValue(undefined);
   mocks.poolsForActor.mockResolvedValue([]);
+  mocks.find.mockReturnValue(chain([]));
+  mocks.countDocuments.mockResolvedValue(0);
+});
+
+describe("shared task lists and counts", () => {
+  it("includes the pool for both sub-admins in pending, completed and summary queries", async () => {
+    mocks.poolsForActor.mockResolvedValue(["admins"]);
+    for (const id of [ME, BOSS]) {
+      const actor = { id, role: "sub-admin" };
+      for (const status of ["open", "completed"] as const) {
+        await listTasks(actor, { status });
+        const query = mocks.find.mock.calls.at(-1)![0];
+        expect(query.$and[0].$or).toContainEqual({ pool: { $in: ["admins"] } });
+        expect(query.$and[1]).toEqual(status === "open" ? { status: { $in: ["pending", "in_progress"] } } : { status: "completed" });
+      }
+      mocks.countDocuments.mockClear();
+      await taskSummary(actor);
+      const pending = mocks.countDocuments.mock.calls[0][0];
+      const completed = mocks.countDocuments.mock.calls[2][0];
+      expect(pending.$and[0].$or).toContainEqual({ pool: { $in: ["admins"] } });
+      expect(completed.$and[0]).toEqual(pending.$and[0]);
+    }
+  });
 });
 
 describe("ensureAutoTask", () => {
@@ -162,12 +187,38 @@ describe("manual tasks", () => {
     await expect(applyTaskAction(TASK, { action: "start" }, { id: "ddddddddddddddddddddddd1", role: "sub-admin" })).rejects.toMatchObject({ status: 404 });
   });
 
-  it("gives a pool task to whoever completes it", async () => {
+  it("records who completed a task without taking it away from the pool", async () => {
     const poolTask = { _id: TASK, title: "Review duplicate", status: "pending", source: "auto", assignedTo: null, pool: "admins" };
     mocks.poolsForActor.mockResolvedValue(["admins"]);
     mocks.findById.mockReturnValue(chain(poolTask));
     mocks.findOneAndUpdate.mockReturnValueOnce({ lean: () => Promise.resolve({ ...poolTask, status: "completed" }) });
     await applyTaskAction(TASK, { action: "complete" }, { id: ME, role: "sub-admin" });
-    expect(String(mocks.findOneAndUpdate.mock.calls[0][1].$set.assignedTo)).toBe(ME);
+    const update = mocks.findOneAndUpdate.mock.calls[0][1].$set;
+    expect(update).not.toHaveProperty("assignedTo");
+    expect(String(update.completedBy)).toBe(ME);
+  });
+
+  it.each([null, ME])("lets either sub-admin finish shared work and both see the same completion (legacy owner: %s)", async (assignedTo) => {
+    let shared: any = { _id: TASK, title: "Coach hasn't joined", status: "pending", source: "auto", assignedTo, pool: "admins" };
+    mocks.poolsForActor.mockResolvedValue(["admins"]);
+    mocks.findById.mockImplementation(() => chain({ ...shared }));
+    mocks.findOneAndUpdate.mockImplementation((filter, update) => ({
+      lean: async () => {
+        if (shared.status !== filter.status) return null;
+        shared = { ...shared, ...update.$set };
+        return { ...shared };
+      },
+    }));
+    await applyTaskAction(TASK, { action: "start" }, { id: ME, role: "sub-admin" });
+    expect((await getTaskForActor(TASK, { id: BOSS, role: "sub-admin" })).task.status).toBe("in_progress");
+    await applyTaskAction(TASK, { action: "complete" }, { id: BOSS, role: "sub-admin" });
+    for (const id of [ME, BOSS]) {
+      const { task } = await getTaskForActor(TASK, { id, role: "sub-admin" });
+      expect(task.status).toBe("completed");
+      expect(String(task.completedBy)).toBe(BOSS);
+      expect(task.pool).toBe("admins");
+    }
+    await expect(applyTaskAction(TASK, { action: "complete" }, { id: ME, role: "sub-admin" })).rejects.toThrow(/already closed/);
+    expect(mocks.notifyTaskCompleted).toHaveBeenCalledTimes(1);
   });
 });

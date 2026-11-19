@@ -1,8 +1,6 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { dbConnect } from "@/lib/db";
-import { Classroom } from "@/models/Classroom";
-import { Attendance } from "@/models/Attendance";
 import { PGN } from "@/models/PGN";
 import { ClassroomChatMessage, ClassroomSession, LiveQuestion, LiveQuestionResponse } from "@/models/ClassroomLive";
 import "@/models/User";
@@ -18,7 +16,7 @@ import {
   resolveScheduledSession,
 } from "@/lib/classroomLiveSession";
 import { isJoinWindowOpen } from "@/lib/classroomSessions";
-import { isCoachNoShowExpired, notifyCoachNoShowIfThreshold, recalculateFutureSessionTopics } from "@/lib/classroomLifecycle";
+import { closeAsCoachNoShow, isCoachNoShowDue } from "@/lib/coachNoShowAutoClose";
 import { presenceHeartbeatIsCurrent } from "@/lib/liveClassroomPoll";
 
 export const dynamic = "force-dynamic";
@@ -97,7 +95,6 @@ async function loadPgnLibrary(session: any, role: AppRole, userId: string, class
 
 async function autoEndCoachNoShowIfNeeded({
   classroomId,
-  classroom,
   live,
   scheduledSession,
 }: {
@@ -106,67 +103,11 @@ async function autoEndCoachNoShowIfNeeded({
   live: any;
   scheduledSession: any;
 }) {
-  if (!live || live.status === "ended") return live;
-  if (!isCoachNoShowExpired(scheduledSession)) return live;
-  const hadCoach = (live.participants || []).some((participant: any) => canCoach(participant.role));
-  if (hadCoach) return live;
-
-  const scheduledSessionId = String(scheduledSession._id);
-  const joinedStudents = new Set(
-    (live.participants || [])
-      .filter((participant: any) => participant.role === "student")
-      .map((participant: any) => participantUserId(participant))
-      .filter(Boolean)
-  );
-  await Attendance.findOneAndUpdate(
-    { classroom: classroomId, scheduledSessionId, sessionDate: new Date(scheduledSession.scheduledFor) },
-    {
-      classroom: classroomId,
-      scheduledSessionId,
-      sessionDate: new Date(scheduledSession.scheduledFor),
-      coach: scheduledSession.substituteCoach || classroom.coach || classroom.instructor,
-      coachStatus: "coach_no_show",
-      teachingMinutes: 0,
-      actualTeachingMinutes: 0,
-      punctualityScore: 0,
-      records: studentsForSession(classroom, scheduledSession).map((student: any) => {
-        const studentId = String(student?._id || student);
-        return {
-          student: studentId,
-          status: joinedStudents.has(studentId) ? "coach_no_show" : "not_joined",
-          note: joinedStudents.has(studentId) ? "Student waited, coach did not join" : "Student did not join before coach no-show auto-close",
-        };
-      }),
-      metadata: {
-        classOutcome: "coach_no_show",
-        topicCompleted: false,
-        creditPolicy: "no_charge",
-        autoClosed: true,
-        graceMinutes: 20,
-        liveSessionId: String(live._id),
-      },
-    },
-    { upsert: true, new: true }
-  );
-
-  await ClassroomSession.updateOne(
-    { _id: live._id },
-    { $set: { status: "ended", endedAt: new Date(), locked: true } }
-  );
-  const classroomDoc: any = await Classroom.findById(classroomId);
-  const target = classroomDoc?.generatedSessions?.id?.(scheduledSessionId);
-  if (target) {
-    target.status = "coach_no_show";
-    target.coachAttendanceStatus = "coach_no_show";
-    target.actualEndedAt = new Date();
-    target.actualTeachingMinutes = 0;
-    target.teachingMinutes = 0;
-    target.attendanceMarkedAt = new Date();
-    target.summary = { ...(target.summary || {}), classOutcome: "coach_no_show", topicCompleted: false, creditPolicy: "no_charge", autoClosed: true };
-    await recalculateFutureSessionTopics(classroomDoc);
-    await classroomDoc.save();
-  }
-  await notifyCoachNoShowIfThreshold(String(scheduledSession.substituteCoach || classroom.coach || classroom.instructor || ""), { classroom: classroomId, sessionId: scheduledSessionId });
+  // The same close the background sweep does (lib/coachNoShowAutoClose), run
+  // here too so a room polled after the grace period closes at once.
+  if (!isCoachNoShowDue({ live, scheduledSession })) return live;
+  const closed = await closeAsCoachNoShow({ classroomId, liveId: String(live._id), scheduledSessionId: String(scheduledSession._id) });
+  if (!closed) return live;
   return ClassroomSession.findById(live._id).populate("selectedStudents boardControlStudents challenge.student participants.user", "name username role").lean<LiveSessionRecord | null>();
 }
 

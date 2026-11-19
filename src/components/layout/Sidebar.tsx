@@ -187,6 +187,7 @@ const sections: NavSection[] = [
       { href: "/coach-pay/profile", label: "Coach Profiles", icon: Languages, featureKey: "coachPay", permission: "view_all" },
       { href: "/coach-pay/proposals", label: "Coach Submissions", icon: Inbox, featureKey: "coachPay", permission: "manage_rates" },
       { href: "/coach-pay/reviews", label: "No-Show Rulings", icon: Gavel, featureKey: "coachPay", permission: "rule" },
+      { href: "/coach-pay/coach-no-shows", label: "Coach No-Shows", icon: Gavel, featureKey: "coachPay", permission: "view" },
     ],
   },
   {

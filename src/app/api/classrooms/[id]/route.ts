@@ -26,7 +26,7 @@ import { transferPendingFeedbackToCoach } from "@/lib/feedback/feedbackService";
 import { notifyCourseCompleted, notifySessionCancelled } from "@/lib/classSessionNotifications";
 import { kickExamAutoAssign } from "@/lib/exams/examService";
 import { writeRuntimeLog } from "@/lib/runtimeLogger";
-import { raiseSubstituteTask, resolveCoachMissingTask } from "@/lib/tasks/taskTriggers";
+import { raiseCoachNoShowRulingTask, raiseSubstituteTask, resolveCoachMissingTask } from "@/lib/tasks/taskTriggers";
 import { syncLeaveCoverageForClassroom } from "@/lib/leave/leaveService";
 import { closeDemoBookingsForCancelledClassroom, isClassroomCancelAction } from "@/lib/demoClassroom";
 import { applyDemoNotDelivered, demoNotDeliveredOutcome } from "@/lib/demoNotDelivered";
@@ -733,6 +733,9 @@ async function patchClassroom(req: Request, { params }: { params: { id: string }
         entityId: params.id,
         metadata: { sessionId, previousStatus, outcome, reason: body.reason || "" },
       });
+      if (outcome === "coach_no_show" && previousStatus !== "coach_no_show" && existing.classroomType !== "demo") {
+        await raiseCoachNoShowRulingTask({ classroom: existing, sessionId, scheduledFor: target.scheduledFor }).catch(() => null);
+      }
     } else if (body.action === "change_session_topic") {
       const actorRole = String((session.user as any)?.role || "");
       if (!["admin", "sub-admin"].includes(actorRole)) {

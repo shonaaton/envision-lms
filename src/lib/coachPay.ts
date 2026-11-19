@@ -78,7 +78,7 @@ export type ResolvedRate = {
 };
 
 /** A class kind, or the fixed amount of a monthly-paid coach. */
-export type PayEventKind = PayKind | "monthly";
+export type PayEventKind = PayKind | "monthly" | "noShowFine";
 
 export type PayEvent = {
   id: string;
@@ -233,6 +233,65 @@ function rulingFor(rulings: any[], classroomId: string, sessionId: string) {
   return rulings.find((item) => idOf(item.classroom) === classroomId && String(item.sessionId) === sessionId);
 }
 
+/**
+ * Who a class pays, the way the payroll loop decides it: whoever conducted it,
+ * unless that was an admin who was not assigned to it (an admin opening the
+ * room to help is not the teacher).
+ */
+function sessionPayeeId(session: any, classroom: any) {
+  const assignedIds = [session.substituteCoach, session.assignedCoach, classroom.coach, classroom.instructor].map(idOf);
+  const actorIsUnassignedAdmin = ["admin", "sub-admin"].includes(session.conductedBy?.role) &&
+    !assignedIds.includes(idOf(session.conductedBy));
+  return effectiveSessionCoachId(actorIsUnassignedAdmin ? { ...session, conductedBy: undefined } : session, classroom);
+}
+
+/**
+ * The classes made free by coach no-show rulings in one classroom, keyed by
+ * session id.
+ *
+ * A ruling's free class is the first class AFTER the missed one that the same
+ * coach actually taught (status completed) in the same classroom. Worked out
+ * from what happened rather than stored, so a cancelled or rescheduled "next
+ * class" rolls the free class on instead of voiding a class nobody taught -
+ * and a substitute who takes the next class is still paid for it. Rulings are
+ * matched oldest first and each taught class can only be free once, so two
+ * missed classes in a row make two classes free, not the same one twice.
+ */
+export function freeClassesForClassroom(classroom: any, coachRulings: any[]) {
+  const classroomId = idOf(classroom._id);
+  const free = new Map<string, any>();
+  const rulings = coachRulings
+    .filter((ruling) => ruling.freeNextClass && idOf(ruling.classroom) === classroomId)
+    .sort((a, b) => new Date(a.sessionDate || 0).getTime() - new Date(b.sessionDate || 0).getTime());
+  if (!rulings.length) return free;
+
+  const sessions = (Array.isArray(classroom.generatedSessions) ? classroom.generatedSessions : [])
+    .filter((session: any) => PAYABLE_SESSION_STATUSES.includes(String(session.status || "")))
+    .map((session: any) => ({ session, date: scheduledStartDate(session, classroom), payee: sessionPayeeId(session, classroom) }))
+    .sort((a: any, b: any) => a.date.getTime() - b.date.getTime());
+
+  for (const ruling of rulings) {
+    const missedId = String(ruling.sessionId);
+    const missedSession = (classroom.generatedSessions || []).find((session: any) => idOf(session._id) === missedId);
+    // A class later corrected to some other outcome no longer earns a free one.
+    if (!missedSession || String(missedSession.status || "") !== "coach_no_show") continue;
+    const missedAt = scheduledStartDate(missedSession, classroom);
+    const coachId = idOf(ruling.coach);
+    const next = sessions.find(
+      (item: any) => item.date > missedAt && item.payee === coachId && !free.has(idOf(item.session._id))
+    );
+    if (next) free.set(idOf(next.session._id), ruling);
+  }
+  return free;
+}
+
+/** "18 Nov 2026" in the academy's time zone, for notes on pay lines. */
+function shortDate(value: unknown) {
+  const date = new Date(value as any);
+  if (Number.isNaN(date.getTime())) return "";
+  return date.toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric", timeZone: "Asia/Kolkata" });
+}
+
 /** The pay plan in force for a coach on a date, or null (paid from the rate cards alone). */
 export function planFor(plans: any[], coachId: string, date: Date) {
   let best: any = null;
@@ -321,6 +380,8 @@ export type BuildPayEventsInput = {
   rates: any[];
   overrides: any[];
   rulings: any[];
+  /** CoachNoShowRuling documents: fines and free make-up classes. */
+  coachRulings?: any[];
   /** Demo booking id -> the moment that demo turned into an enrolment. */
   conversions: Map<string, { convertedAt: Date; studentName: string }>;
   range: { from: Date; to: Date };
@@ -344,6 +405,7 @@ function withinRange(date: Date, range: { from: Date; to: Date }) {
  */
 export function buildPayEvents(input: BuildPayEventsInput): PayEvent[] {
   const { classrooms, rates, overrides, rulings, conversions, range } = input;
+  const coachRulings = input.coachRulings || [];
   const plans = input.plans || [];
   const onlyCoach = input.coachId ? String(input.coachId) : "";
   const events: PayEvent[] = [];
@@ -360,15 +422,12 @@ export function buildPayEvents(input: BuildPayEventsInput): PayEvent[] {
     const sessions = Array.isArray(classroom.generatedSessions) ? classroom.generatedSessions : [];
 
     let demoTaughtBy: { coachId: string; coachName: string; minutes: number } | null = null;
+    const freeClasses = isDemoClass ? new Map<string, any>() : freeClassesForClassroom(classroom, coachRulings);
 
     for (const session of sessions) {
       const sessionId = idOf(session._id);
       const date = scheduledStartDate(session, classroom);
-      const assignedIds = [session.substituteCoach, session.assignedCoach, classroom.coach, classroom.instructor].map(idOf);
-      const actorIsUnassignedAdmin = ["admin", "sub-admin"].includes(session.conductedBy?.role) &&
-        !assignedIds.includes(idOf(session.conductedBy));
-      const teacherSession = actorIsUnassignedAdmin ? { ...session, conductedBy: undefined } : session;
-      const coachId = effectiveSessionCoachId(teacherSession, classroom);
+      const coachId = sessionPayeeId(session, classroom);
       if (!coachId) continue;
       const coachSource = [session.conductedBy, session.substituteCoach, session.assignedCoach, classroom.coach, classroom.instructor].find(
         (candidate: any) => idOf(candidate) === coachId
@@ -446,12 +505,17 @@ export function buildPayEvents(input: BuildPayEventsInput): PayEvent[] {
           }
         : priceWithPlan(plan, { kind, coachId, classroomId, batchIds, date, rates });
 
-      const exposure = resolved ? amountForRate(resolved, minutes) : 0;
       const ruling = isReviewable ? rulingFor(rulings, classroomId, sessionId) : null;
+      // The make-up for a class this coach missed: taught, but free to the
+      // family and unpaid to the coach.
+      const freeFor = isPayableStatus ? freeClasses.get(sessionId) : null;
+      const exposure = resolved && !freeFor ? amountForRate(resolved, minutes) : 0;
       // The ruling decides first: a class ruled unpaid is unpaid whether or not
       // it has a rate, and one still awaiting a ruling is waiting either way.
       // Only a class that is actually payable can be missing a rate.
-      const eventStatus: PayEventStatus = isReviewable
+      const eventStatus: PayEventStatus = freeFor
+        ? "declined"
+        : isReviewable
         ? !ruling
           ? "pending_review"
           : !ruling.payCoach
@@ -491,7 +555,9 @@ export function buildPayEvents(input: BuildPayEventsInput): PayEvent[] {
         isSubstitution,
         substitutedForName: isSubstitution ? nameOf(assignedCoach, "") : "",
         studentCount: (classroom.students || []).length,
-        note: ruling?.note || override?.reason || "",
+        note: freeFor
+          ? `Free make-up class for the class missed on ${shortDate(freeFor.sessionDate)} - not paid`
+          : ruling?.note || override?.reason || "",
       });
     }
 
@@ -552,8 +618,70 @@ export function buildPayEvents(input: BuildPayEventsInput): PayEvent[] {
   }
 
   if (!input.skipMonthly) events.push(...monthlyPayEvents(plans, range, onlyCoach));
+  // Fines count only while the class is still a coach no-show, and only for
+  // classrooms in this view (so a batch-filtered view shows that batch's fines).
+  const stillMissed = new Set<string>();
+  for (const classroom of classrooms) {
+    for (const session of classroom.generatedSessions || []) {
+      if (String(session.status || "") === "coach_no_show") stillMissed.add(`${idOf(classroom._id)}:${idOf(session._id)}`);
+    }
+  }
+  events.push(...noShowFineEvents(coachRulings.filter((ruling) => stillMissed.has(`${idOf(ruling.classroom)}:${ruling.sessionId}`)), range, onlyCoach));
 
   return events.sort((a, b) => b.date.getTime() - a.date.getTime());
+}
+
+/**
+ * Fines for classes a coach missed, as negative pay lines dated on the missed
+ * class - so a fine lands in the month of the class it is for, like the class
+ * itself would have.
+ */
+export function noShowFineEvents(
+  coachRulings: any[],
+  range: { from: Date; to: Date },
+  onlyCoach = ""
+): PayEvent[] {
+  const events: PayEvent[] = [];
+  for (const ruling of coachRulings) {
+    const fine = Math.round(Number(ruling.fineAmount || 0));
+    if (!ruling.chargeFine || fine <= 0) continue;
+    const coachId = idOf(ruling.coach);
+    if (!coachId || (onlyCoach && coachId !== onlyCoach)) continue;
+    const classroomId = idOf(ruling.classroom);
+    const date = new Date(ruling.sessionDate || ruling.decidedAt || 0);
+    if (!withinRange(date, range)) continue;
+    events.push({
+      id: `${classroomId}:${ruling.sessionId}:fine:${coachId}`,
+      date,
+      coachId,
+      coachName: nameOf(ruling.coach, ruling.coachName || "Coach"),
+      classroomId,
+      classroomTitle: ruling.classroomTitle || "Classroom",
+      isDemoClass: false,
+      demoConverted: false,
+      batchName: "Coach no-show",
+      level: "",
+      sessionId: String(ruling.sessionId || ""),
+      sessionNumber: 0,
+      topicName: `Missed class on ${shortDate(date)}`,
+      sessionStatus: "coach_no_show",
+      kind: "noShowFine",
+      status: "payable",
+      planType: "per_class",
+      coveredByMonthly: false,
+      minutes: 0,
+      unit: "per_class",
+      rateAmount: -fine,
+      amount: -fine,
+      exposure: -fine,
+      rateSource: "none",
+      isSubstitution: false,
+      substitutedForName: "",
+      studentCount: 0,
+      note: ruling.note || "",
+    });
+  }
+  return events;
 }
 
 const MAX_MONTHS = 240;
@@ -634,6 +762,9 @@ export type CoachPaySummaryRow = {
   substitutionAmount: number;
   bonusAmount: number;
   monthlyAmount: number;
+  /** Coach no-show fines, a negative number (or zero). */
+  fineAmount: number;
+  fines: number;
   pendingAmount: number;
   totalAmount: number;
   minutes: number;
@@ -654,6 +785,8 @@ export type CoachPaySummary = {
   substitutionAmount: number;
   bonusAmount: number;
   monthlyAmount: number;
+  /** Coach no-show fines, a negative number (or zero). */
+  fineAmount: number;
 };
 
 export function summarizePayEvents(events: PayEvent[]): CoachPaySummary {
@@ -674,6 +807,8 @@ export function summarizePayEvents(events: PayEvent[]): CoachPaySummary {
       substitutionAmount: 0,
       bonusAmount: 0,
       monthlyAmount: 0,
+      fineAmount: 0,
+      fines: 0,
       pendingAmount: 0,
       totalAmount: 0,
       minutes: 0,
@@ -687,8 +822,11 @@ export function summarizePayEvents(events: PayEvent[]): CoachPaySummary {
 
     if (event.status === "payable") {
       row.totalAmount += event.amount;
-      row.minutes += event.kind === "demoConversionBonus" || event.kind === "monthly" ? 0 : event.minutes;
-      if (event.kind === "monthly") {
+      row.minutes += event.kind === "demoConversionBonus" || event.kind === "monthly" || event.kind === "noShowFine" ? 0 : event.minutes;
+      if (event.kind === "noShowFine") {
+        row.fines += 1;
+        row.fineAmount += event.amount;
+      } else if (event.kind === "monthly") {
         row.monthlyAmount += event.amount;
       } else if (event.kind === "regular") {
         row.regularClasses += 1;
@@ -714,7 +852,7 @@ export function summarizePayEvents(events: PayEvent[]): CoachPaySummary {
     rows,
     totalAmount: rows.reduce((sum, row) => sum + row.totalAmount, 0),
     pendingAmount: rows.reduce((sum, row) => sum + row.pendingAmount, 0),
-    payableClasses: events.filter((event) => event.status === "payable" && event.kind !== "demoConversionBonus" && event.kind !== "monthly").length,
+    payableClasses: events.filter((event) => event.status === "payable" && event.kind !== "demoConversionBonus" && event.kind !== "monthly" && event.kind !== "noShowFine").length,
     demoClasses: rows.reduce((sum, row) => sum + row.demoClasses, 0),
     pendingReview: events.filter((event) => event.status === "pending_review").length,
     unpriced: events.filter((event) => event.status === "unpriced").length,
@@ -724,6 +862,7 @@ export function summarizePayEvents(events: PayEvent[]): CoachPaySummary {
     substitutionAmount: rows.reduce((sum, row) => sum + row.substitutionAmount, 0),
     bonusAmount: rows.reduce((sum, row) => sum + row.bonusAmount, 0),
     monthlyAmount: rows.reduce((sum, row) => sum + row.monthlyAmount, 0),
+    fineAmount: rows.reduce((sum, row) => sum + row.fineAmount, 0),
   };
 }
 
@@ -733,6 +872,7 @@ export const PAY_KIND_LABELS: Record<PayEventKind, string> = {
   demo: "Demo class",
   substitute: "Substitution",
   demoConversionBonus: "Demo conversion bonus",
+  noShowFine: "Coach no-show fine",
 };
 
 export const PAY_STATUS_LABELS: Record<PayEventStatus, string> = {

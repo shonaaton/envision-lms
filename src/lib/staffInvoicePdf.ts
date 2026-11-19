@@ -37,6 +37,7 @@ function quantityLabel(value: number) {
 function lineSubtitle(line: any) {
   if (line.group === "manual") return "Other item";
   if (line.group === "monthly") return line.note || "Fixed amount for the month";
+  if (line.group === "fine") return "Deducted for classes the coach missed";
   if (line.group === "class") {
     const kind = KIND_LABELS[line.kind as keyof typeof KIND_LABELS];
     return [line.level ? `${line.level} level` : "", line.unit === "per_hour" && line.note ? `${kind} - ${line.note}` : kind].filter(Boolean).join(" - ");

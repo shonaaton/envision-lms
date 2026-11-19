@@ -32,7 +32,7 @@ export const ACADEMY_BILL_TO = {
 };
 export type AcademyBillTo = typeof ACADEMY_BILL_TO;
 
-export type InvoiceLineGroup = "class" | "demo" | "bonus" | "monthly" | "manual";
+export type InvoiceLineGroup = "class" | "demo" | "bonus" | "monthly" | "fine" | "manual";
 export type InvoiceRateSource = "academy" | "manual";
 export type InvoiceLineKind = PayEvent["kind"] | "manual";
 /** How a line's rate reads: per class, per hour, or a month's fixed amount. */
@@ -75,6 +75,7 @@ export const KIND_LABELS: Record<PayEvent["kind"], string> = {
   demo: "Demo classes",
   demoConversionBonus: "Demo conversion incentive",
   monthly: "Fixed monthly pay",
+  noShowFine: "Coach no-show fine",
 };
 
 export const RATE_UNIT_SUFFIX: Record<InvoiceRateUnit, string> = {
@@ -91,6 +92,8 @@ function groupOf(event: PayEvent): DraftGroup["group"] {
   // Every class in a demo classroom is a demo line, even one a substitute taught -
   // a demo classroom never gets an invoice row of its own.
   if (event.kind === "demoConversionBonus") return "bonus";
+  // A fine for a missed class: a deduction, never a class line.
+  if (event.kind === "noShowFine") return "fine";
   if (event.kind === "demo" || event.isDemoClass) return "demo";
   return event.kind === "monthly" ? "monthly" : "class";
 }
@@ -196,7 +199,7 @@ export function groupInvoiceLines(events: PayEvent[]): InvoiceDraftGroups {
     monthly.minutes = covered.minutes;
   }
 
-  const order: Record<DraftGroup["group"], number> = { monthly: 0, class: 1, demo: 2, bonus: 3 };
+  const order: Record<DraftGroup["group"], number> = { monthly: 0, class: 1, demo: 2, bonus: 3, fine: 4 };
   groups.sort(
     (a, b) =>
       order[a.group] - order[b.group] ||

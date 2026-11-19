@@ -33,7 +33,7 @@ import {
 } from "@/lib/classroomLifecycle";
 import { sendClassCompletedSummaryEmail, sendStudentNoShowWarningEmail } from "@/lib/studentCommunicationEmails";
 import { notifyAbsenceToFamily } from "@/lib/attendanceNotifications";
-import { raiseDemoAssessmentTask, raiseNoShowRulingTask, resolveAttendanceTask, resolveCoachMissingTask } from "@/lib/tasks/taskTriggers";
+import { raiseCoachNoShowRulingTask, raiseDemoAssessmentTask, raiseNoShowRulingTask, resolveAttendanceTask, resolveCoachMissingTask } from "@/lib/tasks/taskTriggers";
 
 export const dynamic = "force-dynamic";
 
@@ -430,6 +430,10 @@ export async function POST(req: Request) {
       }
       if (outcome === "coach_no_show") {
         await notifyCoachNoShowIfThreshold(String(assignedCoach || ""), { classroom, sessionId, attendance: doc._id.toString() });
+        // The fine / free-class decision for an admin or sub-admin.
+        if (!isDemoClassroom && sessionId) {
+          await raiseCoachNoShowRulingTask({ classroom: classroomDoc, sessionId, scheduledFor: target?.scheduledFor }).catch(() => null);
+        }
       }
       if (!isDemoClassroom && outcome === "completed") {
         await autoAssignHomeworkForSession({

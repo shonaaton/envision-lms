@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { dbConnect } from "@/lib/db";
-import { renderWhatsAppTemplatePreview } from "@/lib/whatsappTemplateRegistry";
+import { getWhatsAppTemplateDefinition, renderWhatsAppTemplatePreview } from "@/lib/whatsappTemplateRegistry";
+import { BROCHURES, BROCHURE_BASE_PATH } from "@/lib/demoLeadWhatsAppRules";
 import { WhatsAppMessage } from "@/models/WhatsApp";
 import { Types } from "mongoose";
 import { WhatsAppConversation, WhatsAppReadState } from "@/models/WhatsAppConversation";
@@ -39,6 +40,7 @@ const MESSAGE_FIELDS = [
   "sentAt",
   "receivedAt",
   "rawPayload.templateVariables",
+  "rawPayload.metadata.brochure",
   "rawPayload.bodyParameters",
   "rawPayload.image",
   "rawPayload.video",
@@ -99,6 +101,23 @@ function isReaction(message: any) {
   return String(message.messageType || "") === "reaction" || Boolean(reactionTargetOf(message));
 }
 
+/**
+ * What a template shows the parent besides its text: its buttons, and the PDF
+ * a fee-brochure message carried (2026-11-20). The inbox only drew the body,
+ * so a welcome with two buttons looked as if it had none.
+ */
+function templateExtras(message: any) {
+  if (message.messageType !== "template") return {};
+  const definition: any = getWhatsAppTemplateDefinition(message.templateName);
+  const templateButtons = (definition?.buttons || []).map((button: any) => String(button.text));
+  const file = String(message.rawPayload?.metadata?.brochure || "");
+  const brochure = file ? Object.values(BROCHURES).find((item) => item.file === file) : undefined;
+  return {
+    ...(templateButtons.length ? { templateButtons } : {}),
+    ...(brochure ? { mediaKind: "document" as const, mediaFilename: brochure.filename, mediaUrl: `${BROCHURE_BASE_PATH}/${brochure.file}` } : {}),
+  };
+}
+
 function serializeMessage(message: any) {
   const templateVariables = message.rawPayload?.templateVariables || message.rawPayload?.bodyParameters || [];
   const templatePreview = message.messageType === "template" ? renderWhatsAppTemplatePreview(message.templateName || message.text, templateVariables) : "";
@@ -119,6 +138,7 @@ function serializeMessage(message: any) {
     receivedAt: message.receivedAt,
     reactions: [] as { emoji: string; direction: string; at: any }[],
     ...(mediaOf(message) || {}),
+    ...templateExtras(message),
   };
 }
 

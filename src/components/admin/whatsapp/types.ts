@@ -5,6 +5,8 @@ export type WaMessage = {
   text: string;
   messageType: string;
   templateName?: string;
+  /** The template's buttons as the parent sees them under the message. */
+  templateButtons?: string[];
   status: string;
   error?: string;
   uncertain?: boolean;

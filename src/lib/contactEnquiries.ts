@@ -1,4 +1,5 @@
 import { kolkataCentres } from "@/lib/centrePages";
+import { canonicalPhoneNumber } from "@/lib/phoneCountryCodes";
 
 /**
  * The shared vocabulary of the contact form and the enquiry inbox.
@@ -55,14 +56,15 @@ export const CONTACT_STATUS_LABELS: Record<ContactStatus, string> = {
 /** How many enquiries one page of the inbox shows. */
 export const CONTACT_PAGE_SIZE = 20;
 
-/** "+91" + "98312 48613" -> "+919831248613", for tel: and wa.me links. */
+/**
+ * "+91" + "98312 48613" -> "919831248613", for tel: and wa.me links.
+ *
+ * Delegates to canonicalPhoneNumber (2026-11-20). The old "already starts with
+ * the code" check dropped the 91 from Indian mobiles that begin with 91
+ * ("91234 56780" was dialled as 9123456780), on the CRM's Call and WhatsApp buttons too.
+ */
 export function whatsappDigits(countryCode?: string | null, phone?: string | null) {
-  const code = String(countryCode || "").replace(/[^\d]/g, "");
-  const national = String(phone || "").replace(/[^\d]/g, "").replace(/^0+/, "");
-  if (!national) return "";
-  // The number may already repeat its own dialling code - both spellings are
-  // accepted on the form - so only prefix when it does not.
-  return national.startsWith(code) ? national : `${code}${national}`;
+  return canonicalPhoneNumber(String(phone || ""), String(countryCode || "") || undefined);
 }
 
 export function contactDisplayPhone(countryCode?: string | null, phone?: string | null) {

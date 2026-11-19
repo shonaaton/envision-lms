@@ -5,6 +5,7 @@ import { DEMO_REQUEST_KIND } from "@/lib/demoRequest";
 import { demoSlotLabel, demoSlotStart, isOpenDemoSlot } from "@/lib/demoRequestSlots";
 import { consumeRateLimit, getClientIp, jsonRateLimitHeaders } from "@/lib/requestSecurity";
 import { refreshDemoRequestTask } from "@/lib/tasks/taskTriggers";
+import { demoSlotChosen } from "@/lib/demoLeadWhatsApp";
 import { ContactMessage } from "@/models/ContactMessage";
 
 export const dynamic = "force-dynamic";
@@ -44,6 +45,8 @@ export async function POST(req: Request) {
     if (!lead) return NextResponse.json({ error: "Please submit the form again." }, { status: 404 });
 
     await refreshDemoRequestTask(lead);
+    // The welcome WhatsApp was waiting for this slot: it can go now.
+    await demoSlotChosen(lead._id);
     return NextResponse.json({ ok: true, date, time, label: demoSlotLabel(date, time) });
   } catch (error) {
     console.error("[demo-request] slot not saved", error);

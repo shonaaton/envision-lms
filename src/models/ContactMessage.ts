@@ -95,6 +95,25 @@ const ContactMessageSchema = new Schema(
     demoSlotAt: Date,
 
     /**
+     * The welcome WhatsApp every new Demo Leads CRM lead gets, then its two fee
+     * PDFs - see src/lib/demoLeadWhatsApp.ts. `waWelcomeDueAt` is when it may go
+     * at the latest (a form lead waits a few minutes for its demo slot); the
+     * claim is `waWelcomeClaimedAt`, so it is sent once.
+     */
+    waWelcomeDueAt: { type: Date, index: true },
+    waWelcomeClaimedAt: Date,
+    waWelcomeSentAt: Date,
+    waWelcomeError: { type: String, trim: true },
+    waBrochuresDueAt: { type: Date, index: true },
+    waBrochuresClaimedAt: Date,
+    waBrochuresSentAt: Date,
+    waBrochuresError: { type: String, trim: true },
+    /** The parent tapped "Confirm call-back" on the welcome message. */
+    callbackConfirmedAt: Date,
+    /** The parent opened the "Call sales person" link (first time only). */
+    callLinkOpenedAt: Date,
+
+    /**
      * The Demo Leads CRM (/sales/leads), demo requests only. The owner is set by
      * rotation when the request is submitted - see src/lib/demoLeadCrm.ts - and
      * a salesperson sees only the leads they own.
@@ -134,7 +153,7 @@ const ContactMessageSchema = new Schema(
     leadLog: [
       {
         _id: false,
-        kind: { type: String, enum: ["note", "stage", "owner", "call", "reminder", "details"], default: "note" },
+        kind: { type: String, enum: ["note", "stage", "owner", "call", "reminder", "details", "whatsapp"], default: "note" },
         /** Calls only: one of DEMO_LEAD_CALL_OUTCOMES. */
         outcome: { type: String, trim: true },
         text: { type: String, trim: true },

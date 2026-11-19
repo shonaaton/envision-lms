@@ -24,7 +24,42 @@ export type WhatsAppTemplateDefinition = {
    * `whatsappOtpTemplateComponents` and `body` here only mirrors Meta's wording.
    */
   category?: "UTILITY" | "MARKETING" | "AUTHENTICATION";
+  /**
+   * A media header. Meta needs a sample file's upload handle to create one, so
+   * the template bridge cannot submit these: see whatsappTemplateCreateComponents.
+   */
+  header?: { format: "DOCUMENT" };
+  /** Buttons as Meta's template API spells them. A URL button's {{1}} is filled per message. */
+  buttons?: ReadonlyArray<
+    | { type: "URL"; text: string; url: string; example: readonly string[] }
+    | { type: "QUICK_REPLY"; text: string }
+  >;
 };
+
+/**
+ * The components Meta's create-template call needs for an ordinary (non-OTP)
+ * template: body with its samples, plus any header and buttons. A DOCUMENT
+ * header needs `headerHandle`, from Meta's resumable upload of a sample file.
+ */
+export function whatsappTemplateCreateComponents(template: WhatsAppTemplateDefinition, headerHandle?: string) {
+  const components: Array<Record<string, any>> = [];
+  if (template.header) {
+    components.push({ type: "HEADER", format: template.header.format, ...(headerHandle ? { example: { header_handle: [headerHandle] } } : {}) });
+  }
+  const samples = template.variables
+    .slice()
+    .sort((a, b) => a.position - b.position)
+    .map((variable) => variable.sample)
+    .filter(Boolean);
+  components.push({ type: "BODY", text: template.body, ...(samples.length ? { example: { body_text: [samples] } } : {}) });
+  if (template.buttons?.length) {
+    components.push({
+      type: "BUTTONS",
+      buttons: template.buttons.map((button) => (button.type === "URL" ? { ...button, example: [...button.example] } : { ...button })),
+    });
+  }
+  return components;
+}
 
 export const WHATSAPP_OTP_TEMPLATE_NAME = "whatsapp_verification_code";
 /** Printed in the template's footer, so changing it means a new template version on Meta. */
@@ -1731,6 +1766,38 @@ export const WHATSAPP_TEMPLATE_DEFINITIONS = [
       { "position": 4, "key": "format", "sample": "Swiss, 5 rounds, 10+0" },
       { "position": 5, "key": "tournament_link", "sample": "https://envisionchessacademy.com/tournaments/6ae1af638b56ba0f5db8235f" }
     ]
+  },
+  {
+    // Sent by src/lib/demoLeadWhatsApp.ts to every new Demo Leads CRM lead (2026-11-20).
+    // Built and sent outside sendWhatsAppTemplateMessage, which handles body-only templates.
+    "name": "demo_lead_welcome",
+    "language": "en",
+    "sourceAutomation": "demoLeadWhatsApp.sendDemoLeadWelcome (new Demo Leads CRM lead)",
+    "body": "Hi {{1}}! 👋\n\nEvery great chess player starts with a single move, and you have just taken the first step in your child's chess journey!\n\nThank you for choosing Envision Chess Academy. We have received your request for a FREE demo class. Here is a quick recap:\n\n♟️ Age: {{2}}\n♟️ Experience: {{3}}\n📞 Time to call you: {{4}}\n🕒 Demo class time: {{5}}\n\nDuring the demo, your child will experience our online chess classes and meet our coaching team.\n\n{{6}} from our team will call you at the time above to discuss the demo. Tap Confirm call-back to confirm that time, or Call sales person to speak to us right away.\n\nWe look forward to welcoming your child!\nTeam Envision Chess Academy",
+    "variables": [
+      { "position": 1, "key": "parent_name", "sample": "Priya Sharma" },
+      { "position": 2, "key": "child_age", "sample": "9–12 years" },
+      { "position": 3, "key": "child_level", "sample": "Fresher" },
+      { "position": 4, "key": "call_time", "sample": "4:00 PM - 5:00 PM" },
+      { "position": 5, "key": "demo_time", "sample": "Saturday 28 November 2026 at 11:00 AM IST" },
+      { "position": 6, "key": "salesperson_name", "sample": "Mohammed" }
+    ],
+    "buttons": [
+      { "type": "URL", "text": "Call sales person", "url": "https://envisionchessacademy.com/book-free-demo-class/call/{{1}}", "example": ["https://envisionchessacademy.com/book-free-demo-class/call/6560f1a2b3c4d5e6f7a8b9c0.Xy12Ab34Cd56"] },
+      { "type": "QUICK_REPLY", "text": "Confirm call-back" }
+    ]
+  },
+  {
+    // Sent twice, ten seconds after demo_lead_welcome: the India fee PDF for the child's level, then the Global profile.
+    "name": "demo_lead_brochure",
+    "language": "en",
+    "sourceAutomation": "demoLeadWhatsApp.sendDemoLeadBrochures (10 seconds after demo_lead_welcome)",
+    "body": "Hi {{1}}, here is {{2}} from Envision Chess Academy. Please have a look at it until our sales team gets back to you.\n\nTeam Envision Chess Academy",
+    "variables": [
+      { "position": 1, "key": "parent_name", "sample": "Priya Sharma" },
+      { "position": 2, "key": "brochure", "sample": "our fee structure in India for the Beginner & Intermediate programme" }
+    ],
+    "header": { "format": "DOCUMENT" }
   },
   {
     "name": "tournament_reminder",

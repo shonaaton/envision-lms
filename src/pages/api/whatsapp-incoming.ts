@@ -2,6 +2,7 @@ import type { NextApiRequest, NextApiResponse } from "next";
 import { dbConnect } from "@/lib/db";
 import { findWhatsAppUserByPhone, normalizeWhatsAppNumber } from "@/lib/whatsappAutomation";
 import { handleOptOutReply } from "@/lib/engagement/optOut";
+import { handleDemoLeadButtonReply } from "@/lib/demoLeadWhatsApp";
 import { WhatsAppMessage } from "@/models/WhatsApp";
 import { whatsAppDeliveryUpdate } from "@/lib/whatsappDeliveryStatus";
 import { recordTemplateStatusWebhook } from "@/lib/whatsappTemplateLibrary";
@@ -165,6 +166,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           { upsert: true }
         );
         // First delivery only - see app/api/webhooks/whatsapp/route.ts.
+        // "Confirm call-back" on the new-lead welcome (src/lib/demoLeadWhatsApp.ts). First delivery only.
+        if (stored.upsertedCount && (message.type === "button" || message.type === "interactive")) {
+          await handleDemoLeadButtonReply(message).catch((error) => {
+            console.error("WhatsApp demo lead button handling failed", { error, phoneNumber });
+          });
+        }
         if (stored.upsertedCount && (message.type === "text" || message.type === "button")) {
           await handleOptOutReply(phoneNumber, messageText(message)).catch((error) => {
             console.error("WhatsApp opt-out handling failed", { error, phoneNumber });

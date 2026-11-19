@@ -5,6 +5,7 @@ import {
   resolveWhatsAppMetaTemplateName,
   whatsappOtpTemplateComponents,
   WHATSAPP_OTP_VALIDITY_MINUTES,
+  whatsappTemplateCreateComponents,
   WHATSAPP_TEMPLATE_DEFINITIONS,
   type WhatsAppTemplateDefinition,
 } from "@/lib/whatsappTemplateRegistry";
@@ -210,27 +211,13 @@ function templateCreatePayload(template: WhatsAppTemplateDefinition) {
       components: whatsappOtpTemplateComponents(),
     };
   }
-  const bodyComponent: any = {
-    type: "BODY",
-    text: template.body,
-  };
-  const samples = template.variables
-    .slice()
-    .sort((a, b) => a.position - b.position)
-    .map((variable) => variable.sample)
-    .filter(Boolean);
-  if (samples.length) {
-    bodyComponent.example = {
-      body_text: [samples],
-    };
-  }
   return {
     name: template.name,
     language: normalizeTemplateLanguage(template.language),
     // Templates declare their own category; UTILITY stays the default because
     // almost everything the portal sends services an existing booking.
     category: template.category || "UTILITY",
-    components: [bodyComponent],
+    components: whatsappTemplateCreateComponents(template),
   };
 }
 
@@ -294,6 +281,8 @@ export async function POST(req: Request) {
   const names = Array.isArray(body.templateNames) && body.templateNames.length ? new Set(body.templateNames.map((name: unknown) => String(name || "").trim())) : null;
   const selectedTemplates = missingTemplates
     .filter((template: WhatsAppTemplateDefinition) => !names || names.has(template.name))
+    // A media header needs a sample file uploaded to Meta first; those go through scripts/submit-demo-lead-templates.ts.
+    .filter((template: WhatsAppTemplateDefinition) => !template.header)
     .slice(0, Math.max(1, Math.min(50, Number(body.limit || 50))));
 
   if (body.confirm !== true) {

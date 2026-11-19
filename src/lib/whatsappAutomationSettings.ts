@@ -8,7 +8,11 @@ import { WhatsAppAutomationSetting } from "@/models/WhatsAppAutomationSetting";
  * switched off. The invoice_*_pay reminders left this list on 2026-11-02, once
  * Meta had approved them.
  */
-export const OFF_UNTIL_ENABLED_TEMPLATES: ReadonlySet<string> = new Set<string>([]);
+export const OFF_UNTIL_ENABLED_TEMPLATES: ReadonlySet<string> = new Set<string>([
+  // New-lead welcome + fee PDFs (2026-11-20): nothing is sent until Meta approves both and an admin switches them on.
+  "demo_lead_welcome",
+  "demo_lead_brochure",
+]);
 
 export function defaultTemplateEnabled(templateName: string) {
   return !OFF_UNTIL_ENABLED_TEMPLATES.has(templateName);

@@ -5,6 +5,7 @@ import { useFormState, useFormStatus } from "react-dom";
 import { AlarmClock, MessageCircle, Phone, PhoneMissed, PhoneOutgoing, Trash2, X } from "lucide-react";
 import { DEFAULT_MISSED_CALL_REMINDER, MISSED_CALL_REMINDER_CHOICES } from "@/lib/demoLeadCalls";
 import type { LeadSourceSummary } from "@/lib/leadSource";
+import { LeadCopyButton } from "@/components/sales/LeadCopyButton";
 
 /**
  * The Demo Leads CRM: a sheet (one lead per row) from tablet width up, and one
@@ -51,6 +52,8 @@ export type DemoLeadSheetRow = {
   reminders: Array<{ id: string; dueLabel: string; note: string; status: "scheduled" | "sent"; forName: string; mine: boolean; canCancel: boolean }>;
   /** Newest first. */
   log: Array<{ kind: string; outcome: string; text: string; byName: string; at: string }>;
+  /** The new-lead WhatsApp messages, as labels ("Sent 20 Nov, 2:05 pm", "Not sent: ..."). */
+  whatsapp: { welcome: string; brochures: string; confirmed: string; callLinkOpened: string; failed: boolean };
   /** The stored values, as the Edit details form starts from them. */
   edit: {
     name: string;
@@ -91,6 +94,8 @@ type Props = {
   changeOwner: Action;
   deleteLead: Action;
   logCall: Action;
+  /** "Send welcome" / "Send fee PDFs"; same state shape as the reminder form. */
+  sendWhatsApp: ReminderAction;
   setReminder: ReminderAction;
   cancelReminder: Action;
   /** The earliest value the reminder box accepts (now, IST). */
@@ -128,6 +133,33 @@ const OUTCOME_STYLES: Record<string, string> = {
 const TH = "border-b border-r border-slate-200 bg-slate-100 px-2 py-2 text-left text-[10px] font-black uppercase tracking-[0.04em] text-slate-600 last:border-r-0";
 const TD = "break-words border-b border-r border-slate-200 px-2 py-2 align-middle last:border-r-0";
 const SECTION_LABEL = "mb-2 text-[10px] font-black uppercase tracking-[0.08em] text-slate-500";
+
+function leadCopyFields(row: DemoLeadSheetRow, stages: Props["stages"], seesAll: boolean) {
+  return [
+    { label: "Parent", value: row.name },
+    { label: "WhatsApp", value: row.phoneLabel },
+    { label: "Email", value: row.email || "Not given" },
+    { label: "Received", value: row.received },
+    { label: "Age", value: row.age },
+    { label: "Level", value: row.level },
+    { label: "Class preference", value: row.classPreference },
+    { label: "Time to call", value: row.callTime || "Not given" },
+    { label: "Demo slot", value: row.demoSlot || "Not chosen" },
+    { label: "Stage", value: stages.find((stage) => stage.value === row.stage)?.label || row.stage },
+    ...(seesAll ? [{ label: "Salesperson", value: row.ownerName || "Unassigned" }] : []),
+    { label: "Verification", value: VERIFICATION[row.verification].label },
+    { label: "Source", value: row.source.headline },
+    ...row.source.details,
+    ...(row.invoiceLabel ? [{ label: "Invoice", value: row.invoiceLabel }] : []),
+    { label: "Calls logged", value: String(row.callCount) },
+    { label: "Reminders", value: row.reminders.length ? row.reminders.map((reminder) => `${reminder.dueLabel} | ${reminder.status === "sent" ? "Due now" : "Scheduled"} | ${reminder.forName}${reminder.note ? ` | ${reminder.note}` : ""}`).join("\n") : "None" },
+    { label: "History (newest first)", value: row.log.length ? row.log.map((entry) => `${entry.at} | ${entry.byName || "System"}\n${entry.text}`).join("\n\n") : "Nothing logged yet" },
+  ];
+}
+
+function leadCopyText(row: DemoLeadSheetRow, stages: Props["stages"], seesAll: boolean) {
+  return leadCopyFields(row, stages, seesAll).map(({ label, value }) => `${label}: ${value}`).join("\n");
+}
 
 function VerificationBadge({ row }: { row: DemoLeadSheetRow }) {
   const verification = VERIFICATION[row.verification];
@@ -625,12 +657,70 @@ function LogEntry({ entry }: { entry: DemoLeadSheetRow["log"][number] }) {
   );
 }
 
+function WhatsAppSendButton({ which, label }: { which: string; label: string }) {
+  const { pending } = useFormStatus();
+  return (
+    <button name="which" value={which} disabled={pending} className="btn-outline text-xs disabled:opacity-60">
+      {pending ? "Sending..." : label}
+    </button>
+  );
+}
+
+/**
+ * The new-lead WhatsApp (2026-11-20): what went out automatically, and buttons
+ * to send the welcome or the fee PDFs by hand, first time or again.
+ */
+function WhatsAppPanel({ row, sendWhatsApp }: Pick<Shared, "sendWhatsApp"> & { row: DemoLeadSheetRow }) {
+  const [state, action] = useFormState(sendWhatsApp, { error: "", saved: 0 });
+  const wa = row.whatsapp;
+  return (
+    <form action={action} className="rounded-xl border border-slate-200 bg-white p-3">
+      <input type="hidden" name="lead" value={row.id} />
+      <p className={SECTION_LABEL}>WhatsApp messages</p>
+      <dl className="grid gap-x-4 gap-y-1 text-xs sm:grid-cols-[auto_1fr]">
+        <dt className="font-semibold text-slate-500">Welcome</dt>
+        <dd className="break-words text-slate-900">{wa.welcome}</dd>
+        <dt className="font-semibold text-slate-500">Fee PDFs</dt>
+        <dd className="break-words text-slate-900">{wa.brochures}</dd>
+        <dt className="font-semibold text-slate-500">Call-back</dt>
+        <dd className="text-slate-900">{wa.confirmed ? `Confirmed ${wa.confirmed}` : "Not confirmed yet"}</dd>
+        {wa.callLinkOpened ? (
+          <>
+            <dt className="font-semibold text-slate-500">Call link</dt>
+            <dd className="text-slate-900">Opened {wa.callLinkOpened}</dd>
+          </>
+        ) : null}
+      </dl>
+      <div className="mt-3 flex flex-wrap gap-2">
+        <WhatsAppSendButton which="welcome" label={wa.welcome.startsWith("Sent") ? "Send welcome again" : "Send welcome"} />
+        <WhatsAppSendButton which="brochures" label={wa.brochures.startsWith("Sent") ? "Send fee PDFs again" : "Send fee PDFs"} />
+      </div>
+      {state.error ? <p className="mt-2 text-xs font-semibold text-red-700">{state.error}</p> : state.saved ? <p className="mt-2 text-xs font-semibold text-emerald-700">Sent.</p> : null}
+    </form>
+  );
+}
+
 /** Calls, reminders, where the lead came from, its history and the note box: the sheet's expanded row and the card's open panel. */
 function LeadDetails({ row, shared }: { row: DemoLeadSheetRow; shared: Shared }) {
   const { canManage, addNote } = shared;
   return (
     <div className="max-w-3xl space-y-3">
+      <details className="rounded-lg border border-slate-200 bg-white p-3">
+        <summary className="cursor-pointer text-xs font-bold text-brand">Copy individual details</summary>
+        <dl className="mt-3 grid gap-3 text-xs sm:grid-cols-2">
+          {leadCopyFields(row, shared.stages, shared.seesAll).map(({ label, value }, index) => (
+            <div key={`${label}-${index}`} className="flex items-start gap-2">
+              <div className="min-w-0 flex-1">
+                <dt className="font-semibold text-slate-500">{label}</dt>
+                <dd className="whitespace-pre-line break-words text-slate-900">{value}</dd>
+              </div>
+              <LeadCopyButton text={value} label={`Copy ${label.toLowerCase()} for ${row.name}`} compact />
+            </div>
+          ))}
+        </dl>
+      </details>
       {canManage ? <EditDetailsPanel row={row} editLead={shared.editLead} editOptions={shared.editOptions} /> : null}
+      {canManage ? <WhatsAppPanel row={row} sendWhatsApp={shared.sendWhatsApp} /> : null}
       {canManage ? (
         <div className="grid gap-3 lg:grid-cols-2">
           <CallLogForm row={row} logCall={shared.logCall} />
@@ -702,11 +792,12 @@ function LeadCard({ row, expanded, toggle, openDetails, shared }: { row: DemoLea
     <li className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <p className="text-base font-black leading-snug text-slate-950">{row.name}</p>
+          <p className="text-base font-black leading-snug text-slate-950">{row.name} <LeadCopyButton text={row.name} label={`Copy name for ${row.name}`} compact /></p>
           {row.email ? (
-            <a href={`mailto:${row.email}`} className="block break-all text-xs font-semibold text-brand hover:underline">
-              {row.email}
-            </a>
+            <span className="block break-all text-xs">
+              <a href={`mailto:${row.email}`} className="font-semibold text-brand hover:underline">{row.email}</a>
+              <LeadCopyButton text={row.email} label={`Copy email for ${row.name}`} compact />
+            </span>
           ) : null}
           <p className="mt-0.5 text-[11px] text-slate-500">{row.received}</p>
         </div>
@@ -715,6 +806,7 @@ function LeadCard({ row, expanded, toggle, openDetails, shared }: { row: DemoLea
 
       <div className="mt-3 flex flex-wrap items-center gap-2">
         <span className="text-sm font-bold text-slate-900">{row.phoneLabel}</span>
+        <LeadCopyButton text={row.phoneLabel} label={`Copy WhatsApp number for ${row.name}`} compact />
         <VerificationBadge row={row} />
       </div>
       <div className="mt-2 grid grid-cols-2 gap-2">
@@ -771,6 +863,9 @@ function LeadCard({ row, expanded, toggle, openDetails, shared }: { row: DemoLea
         ) : null}
       </div>
 
+      <div className="mt-3">
+        <LeadCopyButton text={leadCopyText(row, stages, seesAll)} label={`Copy full lead for ${row.name}`} caption="Copy full lead" />
+      </div>
       <button
         type="button"
         aria-expanded={expanded}
@@ -796,6 +891,10 @@ export function DemoLeadsSheet({ rows, initialOpen = null, ...shared }: Props) {
 
   return (
     <>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="text-xs text-slate-500">Copy a detail, a full lead, or all leads shown with the current filters.</p>
+        <LeadCopyButton text={rows.map((row) => leadCopyText(row, stages, seesAll)).join("\n\n--------------------\n\n")} label={`Copy all displayed leads (${rows.length})`} />
+      </div>
       <ul className="space-y-3 md:hidden">
         {rows.map((row) => (
           <LeadCard key={row.id} row={row} expanded={open === row.id} toggle={() => toggle(row.id)} openDetails={() => setOpen(row.id)} shared={shared} />
@@ -843,17 +942,19 @@ export function DemoLeadsSheet({ rows, initialOpen = null, ...shared }: Props) {
                   <tr className={index % 2 ? "bg-slate-50/60" : "bg-white"}>
                     <td className={`${TD} text-[11px] text-slate-600`}>{row.received}</td>
                     <td className={TD}>
-                      <span className="block font-bold text-slate-950">{row.name}</span>
+                      <span className="block font-bold text-slate-950">{row.name} <LeadCopyButton text={row.name} label={`Copy name for ${row.name}`} compact /></span>
                       {row.email ? (
-                        <a href={`mailto:${row.email}`} className="block break-all text-[11px] font-semibold text-brand hover:underline">
-                          {row.email}
-                        </a>
+                        <span className="block break-all text-[11px]">
+                          <a href={`mailto:${row.email}`} className="font-semibold text-brand hover:underline">{row.email}</a>
+                          <LeadCopyButton text={row.email} label={`Copy email for ${row.name}`} compact />
+                        </span>
                       ) : null}
                     </td>
                     <td className={TD}>
                       <a href={row.telHref} onClick={canManage ? () => setOpen(row.id) : undefined} className="whitespace-nowrap font-bold text-brand hover:underline">
                         {row.phoneLabel}
                       </a>
+                      <LeadCopyButton text={row.phoneLabel} label={`Copy WhatsApp number for ${row.name}`} compact />
                       {row.whatsappHref ? (
                         <a
                           href={row.whatsappHref}
@@ -895,6 +996,9 @@ export function DemoLeadsSheet({ rows, initialOpen = null, ...shared }: Props) {
                       >
                         {detailsLabel(row, expanded)}
                       </button>
+                      <div className="mt-2">
+                        <LeadCopyButton text={leadCopyText(row, stages, seesAll)} label={`Copy full lead for ${row.name}`} caption="Copy full lead" />
+                      </div>
                     </td>
                     {canDelete ? (
                       <td className={`${TD} !px-0 text-center`}>

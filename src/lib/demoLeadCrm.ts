@@ -3,6 +3,7 @@ import "server-only";
 import { Types } from "mongoose";
 import { dbConnect } from "@/lib/db";
 import { ownerCandidates } from "@/lib/demoLeadOwner";
+import { queueDemoLeadWelcome, sendDemoLeadWhatsAppNow } from "@/lib/demoLeadWhatsApp";
 import { demoLeadOwnerForTurn, demoLeadRotationNames, resolveDemoLeadRotation } from "@/lib/demoLeadRotation";
 import { crmPhoneNumber } from "@/lib/crm/identity";
 import { metaCapiConfigured, sendMetaLead } from "@/lib/metaConversionsApi";
@@ -194,6 +195,16 @@ export type DemoLeadRow = {
   log: Array<{ kind: string; outcome: string; text: string; byName: string; at: string }>;
   /** Reminders still waiting to fire ("scheduled") or fired with no call logged since ("sent"), soonest first. */
   reminders: Array<{ id: string; dueAt: string; note: string; status: "scheduled" | "sent"; forId: string; forName: string; byName: string }>;
+  /** The new-lead WhatsApp messages (src/lib/demoLeadWhatsApp.ts): ISO times, or the error Meta gave. */
+  whatsapp: {
+    welcomeSentAt: string;
+    welcomeDueAt: string;
+    welcomeError: string;
+    brochuresSentAt: string;
+    brochuresError: string;
+    callbackConfirmedAt: string;
+    callLinkOpenedAt: string;
+  };
 };
 
 /** The Source column for a lead added by hand: how the family reached us, and who typed it in. */
@@ -311,6 +322,15 @@ export async function getDemoLeads(viewer: DemoLeadViewer, filters: DemoLeadFilt
       at: new Date(entry.at || doc.createdAt).toISOString(),
     })),
     reminders: remindersByLead.get(String(doc._id)) || [],
+    whatsapp: {
+      welcomeSentAt: doc.waWelcomeSentAt ? new Date(doc.waWelcomeSentAt).toISOString() : "",
+      welcomeDueAt: doc.waWelcomeDueAt && !doc.waWelcomeClaimedAt ? new Date(doc.waWelcomeDueAt).toISOString() : "",
+      welcomeError: String(doc.waWelcomeError || ""),
+      brochuresSentAt: doc.waBrochuresSentAt ? new Date(doc.waBrochuresSentAt).toISOString() : "",
+      brochuresError: String(doc.waBrochuresError || ""),
+      callbackConfirmedAt: doc.callbackConfirmedAt ? new Date(doc.callbackConfirmedAt).toISOString() : "",
+      callLinkOpenedAt: doc.callLinkOpenedAt ? new Date(doc.callLinkOpenedAt).toISOString() : "",
+    },
   }));
 
   return {
@@ -684,6 +704,8 @@ export async function addManualDemoLead(viewer: DemoLeadViewer, input: ManualLea
   // The rotation spends a turn on it, exactly as for a form lead.
   const assigned: any = owner ? lead : await assignDemoLeadOwner(id);
   if (assigned?.salesOwner && String(assigned.salesOwner) !== viewer.id) await raiseDemoRequestTask(assigned);
+  // A lead added by hand has no thank-you page to wait for: the welcome goes now.
+  await queueDemoLeadWelcome(id, { immediate: true });
   return { ok: true, id };
 }
 
@@ -835,4 +857,18 @@ export async function deleteDemoLead(viewer: DemoLeadViewer, leadId: string) {
   }
   await WhatsAppOtp.deleteOne({ reference: leadId }).catch(() => undefined);
   return { name: String(deleted.name || ""), phone: `${deleted.countryCode || ""}${deleted.phone || ""}` };
+}
+
+/**
+ * The CRM's "Send welcome" and "Send fee PDFs" buttons (2026-11-20): send the
+ * new-lead WhatsApp by hand, first time or again, on a lead this viewer may touch.
+ */
+export async function sendDemoLeadWhatsApp(viewer: DemoLeadViewer, leadId: string, which: string): Promise<{ ok: true } | { ok: false; error: string }> {
+  if (which !== "welcome" && which !== "brochures") return { ok: false, error: "Unknown message." };
+  const match = ownLead(viewer, leadId);
+  if (!match) return { ok: false, error: "Lead not found." };
+  await dbConnect();
+  const lead: any = await ContactMessage.findOne(match).lean();
+  if (!lead) return { ok: false, error: "Lead not found." };
+  return sendDemoLeadWhatsAppNow(lead, which, viewer);
 }

@@ -36,6 +36,7 @@ export async function register() {
   const { processBranchMonthlyReports } = await import("@/lib/branch/reports");
   const { canAccessFeature } = await import("@/lib/featureAccess");
   const { processDueDemoLeadReminders } = await import("@/lib/demoLeadReminders");
+  const { processDueDemoLeadWhatsApp } = await import("@/lib/demoLeadWhatsApp");
 
   installRuntimeProcessLogging();
   installRuntimeStderrCapture();
@@ -139,6 +140,15 @@ export async function register() {
       name: "demo_lead_call_reminders",
       intervalMs: 60_000,
       run: () => processDueDemoLeadReminders(),
+    },
+    {
+      /**
+       * New-lead WhatsApp (src/lib/demoLeadWhatsApp.ts): welcomes whose wait for
+       * a demo slot is over, and fee PDFs a restart interrupted.
+       */
+      name: "demo_lead_whatsapp",
+      intervalMs: 60_000,
+      run: () => processDueDemoLeadWhatsApp(),
     },
     {
       name: "homework_email_reminders",

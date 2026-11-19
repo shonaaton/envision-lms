@@ -28,6 +28,10 @@ describe("whatsappDigits", () => {
     expect(whatsappDigits("+91", "09831248613")).toBe("919831248613");
   });
 
+  it("keeps the code on an Indian mobile that itself starts with 91", () => {
+    expect(whatsappDigits("+91", "9123456780")).toBe("919123456780");
+  });
+
   it("returns nothing when there is no number to dial", () => {
     expect(whatsappDigits("+91", "")).toBe("");
   });

@@ -8,6 +8,7 @@ import { demoAgeGroupLabel, demoChildLevelLabel, demoRequestEventId } from "@/li
 import { metaRequestContext, sendMetaLead } from "@/lib/metaConversionsApi";
 import { getClientIp } from "@/lib/requestSecurity";
 import { raiseDemoRequestTask } from "@/lib/tasks/taskTriggers";
+import { queueDemoLeadWelcome } from "@/lib/demoLeadWhatsApp";
 import { ContactMessage } from "@/models/ContactMessage";
 import { CrmLeadRecord } from "@/models/CrmLeadRecord";
 
@@ -39,6 +40,9 @@ export async function announceDemoRequest(leadId: string, request: Request) {
   const lead = owned || claimed;
 
   await raiseDemoRequestTask(lead);
+
+  // The welcome WhatsApp waits a few minutes for the thank-you page's demo slot.
+  await queueDemoLeadWelcome(leadId);
 
   // The server copy of the form's Lead event (the thank-you page's pixel sends
   // the same id, and Meta keeps one). Runs once, inside the announcedAt claim.

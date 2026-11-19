@@ -4,7 +4,6 @@ import { revalidatePath } from "next/cache";
 import { AlarmClock, Handshake, Search } from "lucide-react";
 import { AddDemoLeadForm, type AddLeadFormState } from "@/components/sales/AddDemoLeadForm";
 import { DemoLeadsSheet, type DemoLeadSheetRow, type ReminderFormState } from "@/components/sales/DemoLeadsSheet";
-import { NoCopyShell, SalesDataNotice } from "@/components/sales/NoCopyShell";
 import { academyDateKey, academyDateTime, academyDateTimeLocalInput, parseAcademyDateTimeLocal } from "@/lib/academyTime";
 import { contactDisplayPhone, contactInterestLabel, contactInterests, whatsappDigits } from "@/lib/contactEnquiries";
 import { DIAL_CODES } from "@/lib/phoneCountryCodes";
@@ -22,6 +21,7 @@ import {
   logDemoLeadCall,
   parseDemoLeadFilters,
   reassignDemoLead,
+  sendDemoLeadWhatsApp,
   setDemoLeadReminder,
   setDemoLeadStage,
   updateDemoLeadDetails,
@@ -137,6 +137,20 @@ async function editLead(previous: ReminderFormState, formData: FormData): Promis
   });
   if (!result.ok) return { ...previous, error: result.error };
   if (result.changed) logSalesAction(viewer.sales, `${viewer.sales.name} edited a demo lead's details`, { lead, changed: result.changed });
+  revalidatePath("/sales/leads");
+  return { error: "", saved: previous.saved + 1 };
+}
+
+/** "Send welcome" / "Send fee PDFs": the new-lead WhatsApp messages, sent by hand. */
+async function sendWhatsApp(previous: ReminderFormState, formData: FormData): Promise<ReminderFormState> {
+  "use server";
+  const viewer = await crmViewer();
+  if (!viewer?.canManage) return { ...previous, error: "You do not have permission to message this lead." };
+  const lead = String(formData.get("lead") || "");
+  const which = String(formData.get("which") || "");
+  const result = await sendDemoLeadWhatsApp(viewer.lead, lead, which);
+  if (!result.ok) return { ...previous, error: result.error };
+  logSalesAction(viewer.sales, `${viewer.sales.name} sent the ${which === "welcome" ? "welcome" : "fee PDF"} WhatsApp to a demo lead`, { lead, which });
   revalidatePath("/sales/leads");
   return { error: "", saved: previous.saved + 1 };
 }
@@ -270,6 +284,19 @@ export default async function DemoLeadsPage({ searchParams }: { searchParams: Re
         mine: reminder.forId === viewer.lead.id,
         canCancel: viewer.canManage && (seesAll || reminder.forId === viewer.lead.id),
       })),
+      whatsapp: {
+        welcome: row.whatsapp.welcomeSentAt
+          ? `Sent ${when(row.whatsapp.welcomeSentAt)}`
+          : row.whatsapp.welcomeError
+            ? `Not sent: ${row.whatsapp.welcomeError}`
+            : row.whatsapp.welcomeDueAt
+              ? `Goes automatically by ${when(row.whatsapp.welcomeDueAt)}`
+              : "Not sent",
+        brochures: row.whatsapp.brochuresSentAt ? `Sent ${when(row.whatsapp.brochuresSentAt)}` : row.whatsapp.brochuresError ? `Not sent: ${row.whatsapp.brochuresError}` : "Not sent",
+        confirmed: row.whatsapp.callbackConfirmedAt ? when(row.whatsapp.callbackConfirmedAt) : "",
+        callLinkOpened: row.whatsapp.callLinkOpenedAt ? when(row.whatsapp.callLinkOpenedAt) : "",
+        failed: Boolean(row.whatsapp.welcomeError || row.whatsapp.brochuresError),
+      },
       // Newest first, so the latest call and its remarks are at the top.
       log: row.log.map((entry) => ({ ...entry, at: when(entry.at) })).reverse(),
       edit: {
@@ -289,7 +316,7 @@ export default async function DemoLeadsPage({ searchParams }: { searchParams: Re
   });
 
   return (
-    <NoCopyShell viewer={viewer.sales.name}>
+    <>
       <div className="space-y-5 p-2 text-slate-950">
         <header>
           <div className="inline-flex items-center gap-2 rounded-full bg-amber-100 px-3 py-1 text-xs font-black uppercase tracking-[0.18em] text-amber-700">
@@ -423,6 +450,7 @@ export default async function DemoLeadsPage({ searchParams }: { searchParams: Re
               changeOwner={changeOwner}
               deleteLead={deleteLead}
               logCall={logCall}
+              sendWhatsApp={sendWhatsApp}
               setReminder={setReminder}
               cancelReminder={cancelReminder}
               reminderMin={academyDateTimeLocalInput(now)}
@@ -449,8 +477,7 @@ export default async function DemoLeadsPage({ searchParams }: { searchParams: Re
           ) : null}
         </section>
 
-        <SalesDataNotice />
       </div>
-    </NoCopyShell>
+    </>
   );
 }

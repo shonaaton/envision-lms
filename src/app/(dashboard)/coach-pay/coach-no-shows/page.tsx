@@ -3,10 +3,11 @@ import { ArrowLeft, CheckCircle2, Gift, IndianRupee, UserX } from "lucide-react"
 
 import { DataPanel, EmptyState, PageHeader, StatCard } from "@/components/common/PageHeader";
 import { CoachNoShowRulingDialog } from "@/components/coach-pay/CoachNoShowRulingDialog";
+import { ResendWhatsAppButton } from "@/components/coach-pay/ResendWhatsAppButton";
 import { resolveCoachPayViewer } from "@/lib/coachPayAccess";
 import { loadCoachNoShowReviews } from "@/lib/coachPayData";
 import { financialYearLabel, financialYearOptions, resolvePayPeriod } from "@/lib/payPeriods";
-import { saveCoachNoShowRuling } from "./actions";
+import { resendCoachNoShowWhatsApp, saveCoachNoShowRuling } from "./actions";
 
 export const dynamic = "force-dynamic";
 
@@ -180,6 +181,11 @@ export default async function CoachNoShowsPage({
                         }
                         action={saveCoachNoShowRuling}
                       />
+                      {item.ruling && (
+                        <div className="mt-1">
+                          <ResendWhatsAppButton classroomId={item.classroomId} sessionId={item.sessionId} action={resendCoachNoShowWhatsApp} />
+                        </div>
+                      )}
                     </td>
                   </tr>
                 ))}

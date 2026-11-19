@@ -269,3 +269,60 @@ export async function saveCoachNoShowRuling(formData: FormData): Promise<CoachNo
     message: `Ruling saved.${freeNextClass ? ` ${credits} student${credits === 1 ? "" : "s"} got a free-class credit.` : ""}${messaged}`,
   };
 }
+
+/**
+ * Resend just the WhatsApp messages of a saved ruling: the family's and the
+ * coach's. For when the first send failed (a template Meta had not approved
+ * yet, say). The in-app notice and email are not sent a second time.
+ */
+export async function resendCoachNoShowWhatsApp(formData: FormData): Promise<CoachNoShowActionResult> {
+  const session = await requireCoachNoShowRuler();
+  if (!session?.user) return { ok: false, error: "Only admins and sub-admins can resend these messages." };
+  await dbConnect();
+
+  const classroomId = text(formData, "classroom");
+  const sessionId = text(formData, "sessionId");
+  if (!isValidObjectId(classroomId) || !isValidObjectId(sessionId)) return { ok: false, error: "Unknown class." };
+  const ruling: any = await CoachNoShowRuling.findOne({ classroom: classroomId, sessionId }).lean();
+  if (!ruling) return { ok: false, error: "Save a ruling on this class first." };
+
+  const classroom: any = await Classroom.findById(classroomId).select("title students generatedSessions").lean();
+  const target = (classroom?.generatedSessions || []).find((item: any) => idOf(item._id) === sessionId);
+  const roster = ((target?.students?.length ? target.students : classroom?.students) || []).map(idOf).filter(Boolean);
+  const activeStudents = (await User.find({ _id: { $in: roster }, role: "student", isActive: { $ne: false } }).select("_id").lean()).map((row: any) => idOf(row._id));
+  const classLabel = String(ruling.classroomTitle || classroom?.title || "chess").trim();
+  const rulingId = idOf(ruling._id);
+  const credited = (ruling.compensation || []).filter((entry: any) => entry.action === "credited").map((entry: any) => idOf(entry.student));
+
+  const family = await notifyFamiliesOfCoachNoShow({
+    rulingId, classroomId, classLabel, sessionDate: ruling.sessionDate, studentIds: activeStudents,
+    creditedStudentIds: credited, freeNextClass: Boolean(ruling.freeNextClass), whatsappOnly: true,
+  });
+  const coach = await notifyCoachOfNoShowRuling({
+    rulingId, classroomId, coachId: idOf(ruling.coach), classLabel, sessionDate: ruling.sessionDate,
+    chargeFine: Boolean(ruling.chargeFine), fineAmount: Number(ruling.fineAmount || 0), freeNextClass: Boolean(ruling.freeNextClass),
+    note: ruling.note || "", whatsappOnly: true,
+  });
+
+  const ok = family.whatsappOk + coach.whatsappOk;
+  const failed = family.whatsappFailed + coach.whatsappFailed;
+  const errors = [...family.errors, ...coach.errors];
+  const now = new Date();
+  await CoachNoShowRuling.updateOne(
+    { _id: ruling._id },
+    { $set: { ...(family.whatsappOk ? { familiesNotifiedAt: now } : {}), ...(coach.whatsappOk ? { coachNotifiedAt: now } : {}) } }
+  );
+  await recordActivity({
+    actor: String((session.user as any).id),
+    targetUser: idOf(ruling.coach),
+    type: "coachPay.coachNoShow.whatsappResent",
+    label: `Resent coach no-show WhatsApp: ${ok} sent, ${failed} failed`,
+    entityType: "CoachNoShowRuling",
+    entityId: rulingId,
+    metadata: { classroomId, sessionId, ok, failed, errors },
+  });
+  revalidatePath("/coach-pay/coach-no-shows");
+
+  if (!ok && failed) return { ok: false, error: `WhatsApp not sent. ${errors.slice(0, 3).join("; ")}` };
+  return { ok: true, message: `WhatsApp sent to ${ok} recipient${ok === 1 ? "" : "s"}.${failed ? ` ${failed} failed: ${errors.slice(0, 3).join("; ")}` : ""}` };
+}

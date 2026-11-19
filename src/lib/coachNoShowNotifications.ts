@@ -50,8 +50,11 @@ export async function notifyFamiliesOfCoachNoShow(input: {
   /** Students who actually received the make-up credit. */
   creditedStudentIds: string[];
   freeNextClass: boolean;
+  /** Resend only the WhatsApp (the in-app notice and email already went). */
+  whatsappOnly?: boolean;
 }) {
-  if (!input.studentIds.length) return { sent: 0 };
+  const outcome = { sent: 0, whatsappOk: 0, whatsappFailed: 0, errors: [] as string[] };
+  if (!input.studentIds.length) return outcome;
   const students = (await User.find({ _id: { $in: input.studentIds }, isActive: { $ne: false } }).select(contactFields).lean()) as any[];
   const dateLabel = missedClassDateLabel(input.sessionDate);
   const credited = new Set(input.creditedStudentIds.map(String));
@@ -78,25 +81,43 @@ export async function notifyFamiliesOfCoachNoShow(input: {
     ].join("\n");
     const metadata = { kind: "coach_no_show_ruling", rulingId: input.rulingId, classroomId: input.classroomId, studentId, href: "/dashboard" };
 
-    await Notification.create({ user: student._id, type: "class_coach_no_show", title, message, metadata })
-      .catch((error) => console.error("Coach no-show notice to family failed", error));
+    if (!input.whatsappOnly) {
+      await Notification.create({ user: student._id, type: "class_coach_no_show", title, message, metadata })
+        .catch((error) => console.error("Coach no-show notice to family failed", error));
 
-    const emails = resolveAudienceEmails(
-      student.email ? { to: String(student.email), subject: title, message, metadata } : null,
-      student.parentEmail ? { to: String(student.parentEmail), subject: title, message, metadata: { ...metadata, recipientType: "parent" } } : null
-    );
-    await Promise.all(emails.map((email) => sendAutomationEmail(email).catch(() => null)));
+      const emails = resolveAudienceEmails(
+        student.email ? { to: String(student.email), subject: title, message, metadata } : null,
+        student.parentEmail ? { to: String(student.parentEmail), subject: title, message, metadata: { ...metadata, recipientType: "parent" } } : null
+      );
+      await Promise.all(emails.map((email) => sendAutomationEmail(email).catch(() => null)));
+    }
 
-    await sendWhatsAppAutomationTemplate({
+    const result = await sendWhatsAppAutomationTemplate({
       user: student,
       templateName: free ? "coach_no_show_family_free" : "coach_no_show_family",
       bodyParameters: free
         ? [String(student.parentName || whatsappRecipientName(student)), input.classLabel, dateLabel, studentName]
         : [String(student.parentName || whatsappRecipientName(student)), input.classLabel, dateLabel],
       metadata: { ...metadata, notificationDedupKey: `coach_no_show:${input.rulingId}:${studentId}` },
-    }).catch((error) => console.error("Coach no-show WhatsApp to family failed", error));
+    }).catch((error) => {
+      console.error("Coach no-show WhatsApp to family failed", error);
+      return null;
+    });
+    tally(outcome, result, studentName);
   }
-  return { sent: students.length };
+  outcome.sent = students.length;
+  return outcome;
+}
+
+/** Counts a WhatsApp result, and keeps a short reason for each failure. */
+function tally(outcome: { whatsappOk: number; whatsappFailed: number; errors: string[] }, result: any, who: string) {
+  if (result?.ok && !result?.skipped) {
+    outcome.whatsappOk += 1;
+    return;
+  }
+  outcome.whatsappFailed += 1;
+  const reason = String(result?.errorMessage || result?.error || result?.debug?.reason || "not sent");
+  outcome.errors.push(`${who}: ${reason}`.slice(0, 160));
 }
 
 export async function notifyCoachOfNoShowRuling(input: {
@@ -109,9 +130,11 @@ export async function notifyCoachOfNoShowRuling(input: {
   fineAmount: number;
   freeNextClass: boolean;
   note?: string;
+  whatsappOnly?: boolean;
 }) {
+  const outcome = { sent: 0, whatsappOk: 0, whatsappFailed: 0, errors: [] as string[] };
   const coach: any = input.coachId ? await User.findById(input.coachId).select(contactFields).lean() : null;
-  if (!coach || coach.isActive === false) return { sent: 0 };
+  if (!coach || coach.isActive === false) return outcome;
   const dateLabel = missedClassDateLabel(input.sessionDate);
   const decision = coachDecisionSentence(input);
   const title = `Coach no-show recorded: ${input.classLabel}`;
@@ -130,17 +153,24 @@ export async function notifyCoachOfNoShowRuling(input: {
   ].filter((line, index, lines) => !(line === "" && lines[index - 1] === "")).join("\n");
   const metadata = { kind: "coach_no_show_ruling", recipientType: "coach", rulingId: input.rulingId, classroomId: input.classroomId, href: "/coach-pay" };
 
-  await Notification.create({ user: coach._id, type: "coach_no_show_ruling", title, message, metadata })
-    .catch((error) => console.error("Coach no-show notice to coach failed", error));
-  if (coach.email) {
-    await sendAutomationEmail({ to: String(coach.email), subject: title, message, metadata })
-      .catch((error) => console.error("Coach no-show email to coach failed", error));
+  if (!input.whatsappOnly) {
+    await Notification.create({ user: coach._id, type: "coach_no_show_ruling", title, message, metadata })
+      .catch((error) => console.error("Coach no-show notice to coach failed", error));
+    if (coach.email) {
+      await sendAutomationEmail({ to: String(coach.email), subject: title, message, metadata })
+        .catch((error) => console.error("Coach no-show email to coach failed", error));
+    }
   }
-  await sendWhatsAppAutomationTemplate({
+  const result = await sendWhatsAppAutomationTemplate({
     user: coach,
     templateName: "coach_no_show_coach",
     bodyParameters: [whatsappRecipientName(coach, "Coach"), input.classLabel, dateLabel, decision],
     metadata: { ...metadata, notificationDedupKey: `coach_no_show:${input.rulingId}:coach` },
-  }).catch((error) => console.error("Coach no-show WhatsApp to coach failed", error));
-  return { sent: 1 };
+  }).catch((error) => {
+    console.error("Coach no-show WhatsApp to coach failed", error);
+    return null;
+  });
+  tally(outcome, result, `Coach ${coach.name || coach.username || ""}`.trim());
+  outcome.sent = 1;
+  return outcome;
 }

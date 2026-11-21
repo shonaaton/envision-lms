@@ -28,6 +28,7 @@ export async function register() {
   const { processHolidayAnnouncements } = await import("@/lib/holidays/holidayNotifications");
   const { sealLegacyTempPasswords } = await import("@/lib/tempPasswordMigration");
   const { processRetentionSweep } = await import("@/lib/retention/retentionSweep");
+  const { processTournamentDetailsMonth } = await import("@/lib/retention/tournamentDetailsService");
   const { processCrmDemoStageReconcile } = await import("@/lib/crm/reconcile");
   const { processWeeklyEngagement } = await import("@/lib/engagement/weeklyEngagementJob");
   const { processExamSweep } = await import("@/lib/exams/examService");
@@ -237,6 +238,15 @@ export async function register() {
       name: "retention_risk_sweep",
       intervalMs: 60 * 60_000,
       run: () => processRetentionSweep(),
+    },
+    {
+      /**
+       * From the 1st of each month, "Send tournament details" lands in
+       * Muktara's tasks (once per month; ticking every student off settles it).
+       */
+      name: "tournament_details_month",
+      intervalMs: 60 * 60_000,
+      run: () => processTournamentDetailsMonth(),
     },
     {
       /**

@@ -116,6 +116,8 @@ const UserSchema = new Schema(
     // than sent on every qualifying milestone.
     reviewRequestedAt: { type: Date, index: true },
     city: { type: String },
+    // State or region, set by staff (Retention > Tournament details) so tournament news goes to the right families.
+    state: { type: String },
     country: { type: String },
     countryCode: { type: String },
     studentLevel: { type: String, enum: ["absolute_beginner", "beginner", "intermediate", "advanced", "federated", "not_set"], default: "not_set", index: true },

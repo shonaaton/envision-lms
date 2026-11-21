@@ -905,3 +905,84 @@ export function resolveClassMonitorTask(reportId: unknown, by?: unknown) {
 export function withdrawClassMonitorTask(reportId: unknown, reason: string) {
   return withdraw("ClassMonitorReport", reportId, reason);
 }
+
+// ---------------------------------------------------------------------------
+// Retention > Tournament details
+// ---------------------------------------------------------------------------
+
+/**
+ * Who sends every family its monthly tournament details (Muktara, user,
+ * 2026-11-21), and who is asked when a place has no tournament details yet
+ * (Saptarshi). Each is an email or a portal user ID; a missing account falls
+ * back to the admins' queue rather than losing the task.
+ */
+export function tournamentDetailsOwner() {
+  return String(process.env.TOURNAMENT_DETAILS_OWNER || "Muktara@ENV").trim();
+}
+export function tournamentRequestOwner() {
+  return String(process.env.TOURNAMENT_REQUEST_OWNER || "saptarshi2856@gmail.com").trim();
+}
+
+async function activeUserIdFor(identifier: string) {
+  try {
+    await dbConnect();
+    const user: any = await User.findOne({ ...loginIdentifierFilter(identifier), isActive: { $ne: false } }).select("_id").lean();
+    return user ? String(user._id) : "";
+  } catch (error) {
+    console.error(`[tasks] could not resolve ${identifier}`, error);
+    return "";
+  }
+}
+
+export async function raiseTournamentDetailsMonthTask(input: { referenceId: string; monthKey: string; monthLabel: string; students: number; dueAt: Date }) {
+  const ownerId = await activeUserIdFor(tournamentDetailsOwner());
+  return raise({
+    kind: "tournament_details_month",
+    referenceType: "TournamentDetailsMonth",
+    referenceId: input.referenceId,
+    title: `Send tournament details — ${input.monthLabel}`,
+    details: [
+      `Send each family the chess tournaments in their city and state for ${input.monthLabel} (${input.students} students right now).`,
+      "Retention Center → Tournament details groups students by place: send one list per city, then tick them off.",
+      "Missing a place's tournaments? Use \"Request from Saptarshi\" on that city.",
+    ].join("\n"),
+    ...(ownerId ? { assignedTo: ownerId } : { pool: "admins" as const }),
+    dueAt: input.dueAt,
+    actionHref: `/admin/retention?tab=tournaments&month=${input.monthKey}`,
+    metadata: { monthKey: input.monthKey },
+  });
+}
+
+export function resolveTournamentDetailsMonthTask(referenceId: string, by?: unknown) {
+  return settle("TournamentDetailsMonth", referenceId, by, "Every student was sent this month's tournament details.");
+}
+
+export async function raiseTournamentRequestTask(input: { request: any; place: string; monthLabel: string; requesterName: string }) {
+  const ownerId = await activeUserIdFor(tournamentRequestOwner());
+  const request = input.request;
+  return raise({
+    kind: "tournament_details_request",
+    referenceType: "TournamentDetailsRequest",
+    referenceId: idOf(request),
+    title: `Tournament details needed: ${input.place}`.slice(0, 200),
+    details: [
+      `${input.requesterName || "The retention team"} has no tournament details for ${input.place} (${input.monthLabel}).`,
+      (request.students || []).length ? `${request.students.length} student(s) there are waiting.` : "",
+      request.note ? `Note: ${request.note}` : "",
+      "Open the request and reply with the tournaments; the reply goes straight back to the person who asked.",
+    ].filter(Boolean).join("\n"),
+    ...(ownerId ? { assignedTo: ownerId } : { pool: "admins" as const }),
+    priority: "high",
+    dueAt: new Date(Date.now() + 2 * 24 * 3600_000),
+    actionHref: `/admin/retention?tab=tournaments&month=${request.monthKey}&request=${idOf(request)}`,
+    metadata: { requestId: idOf(request), monthKey: request.monthKey },
+  });
+}
+
+export function resolveTournamentRequestTask(requestId: unknown, by?: unknown) {
+  return settle("TournamentDetailsRequest", requestId, by, "Tournament details were sent back.");
+}
+
+export function cancelTournamentRequestTask(requestId: unknown, reason: string) {
+  return withdraw("TournamentDetailsRequest", requestId, reason);
+}

@@ -9,6 +9,7 @@ import CallHistory from "@/components/admin/retention/CallHistory";
 import FamilyQueue from "@/components/admin/retention/FamilyQueue";
 import QuestionsManager from "@/components/admin/retention/QuestionsManager";
 import { Stat, monthLabel, type Queue } from "@/components/admin/retention/shared";
+import TournamentDetailsBoard from "@/components/admin/retention/TournamentDetailsBoard";
 import WinBackList from "@/components/admin/retention/WinBackList";
 
 const TABS = [
@@ -20,6 +21,7 @@ const TABS = [
   { key: "history", label: "Call history" },
   { key: "stats", label: "Stats" },
   { key: "questions", label: "Questions" },
+  { key: "tournaments", label: "Send tournament details" },
 ] as const;
 type Tab = (typeof TABS)[number]["key"];
 
@@ -51,6 +53,10 @@ export default function RetentionCenterClient({ canManage, initialTab, initialFl
       url.searchParams.set("tab", next);
       url.searchParams.delete("flag");
       if (next !== "history") url.searchParams.delete("student");
+      if (next !== "tournaments") {
+        url.searchParams.delete("month");
+        url.searchParams.delete("request");
+      }
       window.history.replaceState(null, "", url.toString());
     } catch {
       // The tab still switches; only the shareable URL is skipped.
@@ -109,6 +115,7 @@ export default function RetentionCenterClient({ canManage, initialTab, initialFl
       {tab === "history" && <CallHistory studentId={studentId || undefined} onClearStudent={() => setStudentId("")} />}
       {tab === "stats" && <CallerStats queue={queue} />}
       {tab === "questions" && <QuestionsManager canManage={canManage} />}
+      {tab === "tournaments" && <TournamentDetailsBoard canManage={canManage} />}
     </div>
   );
 }

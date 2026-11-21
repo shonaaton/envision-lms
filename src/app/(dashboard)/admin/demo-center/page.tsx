@@ -2,7 +2,7 @@ import Link from "next/link";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import type { ReactNode } from "react";
-import { CalendarCheck, CheckCircle2, Clock3, Copy, Download, GraduationCap, History, Link as LinkIcon, MessageSquareText, PlayCircle, RefreshCw, RotateCcw, Trash2, UserCheck, UserX, Users, XCircle } from "lucide-react";
+import { CalendarCheck, CheckCircle2, Clock3, Copy, Repeat2, Download, GraduationCap, History, Link as LinkIcon, MessageSquareText, PlayCircle, RefreshCw, RotateCcw, Trash2, UserCheck, UserX, Users, XCircle } from "lucide-react";
 import { auth } from "@/lib/auth";
 import { canAccessFeature } from "@/lib/featureAccess";
 import { dbConnect } from "@/lib/db";
@@ -18,7 +18,7 @@ import { duplicateReasonSummary } from "@/lib/identityMatch";
 import { recordActivity } from "@/lib/activity";
 import { cancelDemoClassrooms, isConfirmedDemo, markDemoClassroomDelivered, markDemoClassroomMissed, upsertDemoClassroom } from "@/lib/demoClassroom";
 import { COURSE_TIER_LABELS } from "@/lib/courseTiers";
-import { bookDemoForAccount, changeDemoCoach, coachClash, confirmDemoBooking } from "@/lib/demoScheduling";
+import { bookDemoForAccount, bookReDemo, changeDemoCoach, coachClash, confirmDemoBooking } from "@/lib/demoScheduling";
 import { deleteDemoRecords } from "@/lib/deleteDemoRecords";
 import { normalizeGoogleMeetUrl, parseMeetingUrlInput } from "@/lib/meetingUrl";
 import { PopupShell, PopupTrigger } from "@/components/HashPopup";
@@ -328,6 +328,40 @@ async function scheduleDemoForAccount(formData: FormData) {
   revalidatePath("/classrooms");
   if (!result.ok) return demoCenterOutcome(tab, result.error);
   demoCenterOutcome("upcoming", "", `Demo confirmed for ${formatAcademyDateTime(result.start)}.`);
+}
+
+/**
+ * Re-demo: a fresh demo for a student whose earlier demo was already taught,
+ * with a new coach and/or time - see `bookReDemo`. The earlier demo and its
+ * assessment are left as they are.
+ */
+async function scheduleReDemo(formData: FormData) {
+  "use server";
+  const session = await requireDemoManager("approve", formData);
+  const tab = String(formData.get("tab") || "completed");
+  const result = await bookReDemo({
+    fromBookingId: String(formData.get("booking") || ""),
+    coachId: String(formData.get("coach") || ""),
+    start: parseAcademyDateTimeLocal(String(formData.get("startAt") || "")),
+    durationMinutes: Math.max(15, Number(formData.get("durationMinutes") || 30)),
+    meetingUrl: String(formData.get("meetingUrl") || "").trim(),
+    reason: String(formData.get("reason") || ""),
+    actorId: String((session.user as any).id || ""),
+  });
+  revalidatePath("/admin/demo-center");
+  revalidatePath("/classrooms");
+  if (!result.ok) return demoCenterOutcome(tab, result.error);
+  demoCenterOutcome("upcoming", "", `Re-demo confirmed for ${formatAcademyDateTime(result.start)}. The earlier demo and its assessment are kept.`);
+}
+
+/**
+ * A re-demo can follow a demo that was taught, for a lead that is still a demo
+ * account, as long as one has not already been booked off this demo.
+ */
+function canBookReDemo(booking: any, accountStatus?: string) {
+  if (!booking || booking.archivedAt || booking.reDemoBooking) return false;
+  if (String(booking.demoStatus || "") === "CONVERTED") return false;
+  return demoWasDelivered(booking) && accountStatus === "demo";
 }
 
 /**
@@ -798,6 +832,8 @@ export default async function DemoCenterPage({ searchParams }: { searchParams?: 
   const session = await requireDemoManager("view");
   const canManageSignups = await canAccessFeature("demoCenter", session.user as any, "edit");
   const canConvertDemo = await canAccessFeature("demoCenter", session.user as any, "convert");
+  // Booking a re-demo confirms a class, the same grant as Assign Demo.
+  const canApproveDemo = await canAccessFeature("demoCenter", session.user as any, "approve");
   await dbConnect();
   const activeTab = tabs.some((tab) => tab.id === searchParams?.tab) ? searchParams?.tab as DemoTab : "requested";
   const errorNotice = String(searchParams?.error || "").trim();
@@ -849,7 +885,7 @@ export default async function DemoCenterPage({ searchParams }: { searchParams?: 
     DemoFeedback.countDocuments(feedbackScope),
     activeTab === "assessments"
       ? DemoFeedback.find(feedbackScope)
-          .populate("booking demoUser coach classroom", "startAt demoStatus feedbackStatus name email title")
+          .populate("booking demoUser coach classroom", "startAt endAt demoStatus feedbackStatus archivedAt reDemoOf reDemoBooking name email title accountStatus")
           .sort({ submittedAt: -1, createdAt: -1 })
           .skip((assessmentPage - 1) * ASSESSMENTS_PAGE_SIZE)
           .limit(ASSESSMENTS_PAGE_SIZE)
@@ -861,7 +897,7 @@ export default async function DemoCenterPage({ searchParams }: { searchParams?: 
         { demoUser: { $in: convertedStudents.map((student: any) => student._id) } },
       ],
     })
-      .populate("booking demoUser coach classroom", "startAt demoStatus feedbackStatus name email title")
+      .populate("booking demoUser coach classroom", "startAt endAt demoStatus feedbackStatus archivedAt reDemoOf reDemoBooking name email title accountStatus")
       .sort({ submittedAt: -1, createdAt: -1 })
       .lean(),
   ]);
@@ -1132,7 +1168,7 @@ export default async function DemoCenterPage({ searchParams }: { searchParams?: 
             </div>
           ) : null}
           {visibleBookings.map((booking: any) => (
-            <DemoCard key={booking._id.toString()} booking={booking} activeTab={activeTab} coaches={coaches} courses={courses} batches={batches} feedback={feedbackByBooking.get(String(booking._id))} salesOwnerName={salesOwnerOf(booking)} salesOwnerManualId={booking.salesOwnerSource === "manual" ? String(booking.salesOwner || "") : ""} ownerOptions={ownerOptions} canConvertDemo={canConvertDemo} />
+            <DemoCard key={booking._id.toString()} booking={booking} activeTab={activeTab} coaches={coaches} courses={courses} batches={batches} feedback={feedbackByBooking.get(String(booking._id))} salesOwnerName={salesOwnerOf(booking)} salesOwnerManualId={booking.salesOwnerSource === "manual" ? String(booking.salesOwner || "") : ""} ownerOptions={ownerOptions} canConvertDemo={canConvertDemo} canApproveDemo={canApproveDemo} />
           ))}
           {activeTab === "converted"
             ? convertedWithoutBooking.map((student: any) => (
@@ -1184,7 +1220,22 @@ export default async function DemoCenterPage({ searchParams }: { searchParams?: 
                   <div className="mt-1 text-sm text-slate-600">Overall: {scaleLabel(OVERALL_STRENGTH, item.overallStrength) || titleCase(item.studentEngagement) || "-"} · Format: {titleCase(item.coachRecommendation) || "-"} · Starts at: {startingSessionLabel(item) || "-"}</div>
                   <p className="mt-2 text-sm leading-6 text-slate-700">{item.salesAdminNotes || item.parentFacingSummary || item.assessmentNotes || "No notes for sales yet."}</p>
                 </div>
-                {item.booking ? <Link href={`/demo-feedback/${item.booking?._id || item.booking}`} className="btn-outline bg-white">Open Assessment</Link> : <span className="text-xs font-semibold text-slate-400">Demo booking deleted</span>}
+                <div className="flex flex-wrap items-center gap-2">
+                  {item.booking?.reDemoOf ? <Tag tone="slate"><Repeat2 size={11} /> Re-demo</Tag> : null}
+                  {item.booking?.reDemoBooking ? <Tag tone="emerald"><Repeat2 size={11} /> Re-demo booked</Tag> : null}
+                  {item.booking ? <Link href={`/demo-feedback/${item.booking?._id || item.booking}`} className="btn-outline bg-white">Open Assessment</Link> : <span className="text-xs font-semibold text-slate-400">Demo booking deleted</span>}
+                  {canApproveDemo && canBookReDemo(item.booking, item.demoUser?.accountStatus) ? (
+                    <ReDemoPopup
+                      bookingId={String(item.booking._id)}
+                      studentName={item.demoUser?.name || item.studentName || "Demo student"}
+                      previousStartAt={item.booking.startAt}
+                      previousCoachId={String(item.coach?._id || item.coach || "")}
+                      previousCoachName={item.coach?.name || item.coachName || ""}
+                      coaches={coaches}
+                      tab="assessments"
+                    />
+                  ) : null}
+                </div>
               </div>
               {/* The form needs the booking; the assessment does not. Show it in full here. */}
               {item.booking ? null : <AssessmentSummary feedback={item} />}
@@ -1273,6 +1324,7 @@ function DemoCard({
   salesOwnerManualId = "",
   ownerOptions = [],
   canConvertDemo,
+  canApproveDemo = false,
 }: {
   booking: any;
   activeTab: DemoTab;
@@ -1284,6 +1336,7 @@ function DemoCard({
   salesOwnerManualId?: string;
   ownerOptions?: SalesOwnerOption[];
   canConvertDemo: boolean;
+  canApproveDemo?: boolean;
 }) {
   const student = booking.student || {};
   const startAt = toLocalInput(booking.startAt);
@@ -1334,6 +1387,8 @@ function DemoCard({
             <h2 className="text-base font-semibold tracking-tight text-slate-900">{student.name || "Demo student"}</h2>
             <Tag tone="amber">{demoStatusLabel(booking)}</Tag>
             {booking.needsNewTime ? <Tag tone="rose">Needs a new time</Tag> : null}
+            {booking.reDemoOf ? <Tag tone="slate"><Repeat2 size={11} /> Re-demo</Tag> : null}
+            {booking.reDemoBooking ? <Tag tone="emerald"><Repeat2 size={11} /> Re-demo booked</Tag> : null}
             {booking.rescheduleCount ? (
               <Tag tone="slate"><History size={11} /> {booking.rescheduleCount} {booking.rescheduleCount === 1 ? "change" : "changes"}</Tag>
             ) : null}
@@ -1451,6 +1506,18 @@ function DemoCard({
             </div>
             <button className="btn-primary w-fit"><UserCheck size={15} /> Confirm Conversion</button>
           </form>
+        ) : null}
+        {canApproveDemo && canBookReDemo(booking, student.accountStatus) ? (
+          <ReDemoPopup
+            bookingId={cardId}
+            studentName={student.name || "Demo student"}
+            previousStartAt={booking.startAt}
+            previousCoachId={currentCoachId}
+            previousCoachName={booking.assignedCoach?.name || booking.instructor?.name || ""}
+            coaches={coaches}
+            tab={activeTab}
+            defaultDuration={duration}
+          />
         ) : null}
         <PopupTrigger id={extendModalId} className="btn-outline bg-white">
           <Clock3 size={15} /> Extend Demo Validity
@@ -1826,6 +1893,90 @@ function ConvertedStudentCard({ student, batches, feedback, salesOwnerName }: { 
       </dl>
       <AssessmentSummary feedback={feedback} />
     </article>
+  );
+}
+
+/**
+ * "Send for Re-demo": book a second demo for the same student with a new coach
+ * and time. The previous coach is listed but not preselected - the usual reason
+ * for a re-demo is a different coach.
+ */
+function ReDemoPopup({
+  bookingId,
+  studentName,
+  previousStartAt,
+  previousCoachId,
+  previousCoachName,
+  coaches,
+  tab,
+  defaultDuration = 30,
+}: {
+  bookingId: string;
+  studentName: string;
+  previousStartAt?: string | Date;
+  previousCoachId: string;
+  previousCoachName: string;
+  coaches: any[];
+  tab: string;
+  defaultDuration?: number;
+}) {
+  const modalId = `redemo-${bookingId}`;
+  return (
+    <>
+      <PopupTrigger id={modalId} className="btn-outline border-sky-200 bg-white text-sky-700">
+        <Repeat2 size={15} /> Send for Re-demo
+      </PopupTrigger>
+      <PopupShell
+        id={modalId}
+        title="Send for re-demo"
+        subtitle={`${studentName} · Previous demo ${previousStartAt ? formatAcademyDateTime(previousStartAt) : ""}${previousCoachName ? ` with ${previousCoachName}` : ""}`}
+      >
+        <form key={`${modalId}-form`} action={scheduleReDemo} autoComplete="off" className="grid gap-3">
+          <input type="hidden" name="booking" value={bookingId} />
+          <input type="hidden" name="tab" value={tab} />
+          <label className="block">
+            <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-500">Coach</span>
+            <select name="coach" defaultValue="" autoComplete="off" className="input bg-white" required>
+              <option value="">Choose coach</option>
+              {coaches.map((coach: any) => (
+                <option key={coach._id.toString()} value={coach._id.toString()}>
+                  {coach.name}{coach._id.toString() === previousCoachId ? " (took the previous demo)" : ""}
+                </option>
+              ))}
+            </select>
+          </label>
+          <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_120px]">
+            <label className="block">
+              <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-500">New date and time (IST)</span>
+              <input name="startAt" type="datetime-local" autoComplete="off" className="input bg-white" required />
+            </label>
+            <label className="block">
+              <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-500">Minutes</span>
+              <input name="durationMinutes" type="number" min={15} step={15} defaultValue={defaultDuration} autoComplete="off" className="input bg-white" />
+            </label>
+          </div>
+          <label className="block">
+            <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-500">Google Meet link</span>
+            <span className="relative block">
+              <LinkIcon size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+              <input name="meetingUrl" placeholder="Paste Google Meet link" autoComplete="off" className="input bg-white pl-9" />
+            </span>
+          </label>
+          <label className="block">
+            <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-500">Reason (internal, optional)</span>
+            <input name="reason" maxLength={300} placeholder="e.g. Parent wants a different coach" autoComplete="off" className="input bg-white" />
+          </label>
+          <div className="rounded-lg border border-sky-100 bg-sky-50 px-3 py-2 text-xs font-semibold leading-5 text-sky-900">
+            This books and confirms a new demo for the same student: a new demo classroom is created and the family, coach and salesperson are notified.
+            The earlier demo and its assessment stay as they are, and the new coach files their own assessment afterwards.
+          </div>
+          <div className="flex flex-wrap justify-end gap-2 pt-1">
+            <a href="#" className="btn-outline bg-white">Cancel</a>
+            <button className="btn-primary"><Repeat2 size={15} /> Book &amp; Confirm Re-demo</button>
+          </div>
+        </form>
+      </PopupShell>
+    </>
   );
 }
 

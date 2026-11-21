@@ -85,6 +85,13 @@ const BookingSchema = new Schema(
     // back knows what happened last time, since `cancellationReason` is cleared
     // when the booking becomes active again.
     previousCloseReason: String,
+    // Re-demo: a second demo for the same student after the first one was
+    // taught (new coach and/or time). The new booking points back with
+    // `reDemoOf`; the earlier one keeps its assessment and records the link.
+    reDemoOf: { type: Schema.Types.ObjectId, ref: "Booking", index: true },
+    reDemoReason: String,
+    reDemoBooking: { type: Schema.Types.ObjectId, ref: "Booking" },
+    reDemoBookedAt: Date,
     // Archived demos are hidden from the working tabs but never dropped, so
     // conversion reporting and the audit trail stay intact. Restoring is just
     // clearing these fields.

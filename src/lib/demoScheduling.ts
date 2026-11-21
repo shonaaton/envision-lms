@@ -240,6 +240,101 @@ export async function bookDemoForAccount(input: ScheduleInput & { studentId: str
   return confirmed;
 }
 
+/** Demo statuses that mean the class was taught - the only kind a re-demo follows. */
+const DELIVERED_DEMO_STATUSES = ["ASSESSMENT_PENDING", "COMPLETED"];
+
+/**
+ * Book a second demo for a student whose first demo was already taught - a
+ * different coach, a different time, or both. The earlier booking and its
+ * assessment stay exactly as they are (Completed / Assessments), and the new
+ * one is a booking of its own, confirmed straight away like Assign Demo, so the
+ * new coach is asked for their own assessment after it.
+ *
+ * A delivered demo keeps `status: "confirmed"` for life, so the usual "already
+ * has an open demo" check in `bookDemoForAccount` would block every re-demo.
+ * Here only an open demo that has *not* been taught yet blocks.
+ */
+export async function bookReDemo(input: ScheduleInput & { fromBookingId: string; reason?: string }): Promise<DemoScheduleResult> {
+  const { fromBookingId, coachId, start, durationMinutes, actorId } = input;
+  const reason = String(input.reason || "").trim().slice(0, 300);
+  if (!coachId) return { ok: false, error: "Choose a coach for the re-demo." };
+  if (Number.isNaN(start.getTime())) return { ok: false, error: "Choose a valid date and time." };
+  if (start.getTime() < Date.now() - 5 * 60000) return { ok: false, error: "Choose a time in the future for the re-demo." };
+  if (!isValidObjectId(fromBookingId)) return { ok: false, error: "That demo no longer exists." };
+  const meetingUrlError = parseMeetingUrlInput(input.meetingUrl).error;
+  if (meetingUrlError) return { ok: false, error: meetingUrlError };
+  await dbConnect();
+  const previous: any = await Booking.findById(fromBookingId).lean();
+  if (!previous || previous.bookingType !== "demo" || previous.archivedAt) return { ok: false, error: "That demo no longer exists." };
+  if (previous.demoStatus === "CONVERTED") return { ok: false, error: "This student is already converted - a re-demo is for demo accounts only." };
+  const delivered = DELIVERED_DEMO_STATUSES.includes(String(previous.demoStatus || "")) || previous.feedbackStatus === "submitted";
+  if (!delivered) return { ok: false, error: "A re-demo follows a demo that was taught. Use Assign / Confirm Demo to reschedule this one." };
+  const studentId = String(previous.student || "");
+  const student: any = await User.findOne({ _id: studentId, role: "student" }).select("name accountStatus demoLeadDisposition demoExpiresAt parentName city country studentLevel").lean();
+  if (!student || student.accountStatus !== "demo") return { ok: false, error: "This account is no longer a demo account." };
+  if (student.demoLeadDisposition) return { ok: false, error: "Restore or reopen this lead in Demo Center before booking a re-demo." };
+  const pendingDemo = await Booking.findOne({
+    student: studentId,
+    bookingType: "demo",
+    archivedAt: null,
+    status: { $in: ["pending", "confirmed"] },
+    demoStatus: { $nin: [...DELIVERED_DEMO_STATUSES, "CONVERTED", "STUDENT_NO_SHOW", "ABSENT"] },
+    feedbackStatus: { $ne: "submitted" },
+  }).select("_id").lean();
+  if (pendingDemo) return { ok: false, error: `${student.name || "This student"} already has a demo coming up. Change it from its card in Booked / Upcoming.` };
+  const end = new Date(start.getTime() + durationMinutes * 60000);
+  const clash = await coachClash(coachId, start, end);
+  if (clash) return { ok: false, error: clash };
+
+  const previousCoach = String(previous.assignedCoach || previous.instructor || "");
+  const booking: any = await Booking.create({
+    student: studentId,
+    startAt: start,
+    endAt: end,
+    status: "pending",
+    approvalStatus: "pending_admin",
+    bookingType: "demo",
+    demoStatus: "REQUESTED",
+    requestedByDemo: false,
+    requestedTimezone: previous.requestedTimezone || "Asia/Kolkata",
+    requestedLocalDateTime: formatAcademyDateTime(start),
+    requestedIstDateTime: formatAcademyDateTime(start),
+    requestedAt: new Date(),
+    feedbackStatus: "not_required",
+    parentName: previous.parentName || student.parentName,
+    city: previous.city || student.city,
+    country: previous.country || student.country,
+    level: previous.level || student.studentLevel,
+    reDemoOf: previous._id,
+    reDemoReason: reason || undefined,
+    adminNote: `Re-demo after the demo on ${formatAcademyDateTime(previous.startAt)}${reason ? ` - ${reason}` : ""}.`,
+    idempotencyKey: `demo:redemo:${fromBookingId}:${start.toISOString()}`,
+  });
+  await Booking.updateOne({ _id: previous._id }, { reDemoBooking: booking._id, reDemoBookedAt: new Date() });
+  await attributeDemoToLeadOwner(String(booking._id)).catch((error) => console.error("Demo lead owner routing failed", error));
+  // An expired demo account cannot log in to join, so the re-demo carries the
+  // access at least a week past the new class.
+  const accessUntil = new Date(end.getTime() + 7 * 24 * 60 * 60 * 1000);
+  if (!student.demoExpiresAt || new Date(student.demoExpiresAt).getTime() < accessUntil.getTime()) {
+    await User.updateOne({ _id: studentId }, { demoExpiresAt: accessUntil });
+  }
+  await recordActivity({
+    actor: actorId,
+    targetUser: studentId,
+    type: "demo.booking.redemo",
+    label: "Booked a re-demo",
+    entityType: "Booking",
+    entityId: String(booking._id),
+    metadata: { reDemoOf: String(previous._id), previousCoach, coach: coachId, reason, event: "DEMO_REDEMO_BOOKED" },
+  });
+
+  const confirmed = await confirmDemoBooking({ ...input, bookingId: String(booking._id) });
+  if (!confirmed.ok) {
+    return { ok: false, error: `${confirmed.error} The re-demo was saved as a request, so it can still be confirmed from Requested.` };
+  }
+  return confirmed;
+}
+
 /**
  * Who may book a demo for a demo account: demo managers (admins and sub-admins
  * with Demo Center approval) for any lead, and the salesperson the lead is

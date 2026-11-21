@@ -4,7 +4,7 @@ import { dbConnect } from "@/lib/db";
 import { SALES_ACCESS_ROLE_NAME_KEY } from "@/lib/demoNotificationRecipients";
 import { AccessRole } from "@/models/AccessRole";
 import { User } from "@/models/User";
-import type { TaskPool } from "@/lib/tasks/taskRules";
+import { assignableCoachNamePatterns, type TaskPool } from "@/lib/tasks/taskRules";
 
 export type TaskActor = {
   id: string;
@@ -63,8 +63,15 @@ export async function poolMembers(pool: TaskPool): Promise<TaskStaffMember[]> {
 /** People a task can be assigned to by hand, labelled for the picker. */
 export async function manualAssigneeOptions() {
   await dbConnect();
+  const coachNames = assignableCoachNamePatterns();
   const [users, sales] = await Promise.all([
-    User.find({ role: { $in: ["admin", "sub-admin"] }, isActive: { $ne: false } })
+    User.find({
+      isActive: { $ne: false },
+      $or: [
+        { role: { $in: ["admin", "sub-admin"] } },
+        ...(coachNames.length ? [{ role: "instructor", name: { $in: coachNames } }] : []),
+      ],
+    })
       .select("_id name email role accessRole")
       .sort({ name: 1 })
       .lean() as Promise<any[]>,
@@ -74,6 +81,6 @@ export async function manualAssigneeOptions() {
     _id: String(user._id),
     name: user.name || user.email || "Unnamed",
     email: user.email || "",
-    label: user.role === "admin" ? "Admin" : user.accessRole && sales.includes(String(user.accessRole)) ? "Sales" : user.accessRole ? "Staff" : "Sub-admin",
+    label: user.role === "admin" ? "Admin" : user.role === "instructor" ? "Coach" : user.accessRole && sales.includes(String(user.accessRole)) ? "Sales" : user.accessRole ? "Staff" : "Sub-admin",
   }));
 }

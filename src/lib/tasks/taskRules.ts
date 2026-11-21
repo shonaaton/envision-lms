@@ -10,8 +10,31 @@ export type TaskPriority = "low" | "normal" | "high";
 
 export const OPEN_TASK_STATUSES: TaskStatus[] = ["pending", "in_progress"];
 
-/** Portal roles a task can be assigned to by hand. Coaches only receive automatic tasks. */
+/** Portal roles a task can be assigned to by hand. Other coaches only receive automatic tasks. */
 export const MANUAL_ASSIGNEE_ROLES = ["admin", "sub-admin"] as const;
+
+/**
+ * Coaches who can also be handed tasks by hand (user, 2026-11-21: Dhritabrata
+ * Kundu). Matched by first name, case-insensitive; override with a
+ * comma-separated `TASK_ASSIGNABLE_COACH_NAMES`.
+ */
+export function assignableCoachNames(): string[] {
+  const raw = process.env.TASK_ASSIGNABLE_COACH_NAMES ?? "Dhritabrata";
+  return raw.split(",").map((name) => name.trim()).filter(Boolean);
+}
+
+function escapeRegex(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/** Mongo name patterns for the coaches above (an empty list matches nobody). */
+export function assignableCoachNamePatterns(): RegExp[] {
+  return assignableCoachNames().map((name) => new RegExp(`^\\s*${escapeRegex(name)}\\b`, "i"));
+}
+
+export function isAssignableCoachName(name?: string | null) {
+  return Boolean(name) && assignableCoachNamePatterns().some((pattern) => pattern.test(String(name)));
+}
 
 /** Roles allowed to assign tasks by hand. */
 export const MANUAL_ASSIGNER_ROLES = ["admin", "sub-admin"] as const;

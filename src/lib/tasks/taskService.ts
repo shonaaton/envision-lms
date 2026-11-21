@@ -11,6 +11,7 @@ import {
 import { poolsForActor, type TaskActor } from "@/lib/tasks/taskRecipients";
 import {
   MANUAL_ASSIGNEE_ROLES,
+  isAssignableCoachName,
   OPEN_TASK_STATUSES,
   canActOnTask,
   canManageTask,
@@ -220,8 +221,9 @@ async function accessActor(actor: TaskActor) {
 async function assertAssignable(userId: string) {
   const user: any = await User.findById(userId).select("_id name role isActive").lean();
   if (!user || user.isActive === false) throw new TaskError("That person is not an active account.");
-  if (!(MANUAL_ASSIGNEE_ROLES as readonly string[]).includes(user.role)) {
-    throw new TaskError("Tasks can only be assigned to admins, sub-admins and sales staff.");
+  const isNamedCoach = user.role === "instructor" && isAssignableCoachName(user.name);
+  if (!(MANUAL_ASSIGNEE_ROLES as readonly string[]).includes(user.role) && !isNamedCoach) {
+    throw new TaskError("Tasks can only be assigned to admins, sub-admins, sales staff and the named coaches.");
   }
   return user;
 }

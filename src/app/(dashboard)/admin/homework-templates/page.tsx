@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import Link from "next/link";
-import { AlertTriangle, BookOpenCheck, CheckCircle2, Clock3, FileText, Link2Off, Plus, Search } from "lucide-react";
+import { AlertTriangle, BookOpenCheck, CheckCircle2, FileText, Link2Off, Plus, Search } from "lucide-react";
 import { auth } from "@/lib/auth";
 import { canAccessFeature } from "@/lib/featureAccess";
 import { dbConnect } from "@/lib/db";
@@ -8,6 +8,8 @@ import { AssignmentAutomationLog, AssignmentTemplate } from "@/models/Assignment
 import { Course } from "@/models/Course";
 import { ImportHomeworkPgnButton, UploadTemplateButton } from "@/components/homework/AssignmentTemplateActions";
 import TemplateBulkMove, { type MoveCourse, type TemplateRow } from "@/components/homework/TemplateBulkMove";
+import AutomationEventsPanel from "@/components/homework/AutomationEventsPanel";
+import { ACTIONABLE_STATUSES } from "@/lib/homeworkAutomationEvents";
 import "@/models/Batch";
 import "@/models/Classroom";
 import "@/models/Homework";
@@ -19,18 +21,6 @@ export const dynamic = "force-dynamic";
 // the same dropdown as the filed ones - those are exactly the rows a course
 // rename leaves behind.
 const NO_VALUE = "__none__";
-
-function formatDate(value?: string | Date | null) {
-  if (!value) return "-";
-  return new Intl.DateTimeFormat("en-IN", { dateStyle: "medium", timeStyle: "short" }).format(new Date(value));
-}
-
-function badgeClass(status: string) {
-  if (status === "linked" || status === "assigned") return "bg-emerald-50 text-emerald-700";
-  if (status === "needs_review" || status === "ambiguous_template") return "bg-amber-50 text-amber-700";
-  if (status.includes("missing") || status.includes("skipped") || status === "unlinked") return "bg-rose-50 text-rose-700";
-  return "bg-slate-100 text-slate-700";
-}
 
 function activitySummary(template: any) {
   const activities = template.activities || [];
@@ -137,7 +127,7 @@ export default async function HomeworkTemplatesPage({ searchParams }: { searchPa
   // the levels instead of listing every level in the academy.
   const levelScopeFilter = templateFilter({ q: "", course, level: "", courseIds });
 
-  const [templates, totalTemplates, allActiveTemplates, courseNamesInUse, levelNamesInScope, logs] = await Promise.all([
+  const [templates, totalTemplates, allActiveTemplates, courseNamesInUse, levelNamesInScope, openEventCount] = await Promise.all([
     AssignmentTemplate.find(filter)
       .populate("course", "name")
       .populate("defaultBatches", "name")
@@ -149,15 +139,8 @@ export default async function HomeworkTemplatesPage({ searchParams }: { searchPa
     AssignmentTemplate.find({ isActive: { $ne: false } }, { isActive: 1, linkStatus: 1 }).lean(),
     AssignmentTemplate.distinct("courseName", { isActive: { $ne: false } }),
     AssignmentTemplate.distinct("levelName", levelScopeFilter),
-    // "already assigned" rows were the second trigger of the same class
-    // echoing an "assigned" row, so they are left out of the feed.
-    AssignmentAutomationLog.find({ status: { $ne: "already_assigned" } })
-      .populate("classroom", "title")
-      .populate("sourceTemplate", "title")
-      .populate("homework", "title")
-      .sort({ createdAt: -1 })
-      .limit(25)
-      .lean(),
+    // Classes the automation left without homework that nobody has fixed or cleared yet.
+    AssignmentAutomationLog.countDocuments({ status: { $in: [...ACTIONABLE_STATUSES] }, resolvedAt: null, clearedAt: null }),
   ]);
 
   const selectedCourseDocs = courseIds.length ? allCourses.filter((item: any) => courseIds.includes(String(item._id))) : allCourses;
@@ -194,7 +177,6 @@ export default async function HomeworkTemplatesPage({ searchParams }: { searchPa
   const activeCount = allActiveTemplates.filter((template: any) => template.isActive).length;
   const linkedCount = allActiveTemplates.filter((template: any) => template.linkStatus === "linked").length;
   const reviewCount = allActiveTemplates.filter((template: any) => template.linkStatus !== "linked").length;
-  const missingCount = logs.filter((log: any) => ["missing_template", "ambiguous_template"].includes(log.status)).length;
   const totalPages = Math.max(1, Math.ceil(totalTemplates / pageSize));
   const hasFilters = Boolean(q || course || level);
 
@@ -217,7 +199,7 @@ export default async function HomeworkTemplatesPage({ searchParams }: { searchPa
         <StatCard label="Active Templates" value={activeCount} icon={<BookOpenCheck size={18} />} />
         <StatCard label="Linked" value={linkedCount} icon={<CheckCircle2 size={18} />} />
         <StatCard label="Needs Review" value={reviewCount} icon={<AlertTriangle size={18} />} />
-        <StatCard label="Recent Missing" value={missingCount} icon={<Link2Off size={18} />} />
+        <StatCard label="Needs Homework" value={openEventCount} icon={<Link2Off size={18} />} />
       </section>
 
       <section className="mb-5 rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
@@ -260,25 +242,7 @@ export default async function HomeworkTemplatesPage({ searchParams }: { searchPa
         </div>
       </section>
 
-      <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
-        <div className="mb-4 flex items-center gap-2">
-          <Clock3 size={18} className="text-brand" />
-          <h2 className="text-lg font-black text-slate-950">Recent Automation Events</h2>
-        </div>
-        <div className="space-y-2">
-          {logs.map((log: any) => (
-            <div key={String(log._id)} className="grid gap-3 rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm md:grid-cols-[180px_1fr_160px] md:items-center">
-              <span className={`w-fit rounded-full px-2.5 py-1 text-xs font-bold ${badgeClass(log.status)}`}>{String(log.status).replaceAll("_", " ")}</span>
-              <div>
-                <div className="font-semibold text-slate-950">{log.message || log.topicName || "Automation event"}</div>
-                <div className="text-xs text-slate-500">{log.classroom?.title || "Classroom"} - {log.sourceTemplate?.title || "No template"} - {log.homework?.title || "No homework"}</div>
-              </div>
-              <div className="text-xs text-slate-500">{formatDate(log.createdAt)}</div>
-            </div>
-          ))}
-          {!logs.length && <div className="rounded-lg border border-dashed border-slate-200 p-5 text-center text-sm text-slate-500">No automation events yet.</div>}
-        </div>
-      </section>
+      <AutomationEventsPanel />
     </div>
   );
 }

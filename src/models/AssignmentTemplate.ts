@@ -79,6 +79,16 @@ const AssignmentAutomationLogSchema = new Schema(
     message: String,
     dueAt: Date,
     metadata: Schema.Types.Mixed,
+    // Cleared is a soft hide from the events panel. The row has to stay, because
+    // recordAutomationEvent upserts on it - deleting it would let the next
+    // trigger for the same class insert a fresh row and email the admin again.
+    clearedAt: { type: Date, index: true },
+    clearedBy: { type: Schema.Types.ObjectId, ref: "User" },
+    // Set when someone assigns homework for this class from the events panel.
+    resolvedAt: Date,
+    resolvedBy: { type: Schema.Types.ObjectId, ref: "User" },
+    resolvedHomework: { type: Schema.Types.ObjectId, ref: "Homework" },
+    resolvedTemplate: { type: Schema.Types.ObjectId, ref: "AssignmentTemplate" },
   },
   { timestamps: true }
 );

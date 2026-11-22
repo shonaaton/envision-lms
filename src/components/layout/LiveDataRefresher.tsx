@@ -28,6 +28,9 @@ const quietMutationPatterns = [
   /^\/api\/leave(\/|$)/,
   // Class Monitor reloads its own list; a refresh would close the open form.
   /^\/api\/class-monitor(\/|$)/,
+  // The homework automation events panel reloads its own list; a refresh
+  // would drop its selection, loaded pages and the open assign dialog.
+  /^\/api\/admin\/assignment-templates\/automation-events(\/|$)/,
   // The Retention Center reloads its own lists; a refresh would wipe the call
   // form's "saved" view and close the question editor and the flag drawer.
   /^\/api\/admin\/retention(\/|$)/,

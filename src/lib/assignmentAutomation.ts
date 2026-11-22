@@ -65,7 +65,7 @@ function sameLevelName(templateLevel: any, classroomLevel: any) {
   return Boolean(templateNumber && classroomNumber && templateNumber === classroomNumber);
 }
 
-function scheduledSessionsFor(classroom: any) {
+export function scheduledSessionsFor(classroom: any) {
   if (Array.isArray(classroom?.generatedSessions) && classroom.generatedSessions.length) return classroom.generatedSessions;
   if (!classroom?.classDate) return [];
   return [
@@ -89,7 +89,7 @@ function findSession(classroom: any, scheduledSessionId: string) {
 // Session topics come from the course planner, template topics from PGN file
 // names or a hand-typed name, so "&" against "and" or a stray "the" must not
 // decide whether homework goes out.
-function looseTopicKey(value?: string | null) {
+export function looseTopicKey(value?: string | null) {
   return normalizeTopicKey(String(value || "").replace(/&/g, " and "))
     .split(" ")
     .filter((word) => word && word !== "and" && word !== "the")
@@ -291,7 +291,7 @@ function nextSessionStart(classroom: any, currentSession: any) {
     .sort((a: any, b: any) => a.start.getTime() - b.start.getTime())[0]?.start || null;
 }
 
-function dueAtFor(template: any, classroom: any, currentSession: any, endedAt?: Date) {
+export function dueAtFor(template: any, classroom: any, currentSession: any, endedAt?: Date) {
   const policy = template.duePolicy || {};
   if (policy.type === "days_after_class") {
     const base = endedAt || getSessionStart(currentSession) || new Date();

@@ -192,9 +192,27 @@ export function TournamentPlayClient({
     void refresh();
   }, [refresh]);
 
+  /* Event-driven reloads, merged. A new round sends "pairing created" and
+     "round started" back to back, to every player at once: two full reloads
+     each, all in the same second, was the worst burst a live event put on the
+     database. Events now ask for one reload, a moment later and spread a
+     little per player; anything else asking meanwhile rides along. */
+  const scheduledRefreshRef = useRef<number | null>(null);
+  const scheduleRefresh = useCallback(
+    (spreadMs = 0) => {
+      if (scheduledRefreshRef.current !== null) return;
+      scheduledRefreshRef.current = window.setTimeout(() => {
+        scheduledRefreshRef.current = null;
+        void refresh();
+      }, 120 + Math.round(Math.random() * spreadMs));
+    },
+    [refresh]
+  );
+
   useEffect(
     () => () => {
       if (retryTimerRef.current !== null) window.clearTimeout(retryTimerRef.current);
+      if (scheduledRefreshRef.current !== null) window.clearTimeout(scheduledRefreshRef.current);
     },
     []
   );
@@ -301,7 +319,7 @@ export function TournamentPlayClient({
           return;
         }
         setPremove(null);
-        void refresh();
+        scheduleRefresh();
       },
       /* A pairing pass in a large arena opens dozens of boards at once. Only
          the board that is mine is worth a refetch; the rest top up the live
@@ -309,15 +327,16 @@ export function TournamentPlayClient({
       onPairingCreated: (payload: any) => {
         const pairings = payload?.pairings || [];
         if (findMyPairing(pairings, myPlayerKeyRef.current)) {
-          void refresh();
+          scheduleRefresh(300);
           return;
         }
         setState((current) => (current ? { ...current, liveGames: mergeLiveGames(current.liveGames || [], pairings) } : current));
       },
-      onRoundStarted: () => void refresh(),
-      onRoundCompleted: () => void refresh(),
-      onTournamentStatus: () => void refresh(),
-      onTournamentEnded: () => void refresh(),
+      // Sent to the whole room at once, so spread out further.
+      onRoundStarted: () => scheduleRefresh(800),
+      onRoundCompleted: () => scheduleRefresh(1500),
+      onTournamentStatus: () => scheduleRefresh(800),
+      onTournamentEnded: () => scheduleRefresh(1500),
       onStandings: (payload: any) => {
         setState((current) =>
           current
@@ -330,7 +349,7 @@ export function TournamentPlayClient({
       },
       onResync: () => void refresh(),
     }),
-    [refresh]
+    [refresh, scheduleRefresh]
   );
 
   const { connected } = useTournamentSocket({ tournamentId, gameId, handlers });
@@ -370,7 +389,11 @@ export function TournamentPlayClient({
           (next.gamePly !== last.gamePly && next.gameId)) {
         void refresh();
       }
-    }, gameIsActive && !connected ? 4_000 : 7_000 + Math.round(Math.random() * 2_000));
+      /* With the socket up, every change arrives as an event and this poll is
+         only a safety net, so it runs every 20-25 s; 50 players polling every
+         7-9 s was a steady third of a live event's database load. Without the
+         socket it is the board's lifeline and stays fast. */
+    }, connected ? 20_000 + Math.round(Math.random() * 5_000) : gameIsActive ? 4_000 : 7_000 + Math.round(Math.random() * 2_000));
     const onVisibility = () => {
       if (document.visibilityState === "visible") void refresh();
     };

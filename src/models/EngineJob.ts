@@ -74,6 +74,7 @@ const EngineJobSchema = new Schema(
       nodes: Number,
       moveTime: Number,
       skillLevel: Number,
+      fishnetLevel: Number,
     },
     workerId: { type: String, index: true },
     workerName: String,

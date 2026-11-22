@@ -80,6 +80,7 @@ export type EngineSettings = {
   nodes?: number;
   moveTime?: number;
   skillLevel?: number;
+  fishnetLevel?: number;
 };
 
 export type EngineWorkerSnapshot = {

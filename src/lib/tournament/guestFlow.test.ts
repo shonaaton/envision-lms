@@ -200,7 +200,11 @@ describe.each(["swiss", "arena"])("%s guest games", (type) => {
     expect(board).toMatchObject({ source: type, status: "active", ply: 0, turn: "w" });
     expect(new Set([board.whiteKey, board.blackKey])).toEqual(new Set(["external:guestone", "external:guesttwo"]));
     const game = await mocks.createGame.mock.results[0].value;
-    mocks.updateGame.mockImplementation(async (_, update) => ({ ...game, ...update.$set }));
+    // A query, like mongoose's: the move write is read back with .lean().
+    mocks.updateGame.mockImplementation((_, update) => {
+      const result = Promise.resolve({ ...game, ...update.$set });
+      return Object.assign(result, { lean: () => result });
+    });
 
     const played = await applyGameMove(game, { from: "e2", to: "e4" }, { expectedPly: 0 });
     expect(played).toMatchObject({ status: "active", turn: "b", ply: 1, moveHistorySAN: ["e4"] });

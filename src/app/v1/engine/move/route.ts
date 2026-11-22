@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { ENGINE_LEVELS } from "@/lib/engine/config";
-import { buildCacheKey, buildDedupeKey, buildPositionHash, createEngineJob } from "@/lib/engine/service";
+import { buildDedupeKey, buildPositionHash, createEngineJob } from "@/lib/engine/service";
 import { engineMoveRequestSchema, validateFen } from "@/lib/engine/validation";
 
 export const dynamic = "force-dynamic";
@@ -43,9 +43,11 @@ export async function POST(req: Request) {
     moveTime: clockMoveTime,
     depth: Math.max(1, level.depth - depthPenalty),
     skillLevel: level.skillLevel,
+    fishnetLevel: level.fishnetLevel,
   };
   const positionHash = buildPositionHash(fenValidation.normalizedFen);
-  const cacheKey = buildCacheKey({ fen: fenValidation.normalizedFen, engine, workType: "move" });
+  // No cache for bot moves: a weakened engine should not replay the same move every time a
+  // position comes up, or students see identical games. (Analysis results are still cached.)
   const dedupeKey = buildDedupeKey({
     type: parsed.data.source === "TOURNAMENT_TEST" ? "TOURNAMENT_BOT_MOVE" : "COMPUTER_MOVE",
     source: parsed.data.source,
@@ -67,7 +69,6 @@ export async function POST(req: Request) {
       tournamentId: parsed.data.tournamentId,
       positionHash,
       dedupeKey,
-      cacheKey,
       clock: parsed.data.clock,
       level: parsed.data.level,
     },

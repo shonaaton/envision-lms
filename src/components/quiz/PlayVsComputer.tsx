@@ -68,6 +68,7 @@ type LevelPreset = BotPreset & {
 };
 
 const MAX_ENGINE_LEVEL = 9;
+const SERVER_ENGINE_MIN_LEVEL = 6;
 
 const levelPresets: LevelPreset[] = [
   { level: 1, id: "sprout", name: "Sprout", subtitle: "First-game friendly", elo: 50, depth: 1, moveTimeMs: 120, blunderChance: 0.72 },
@@ -584,7 +585,8 @@ export default function PlayVsComputer({ depth = 8 }: { depth?: number }) {
       if (bookTimeout !== null) window.clearTimeout(bookTimeout);
     }
 
-    const requestServerEngineMove = async (maxAttempts = 12, delayMs = 250) => {
+    const requestStartedAt = Date.now();
+    const requestServerEngineMove = async (maxAttempts = 12, delayMs = 250, minPauseMs = 0) => {
       const response = await fetch(level >= 9 ? "/v1/engine/analyse" : "/v1/engine/move", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -592,7 +594,8 @@ export default function PlayVsComputer({ depth = 8 }: { depth?: number }) {
           level >= 9
             ? {
                 fen: gameRef.current.fen(),
-                depth: engineTiming.depth,
+                // Full strength: the node budget (sized to the think time) is the only limit.
+                depth: 24,
                 nodes: engineNodesForTiming(engineTiming.moveTimeMs, level),
                 multiPv: 1,
                 source: "ANALYSIS_BOARD",
@@ -624,6 +627,11 @@ export default function PlayVsComputer({ depth = 8 }: { depth?: number }) {
 
       const uci = String(result?.bestMove || result?.lines?.[0]?.pv?.[0] || "").trim();
       const isLegalEngineMove = legalMoves.some((move) => `${move.from}${move.to}${move.promotion || ""}` === uci);
+      if (uci && isLegalEngineMove) {
+        // The server answers in a few hundred ms; a short pause keeps the bot from feeling robotic.
+        const remainingPauseMs = minPauseMs - (Date.now() - requestStartedAt);
+        if (remainingPauseMs > 0) await new Promise((resolve) => window.setTimeout(resolve, remainingPauseMs));
+      }
       if (uci && isLegalEngineMove && statusRef.current === "playing") {
         commitTurnClockRef.current();
         gameRef.current.move({ from: uci.slice(0, 2), to: uci.slice(2, 4), promotion: uci[4] || "q" });
@@ -636,9 +644,14 @@ export default function PlayVsComputer({ depth = 8 }: { depth?: number }) {
       return false;
     };
 
-    if (level >= 9) {
+    // Levels 6-9 play on the server's Stockfish (current NNUE build, 2 cores). The browser's
+    // 2019 single-thread engine is only a fallback for them, and still plays levels 1-5.
+    if (level >= SERVER_ENGINE_MIN_LEVEL) {
       try {
-        if (await requestServerEngineMove(18, 250)) return;
+        // Wait for the think time plus pickup/network slack before falling back to the browser engine.
+        const slackMs = level >= 9 ? 4_000 : 3_000;
+        const minPauseMs = level >= 9 ? 0 : Math.min(engineTiming.moveTimeMs, 900);
+        if (await requestServerEngineMove(Math.ceil((engineTiming.moveTimeMs + slackMs) / 250), 250, minPauseMs)) return;
       } catch {
         // Fall through to the local worker when the server engine is unavailable.
       }

@@ -2,10 +2,10 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { dbConnect } from "@/lib/db";
 import { TournamentGame } from "@/models/TournamentGame";
-import { Tournament } from "@/models/Tournament";
 import { cookies } from "next/headers";
 import { getTournamentGuestUsername, isTournamentGuestRequest } from "@/lib/tournamentGuests";
-import { inactiveStudentMessage, isCurrentStudent } from "@/lib/studentAccess";
+import { inactiveStudentMessage } from "@/lib/studentAccess";
+import { sessionStudentIsActive, tournamentInviteToken } from "@/lib/tournament/hotPath";
 import { consumeTournamentRate, rateIdentity, rateLimitedResponse } from "@/lib/tournamentRateLimit";
 
 /**
@@ -38,16 +38,17 @@ export async function POST(req: Request, { params }: { params: { gameId: string 
   const session = isTournamentGuestRequest(req) ? null : await auth();
   await dbConnect();
 
-  const game: any = await TournamentGame.findById(params.gameId).select(
-    "tournament source whiteUser blackUser whiteExternalUsername blackExternalUsername status turn ply moveHistorySAN firstMoveDeadlineAt startedAt createdAt lastMoveAt whiteActiveTabId blackActiveTabId whiteActiveTabAt blackActiveTabAt"
-  );
+  // Sent by every player every 10 seconds: only the seat and tab fields.
+  const game: any = await TournamentGame.findById(params.gameId)
+    .select("tournament whiteUser blackUser whiteExternalUsername blackExternalUsername whiteActiveTabId blackActiveTabId whiteActiveTabAt blackActiveTabAt")
+    .lean();
   if (!game) return NextResponse.json({ error: "Game not found" }, { status: 404 });
 
-  const tournament: any = await Tournament.findById(game.tournament).select("externalInvite").lean();
-  if (!tournament) return NextResponse.json({ error: "Tournament not found" }, { status: 404 });
+  const tournament = await tournamentInviteToken(String(game.tournament));
+  if (!tournament.exists) return NextResponse.json({ error: "Tournament not found" }, { status: 404 });
 
   const cookieStore = await cookies();
-  const guestUsername = tournament.externalInvite?.token ? getTournamentGuestUsername(cookieStore, tournament.externalInvite.token) : "";
+  const guestUsername = tournament.token ? getTournamentGuestUsername(cookieStore, tournament.token) : "";
   const normalizedGuest = guestUsername.toLowerCase();
   const userId = session ? String((session.user as any).id) : "";
   const role = session ? (session.user as any).role : "";
@@ -55,7 +56,7 @@ export async function POST(req: Request, { params }: { params: { gameId: string 
   const limit = consumeTournamentRate("presence", rateIdentity({ userId, guestUsername, request: req }));
   if (!limit.allowed) return rateLimitedResponse(limit.retryAfterMs);
 
-  if (role === "student" && !(await isCurrentStudent(userId))) {
+  if (role === "student" && !sessionStudentIsActive(session)) {
     return NextResponse.json({ error: inactiveStudentMessage }, { status: 403 });
   }
 

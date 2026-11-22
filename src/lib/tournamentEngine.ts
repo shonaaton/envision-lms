@@ -44,6 +44,7 @@ import {
 import { pairSwissRound, swissHistoriesFromGames, type SwissPlayer } from "@/lib/tournament/swiss";
 import { noShowOutcome } from "@/lib/tournament/firstMove";
 import { presentPlayerKeys } from "@/lib/tournament/presence";
+import { forgetTournamentHotPath } from "@/lib/tournament/hotPath";
 import {
   emitGameEnded,
   emitGameMove,
@@ -456,7 +457,9 @@ function notifyGameReady(tournament: TournamentLike, game: TournamentGameLike) {
 export async function applyGameMove(
   game: TournamentGameLike,
   move: { from: string; to: string; promotion?: string },
-  options: { expectedPly?: number } = {}
+  // `alsoSet`/`alsoUnset` ride along in the same write (the move route's tab
+  // and online markers), so a move costs one database round trip, not three.
+  options: { expectedPly?: number; alsoSet?: Record<string, any>; alsoUnset?: Record<string, any> } = {}
 ) {
   const currentPly = Number(game.ply ?? (game.moveHistorySAN || []).length ?? 0);
   if (options.expectedPly !== undefined && Number(options.expectedPly) !== currentPly) {
@@ -515,30 +518,34 @@ export async function applyGameMove(
     update.endedAt = new Date(now);
   }
 
-  const updated: any = await TournamentGame.findOneAndUpdate(
-    moveGuard(game._id, game.turn, currentPly),
-    { $set: update, $unset: unset },
-    { new: true }
-  );
-  if (!updated) throw new MoveConflictError("That move was already played.");
-
   // PGN is rebuilt from the full history, so it is a complete, importable game
   // rather than the single-move fragment the FEN-only engine used to produce.
+  // Built before the write so it goes out in the same update as the move.
   try {
     // Stored without tournament metadata; the export routes add the full
     // header block, where the tournament is actually in hand.
-    updated.pgn = buildPgn(updated.moveHistorySAN, {
-      round: updated.roundNumber || "-",
-      white: updated.whiteName,
-      black: updated.blackName,
-      result: updated.result || "*",
-      startFen: updated.startFen || null,
-      date: updated.startedAt,
+    update.pgn = buildPgn(update.moveHistorySAN, {
+      round: game.roundNumber || "-",
+      white: game.whiteName,
+      black: game.blackName,
+      result: update.result || game.result || "*",
+      startFen: game.startFen || null,
+      date: game.startedAt,
     });
-    await TournamentGame.updateOne({ _id: updated._id }, { $set: { pgn: updated.pgn } });
   } catch {
     // A malformed PGN must never block a legal move.
   }
+
+  for (const [field, value] of Object.entries(options.alsoSet || {})) if (!(field in update)) update[field] = value;
+  for (const field of Object.keys(options.alsoUnset || {})) if (!(field in update)) unset[field] = 1;
+
+  // The stored PGN is not sent back: nothing on the board reads it.
+  const updated: any = await TournamentGame.findOneAndUpdate(
+    moveGuard(game._id, game.turn, currentPly),
+    { $set: update, $unset: unset },
+    { new: true, projection: { pgn: 0 } }
+  ).lean();
+  if (!updated) throw new MoveConflictError("That move was already played.");
 
   emitGameMove({
     gameId: String(updated._id),
@@ -873,23 +880,24 @@ export async function syncArenaPairings(tournamentId: string) {
     let tableNumber = games.length + 1;
     let created = 0;
 
-    const announce: PairingCreatedEvent[] = [];
-    const openedGames: TournamentGameLike[] = [];
-    for (const pair of pairs) {
-      if (!pair.white || !pair.black) continue;
-      const game = await createGame(tournament, {
-        source: "arena",
-        roundNumber: 0,
-        tableNumber,
-        white: pair.white,
-        black: pair.black,
-        announce,
-      });
-      openedGames.push(game);
-      tableNumber += 1;
-      created += 1;
-    }
+    // Every board in the pass is inserted at once: one after another, a big
+    // pass cost a database round trip per board before anyone saw a pairing.
+    const seats = pairs
+      .filter((pair) => pair.white && pair.black)
+      .map((pair) => ({ pair, tableNumber: tableNumber++ }));
+    const opened = await Promise.all(
+      seats.map(({ pair, tableNumber: table }) => {
+        const own: PairingCreatedEvent[] = [];
+        return createGame(tournament, { source: "arena", roundNumber: 0, tableNumber: table, white: pair.white, black: pair.black, announce: own }).then(
+          (game) => ({ game, own })
+        );
+      })
+    );
+    const announce: PairingCreatedEvent[] = opened.flatMap((entry) => entry.own);
+    const openedGames: TournamentGameLike[] = opened.map((entry) => entry.game);
+    created = openedGames.length;
 
+    forgetTournamentHotPath(id);
     emitPairingsCreated(id, announce);
     for (const game of openedGames) notifyGameReady(tournament, game);
     if (created) await tournament.save();
@@ -1030,18 +1038,30 @@ export async function generateSwissRound(tournamentId: string, options: { force?
       tableNumber += 1;
     }
 
-    for (const pair of result.pairs) {
-      const white = standingByKey.get(pair.white.playerKey);
-      const black = standingByKey.get(pair.black.playerKey);
-      const game = await createGame(tournament, {
-        source: "swiss",
-        roundNumber,
-        tableNumber,
-        white,
-        black,
-        announce,
-      });
-      createdIds.push(game._id);
+    // All boards of the round are inserted at once (one round trip, not one per
+    // board); the pairing list keeps board order.
+    const firstTable = tableNumber;
+    const settled = await Promise.allSettled(
+      result.pairs.map((pair, index) => {
+        const own: PairingCreatedEvent[] = [];
+        return createGame(tournament, {
+          source: "swiss",
+          roundNumber,
+          tableNumber: firstTable + index,
+          white: standingByKey.get(pair.white.playerKey),
+          black: standingByKey.get(pair.black.playerKey),
+          announce: own,
+        }).then((game) => ({ game, own }));
+      })
+    );
+    for (const entry of settled) if (entry.status === "fulfilled") createdIds.push(entry.value.game._id);
+    const failed = settled.find((entry) => entry.status === "rejected") as PromiseRejectedResult | undefined;
+    if (failed) throw failed.reason;
+    const createdBoards = settled.map((entry) => (entry as PromiseFulfilledResult<{ game: any; own: PairingCreatedEvent[] }>).value);
+
+    for (const [index, pair] of result.pairs.entries()) {
+      const { game, own } = createdBoards[index];
+      announce.push(...own);
       openedGames.push(game);
       pairings.push({
         gameId: game._id,
@@ -1074,6 +1094,7 @@ export async function generateSwissRound(tournamentId: string, options: { force?
       await TournamentGame.deleteMany({ _id: { $in: createdIds } });
       return { created: false, roundNumber: expectedCurrentRound, skipped: "locked" as const };
     }
+    forgetTournamentHotPath(id);
     emitPairingsCreated(id, announce);
     emitRoundStarted(id, roundNumber);
     for (const game of openedGames) notifyGameReady(tournament, game);

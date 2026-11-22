@@ -11,5 +11,6 @@ export async function POST(req: Request, { params }: { params: { workId: string 
   await touchJobLease(params.workId, worker.workerId);
   const result = await completeEngineJob(params.workId, worker.workerId, payload);
   if (!result.ok) return NextResponse.json({ error: result.error }, { status: result.status });
-  return NextResponse.json({ ok: true, jobId: params.workId });
+  // fishnet treats a 200/202 body as new work to decode; 204 means "done, nothing else".
+  return new NextResponse(null, { status: 204 });
 }

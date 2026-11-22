@@ -2,13 +2,13 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { dbConnect } from "@/lib/db";
 import { TournamentGame } from "@/models/TournamentGame";
-import { Tournament } from "@/models/Tournament";
 import { applyGameMove, IllegalMoveError, MoveConflictError } from "@/lib/tournamentEngine";
-import { onGameCompleted } from "@/lib/tournamentLifecycle";
+import { queueGameCompleted } from "@/lib/tournamentLifecycle";
 import { recordActivity } from "@/lib/activity";
 import { cookies } from "next/headers";
 import { getTournamentGuestUsername, isTournamentGuestRequest } from "@/lib/tournamentGuests";
-import { inactiveStudentMessage, isCurrentStudent } from "@/lib/studentAccess";
+import { inactiveStudentMessage } from "@/lib/studentAccess";
+import { sessionStudentIsActive, tournamentInviteToken } from "@/lib/tournament/hotPath";
 import { consumeTournamentRate, rateIdentity, rateLimitedResponse } from "@/lib/tournamentRateLimit";
 import { awardTournamentGameRewards } from "@/lib/tournamentRewards";
 
@@ -41,33 +41,29 @@ function refused(game: any, reason: string, body: Record<string, any>, status: n
   return NextResponse.json(body, { status });
 }
 
-async function markActionTab(game: any, playerKey: string, tabId: string) {
-  if (!tabId) return;
-  const isWhite = game.whiteKey === playerKey;
-  await TournamentGame.updateOne(
-    { _id: game._id },
-    {
-      $set: isWhite
-        ? { whiteActiveTabId: tabId, whiteActiveTabAt: new Date(), whiteOnlineAt: new Date() }
-        : { blackActiveTabId: tabId, blackActiveTabAt: new Date(), blackOnlineAt: new Date() },
-      $unset: isWhite ? { whiteDisconnectedAt: 1 } : { blackDisconnectedAt: 1 },
-    }
-  );
+/** The mover's tab and online markers, written in the same update as the move. */
+function actionTabFields(game: any, playerKey: string, tabId: string) {
+  if (!tabId) return { set: {}, unset: {} };
+  const now = new Date();
+  return game.whiteKey === playerKey
+    ? { set: { whiteActiveTabId: tabId, whiteActiveTabAt: now, whiteOnlineAt: now }, unset: { whiteDisconnectedAt: 1 } }
+    : { set: { blackActiveTabId: tabId, blackActiveTabAt: now, blackOnlineAt: now }, unset: { blackDisconnectedAt: 1 } };
 }
 
 export async function POST(req: Request, { params }: { params: { gameId: string } }) {
   const session = isTournamentGuestRequest(req) ? null : await auth();
   await dbConnect();
 
-  const game: any = await TournamentGame.findById(params.gameId);
+  // Everything but the stored PGN, which the move rebuilds anyway.
+  const game: any = await TournamentGame.findById(params.gameId).select("-pgn").lean();
   if (!game) return NextResponse.json({ error: "Game not found" }, { status: 404 });
   if (game.status !== "active") return NextResponse.json({ error: "This game is no longer active." }, { status: 400 });
 
-  const tournament: any = await Tournament.findById(game.tournament).select("name externalInvite type status").lean();
-  if (!tournament) return NextResponse.json({ error: "Tournament not found" }, { status: 404 });
+  const tournament = await tournamentInviteToken(String(game.tournament));
+  if (!tournament.exists) return NextResponse.json({ error: "Tournament not found" }, { status: 404 });
 
   const cookieStore = await cookies();
-  const guestUsername = tournament.externalInvite?.token ? getTournamentGuestUsername(cookieStore, tournament.externalInvite.token) : "";
+  const guestUsername = tournament.token ? getTournamentGuestUsername(cookieStore, tournament.token) : "";
   const normalizedGuest = guestUsername.toLowerCase();
   const isGuestWhite = Boolean(normalizedGuest) && String(game.whiteExternalUsername || "").toLowerCase() === normalizedGuest;
   const isGuestBlack = Boolean(normalizedGuest) && String(game.blackExternalUsername || "").toLowerCase() === normalizedGuest;
@@ -79,7 +75,7 @@ export async function POST(req: Request, { params }: { params: { gameId: string 
   const limit = consumeTournamentRate("move", rateIdentity({ userId, guestUsername, request: req }));
   if (!limit.allowed) return rateLimitedResponse(limit.retryAfterMs);
 
-  if (role === "student" && !(await isCurrentStudent(userId))) {
+  if (role === "student" && !sessionStudentIsActive(session)) {
     return refused(game, "inactive_student", { error: inactiveStudentMessage }, 403, userId);
   }
 
@@ -104,11 +100,12 @@ export async function POST(req: Request, { params }: { params: { gameId: string 
   }
 
   let updated: any;
+  const tab = actionTabFields(game, actorPlayerKey, tabId);
   try {
     updated = await applyGameMove(
       game,
       { from: String(body.from || ""), to: String(body.to || ""), promotion: String(body.promotion || "q") },
-      { expectedPly: body.expectedPly === undefined ? undefined : Number(body.expectedPly) }
+      { expectedPly: body.expectedPly === undefined ? undefined : Number(body.expectedPly), alsoSet: tab.set, alsoUnset: tab.unset }
     );
   } catch (error: any) {
     if (error instanceof MoveConflictError) {
@@ -121,33 +118,37 @@ export async function POST(req: Request, { params }: { params: { gameId: string 
     return refused(game, "error", { error: error?.message || "Could not register move" }, 400, actorPlayerKey);
   }
 
-  await markActionTab(updated, actorPlayerKey, tabId);
-
+  // The move is saved and already pushed to both boards. Everything below is
+  // follow-up work the mover must not wait for: rewards, and — only when this
+  // move ended the game — standings, ratings and the next pairing, queued per
+  // tournament (lib/tournamentLifecycle.ts).
   if (updated.status === "completed") {
-    await awardTournamentGameRewards(updated);
-    await onGameCompleted(String(updated.tournament), String(updated._id));
+    void awardTournamentGameRewards(updated).catch((error) => console.error("[tournament] rewards failed", error));
+    queueGameCompleted(String(updated.tournament), String(updated._id));
+    // Ordinary moves are not logged one by one any more: every move is already
+    // in the game's own move list, and a log row per move was the single
+    // largest write load of a live event. The game's end is still recorded.
+    void recordActivity({
+      actor: userId || undefined,
+      targetUser: userId || undefined,
+      type: "tournament.game.completed_by_move",
+      label: "Completed tournament game by move",
+      entityType: "TournamentGame",
+      entityId: String(updated._id),
+      metadata: {
+        tournament: String(updated.tournament),
+        round: updated.roundNumber,
+        ply: updated.ply,
+        from: body.from,
+        to: body.to,
+        promotion: body.promotion || "",
+        status: updated.status,
+        result: updated.result,
+        actorSide: playsWhite ? "white" : "black",
+        source: userId ? "student_tournament" : "guest_tournament",
+      },
+    }).catch(() => undefined);
   }
-
-  await recordActivity({
-    actor: userId || undefined,
-    targetUser: userId || undefined,
-    type: updated.status === "completed" ? "tournament.game.completed_by_move" : "tournament.game.move_played",
-    label: updated.status === "completed" ? "Completed tournament game by move" : "Played tournament game move",
-    entityType: "TournamentGame",
-    entityId: String(updated._id),
-    metadata: {
-      tournament: String(updated.tournament),
-      round: updated.roundNumber,
-      ply: updated.ply,
-      from: body.from,
-      to: body.to,
-      promotion: body.promotion || "",
-      status: updated.status,
-      result: updated.result,
-      actorSide: playsWhite ? "white" : "black",
-      source: userId ? "student_tournament" : "guest_tournament",
-    },
-  });
 
   return NextResponse.json({ ok: true, game: updated });
 }

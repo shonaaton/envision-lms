@@ -1,9 +1,10 @@
 import { randomUUID } from "crypto";
+import { EventEmitter } from "events";
 import { Chess } from "chess.js";
 import { EngineJob } from "@/models/EngineJob";
 import { EngineWorker } from "@/models/EngineWorker";
 import { dbConnect } from "@/lib/db";
-import { ENGINE_CACHE_TTL_MS, ENGINE_LEASE_TTL_MS, ENGINE_MAX_ATTEMPTS, ENGINE_QUEUE_NAMES, ENGINE_WORKER_STALE_MS } from "@/lib/engine/config";
+import { ENGINE_CACHE_TTL_MS, ENGINE_LEVELS, ENGINE_LEASE_TTL_MS, ENGINE_MAX_ATTEMPTS, ENGINE_QUEUE_NAMES, ENGINE_WORKER_STALE_MS } from "@/lib/engine/config";
 import { sha256 } from "@/lib/engine/hash";
 import { claimEngineLease, dequeueEngineJob, enqueueEngineJob, getEngineRedisStatus, isRedisConfigured, readEngineCache, releaseEngineLease, removeEngineJobFromQueues, renewEngineLease, writeEngineCache } from "@/lib/engine/redis";
 import type {
@@ -25,6 +26,7 @@ type QueueState = {
 declare global {
   var _engineQueueState: QueueState | undefined;
   var _engineMetrics: { cacheHits: number; cacheWrites: number } | undefined;
+  var _engineJobSignal: EventEmitter | undefined;
 }
 
 const queueState: QueueState = global._engineQueueState ?? {
@@ -35,6 +37,27 @@ const queueState: QueueState = global._engineQueueState ?? {
 if (!global._engineQueueState) global._engineQueueState = queueState;
 const engineMetrics = global._engineMetrics ?? { cacheHits: 0, cacheWrites: 0 };
 if (!global._engineMetrics) global._engineMetrics = engineMetrics;
+
+const FISHNET_MAX_ID_LENGTH = 24;
+
+// Idle fishnet workers back off for up to 30s between polls, which made the computer's
+// first move wait for ages. The acquire route instead holds an empty poll open and is
+// woken the moment a job is queued (lichess long-polls the same way).
+const jobSignal: EventEmitter = global._engineJobSignal ?? new EventEmitter();
+jobSignal.setMaxListeners(100);
+if (!global._engineJobSignal) global._engineJobSignal = jobSignal;
+
+export function waitForQueuedEngineJob(timeoutMs: number) {
+  return new Promise<void>((resolve) => {
+    const done = () => {
+      clearTimeout(timer);
+      jobSignal.off("queued", done);
+      resolve();
+    };
+    const timer = setTimeout(done, timeoutMs);
+    jobSignal.once("queued", done);
+  });
+}
 
 function now() {
   return Date.now();
@@ -61,6 +84,7 @@ function dequeueMemory(jobId: string) {
 async function ensureQueued(jobId: string, priority: EnginePriority) {
   ensureQueuedMemory(jobId, priority);
   await enqueueEngineJob(jobId, priority);
+  jobSignal.emit("queued");
 }
 
 async function dequeue(jobId: string) {
@@ -179,7 +203,8 @@ export async function createEngineJob(input: {
   }).lean();
   if (existing) return { deduped: true as const, job: existing };
 
-  const jobId = `eng_${randomUUID().replace(/-/g, "").slice(0, 24)}`;
+  // fishnet stores the work id in a 24-character buffer and rejects the whole batch if it is longer.
+  const jobId = `eng_${randomUUID().replace(/-/g, "").slice(0, FISHNET_MAX_ID_LENGTH - 4)}`;
   const created = await EngineJob.create({
     jobId,
     type: input.type,
@@ -206,8 +231,47 @@ export async function createEngineJob(input: {
   return { created: true as const, job: created.toObject() };
 }
 
+function fishnetPv(value: unknown) {
+  return Array.isArray(value)
+    ? value.map((move) => String(move)).filter(Boolean)
+    : String(value || "").trim().split(/\s+/).filter(Boolean);
+}
+
+function fishnetScore(score: any) {
+  return typeof score?.mate === "number"
+    ? { type: "mate" as const, value: Number(score.mate) }
+    : { type: "cp" as const, value: Number(score?.cp ?? 0) };
+}
+
+// fishnet posts { analysis: [part per ply] }. A part is { pv: "e2e4 ...", score: { cp | mate } }
+// or, when multipv was requested, a matrix indexed [multipv][depth]. We analyse one position,
+// so the last analysed part is the position the caller asked about.
+function fishnetAnalysisLines(payload: any) {
+  if (!Array.isArray(payload?.analysis)) return null;
+  const part = [...payload.analysis].reverse().find((entry: any) => entry && !entry.skipped && entry.score !== undefined);
+  if (!part) return [];
+  const nodes = Math.max(0, Number(part.nodes || 0));
+  const nps = Number.isFinite(Number(part.nps)) ? Number(part.nps) : undefined;
+  if (Array.isArray(part.score)) {
+    return part.score
+      .map((byDepth: unknown, index: number) => {
+        const scores = Array.isArray(byDepth) ? byDepth : [];
+        let depth = scores.length - 1;
+        while (depth >= 0 && scores[depth] == null) depth -= 1;
+        if (depth < 0) return null;
+        const pvRow = Array.isArray(part.pv?.[index]) ? part.pv[index] : [];
+        return { multipv: index + 1, evaluation: fishnetScore(scores[depth]), depth, nodes, nps, pv: fishnetPv(pvRow[depth]) };
+      })
+      .filter((line: any) => line && line.pv.length);
+  }
+  return [{ multipv: 1, evaluation: fishnetScore(part.score), depth: Math.max(0, Number(part.depth || 0)), nodes, nps, pv: fishnetPv(part.pv) }];
+}
+
 export function normalizeEngineResult(payload: any): EngineResult {
-  const lines = Array.isArray(payload?.lines)
+  const fishnetLines = fishnetAnalysisLines(payload);
+  const lines = fishnetLines
+    ? fishnetLines
+    : Array.isArray(payload?.lines)
     ? payload.lines
         .map((line: any, index: number) => {
           const scoreType = line?.evaluation?.type === "mate" || line?.score?.type === "mate" ? "mate" : "cp";
@@ -236,6 +300,7 @@ export function normalizeEngineResult(payload: any): EngineResult {
     payload?.bestMove
     ?? payload?.bestmove
     ?? payload?.move?.bestmove
+    ?? lines[0]?.pv?.[0]
     ?? ""
   ).trim();
 
@@ -255,24 +320,28 @@ function toFishnetWork(job: any) {
     id: job.jobId,
   };
   if (job.workType === "move") {
-    payload.level = Math.min(8, Math.max(1, Number(job.level || 5)));
+    const academyLevel = Math.min(9, Math.max(1, Number(job.level || 5)));
+    payload.level = Math.min(8, Math.max(1, ENGINE_LEVELS[academyLevel]?.fishnetLevel ?? academyLevel));
     if (job.clock?.white !== undefined && job.clock?.black !== undefined) {
+      // fishnet reads wtime/btime in centiseconds and inc in whole seconds; we store milliseconds.
       payload.clock = {
-        wtime: Number(job.clock.white || 0),
-        btime: Number(job.clock.black || 0),
-        inc: Number(job.clock.increment || 0),
+        wtime: Math.max(0, Math.round(Number(job.clock.white || 0) / 10)),
+        btime: Math.max(0, Math.round(Number(job.clock.black || 0) / 10)),
+        inc: Math.max(0, Math.round(Number(job.clock.increment || 0) / 1000)),
       };
     }
   } else {
     const nodes = Number(job.engine?.nodes || 1_500_000);
+    // fishnet 2.x only reads the NNUE (sf16) and classical node budgets.
     payload.nodes = {
-      sf15: nodes,
-      sf14: Math.ceil(nodes * 1.4),
+      sf16: nodes,
       classical: Math.ceil(nodes * 2.7),
     };
     payload.timeout = Number(job.engine?.moveTime || 7_000);
     payload.depth = Number(job.engine?.depth || 0) || undefined;
-    payload.multipv = Math.max(1, Number(job.engine?.multiPv || 1));
+    const multiPv = Math.max(1, Number(job.engine?.multiPv || 1));
+    // Sending multipv switches fishnet to its matrix output; leave it out for a single line.
+    if (multiPv > 1) payload.multipv = multiPv;
   }
   return {
     work: payload,
@@ -296,6 +365,14 @@ export async function acquireEngineJob(worker: { workerId: string; workerName: s
       dequeueMemory(jobId);
       const job = await EngineJob.findOne({ jobId }).lean() as any;
       if (!job || job.status !== "QUEUED") continue;
+      if (String(job.jobId).length > FISHNET_MAX_ID_LENGTH) {
+        // Jobs queued before the id fix would make fishnet fail to decode the batch again.
+        await EngineJob.updateOne(
+          { _id: job._id, status: "QUEUED" },
+          { $set: { status: "FAILED" as EngineJobStatus, lastError: "Job id too long for fishnet.", completedAt: new Date() } }
+        );
+        continue;
+      }
 
       const leaseExpiresAt = new Date(Date.now() + ENGINE_LEASE_TTL_MS);
       if (!(await claimEngineLease(jobId, worker.workerId))) continue;

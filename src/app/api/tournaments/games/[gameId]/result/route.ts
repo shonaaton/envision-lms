@@ -5,11 +5,12 @@ import { dbConnect } from "@/lib/db";
 import { TournamentGame } from "@/models/TournamentGame";
 import { Tournament } from "@/models/Tournament";
 import { completeGame, estimateClock } from "@/lib/tournamentEngine";
-import { onGameCompleted } from "@/lib/tournamentLifecycle";
+import { onGameCompleted, queueGameCompleted } from "@/lib/tournamentLifecycle";
 import { recordActivity } from "@/lib/activity";
 import { cookies } from "next/headers";
 import { getTournamentGuestUsername, isTournamentGuestRequest } from "@/lib/tournamentGuests";
-import { inactiveStudentMessage, isCurrentStudent } from "@/lib/studentAccess";
+import { inactiveStudentMessage } from "@/lib/studentAccess";
+import { sessionStudentIsActive } from "@/lib/tournament/hotPath";
 import { consumeTournamentRate, rateIdentity, rateLimitedResponse } from "@/lib/tournamentRateLimit";
 import { awardTournamentGameRewards } from "@/lib/tournamentRewards";
 import { emitGameFlags } from "@/lib/tournamentSocketServer";
@@ -57,7 +58,7 @@ export async function POST(req: Request, { params }: { params: { gameId: string 
   const limit = consumeTournamentRate("result", rateIdentity({ userId, guestUsername, request: req }));
   if (!limit.allowed) return rateLimitedResponse(limit.retryAfterMs);
 
-  if (role === "student" && !(await isCurrentStudent(userId))) {
+  if (role === "student" && !sessionStudentIsActive(session)) {
     return NextResponse.json({ error: inactiveStudentMessage }, { status: 403 });
   }
 
@@ -222,8 +223,12 @@ export async function POST(req: Request, { params }: { params: { gameId: string 
   }
 
   if (completed) {
-    await awardTournamentGameRewards(game);
-    await onGameCompleted(String(game.tournament), String(game._id));
+    void awardTournamentGameRewards(game).catch((error) => console.error("[tournament] rewards failed", error));
+    // An admin correcting a result waits for the new standings; a player who
+    // resigned or claimed a flag does not wait for standings and the next
+    // pairing (queued per tournament, lib/tournamentLifecycle.ts).
+    if (role === "admin" && body.result) await onGameCompleted(String(game.tournament), String(game._id));
+    else queueGameCompleted(String(game.tournament), String(game._id));
   }
 
   await recordActivity({

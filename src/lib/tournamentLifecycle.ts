@@ -244,7 +244,36 @@ async function finishSwissEarly(tournamentId: string, reason: { action: string; 
  * the pairing and round locks make the expensive parts single-writer.
  */
 export async function processTournament(tournamentId: string, options: { force?: boolean } = {}) {
-  return withVersionRetry(() => processTournamentOnce(tournamentId, options));
+  return runExclusive(String(tournamentId), () => withVersionRetry(() => processTournamentOnce(tournamentId, options)));
+}
+
+declare global {
+  // eslint-disable-next-line no-var
+  var _tournamentWorkChains: Map<string, Promise<unknown>> | undefined;
+  // eslint-disable-next-line no-var
+  var _tournamentCompletionQueued: Set<string> | undefined;
+}
+
+/**
+ * One tournament's lifecycle work, one pass at a time.
+ *
+ * Every finished board, the 5-second heartbeat and admin actions all load,
+ * recalculate and save the same tournament document. Run side by side they
+ * kept colliding on its version and retrying, each retry another round of
+ * reads on a slow database, while the next pairing waited. In this process
+ * they now queue per tournament. (Across processes the pairing and round locks
+ * and the version check still apply, as before.)
+ */
+function runExclusive<T>(tournamentId: string, work: () => Promise<T>): Promise<T> {
+  const chains = (globalThis._tournamentWorkChains ??= new Map());
+  const previous = chains.get(tournamentId) || Promise.resolve();
+  const next = previous.catch(() => undefined).then(work);
+  const tail = next.catch(() => undefined);
+  chains.set(tournamentId, tail);
+  void tail.then(() => {
+    if (chains.get(tournamentId) === tail) chains.delete(tournamentId);
+  });
+  return next;
 }
 
 async function processTournamentOnce(tournamentId: string, options: { force?: boolean }) {
@@ -376,7 +405,26 @@ export async function runTournamentTick(): Promise<TickSummary> {
  * only runs when a board actually ends — never on an ordinary move.
  */
 export async function onGameCompleted(tournamentId: string, gameId: string) {
-  return withVersionRetry(() => handleGameCompleted(tournamentId, gameId));
+  return runExclusive(String(tournamentId), () => withVersionRetry(() => handleGameCompleted(tournamentId, gameId)));
+}
+
+/**
+ * The same work, without making the player who ended the game wait for it.
+ *
+ * The result itself is already saved and pushed to both boards by then; what
+ * remains (ratings, standings, the next pairing) reads the whole event, so one
+ * pass covers every board that finished before it started. Ten boards ending
+ * together therefore cost one or two passes, not ten competing ones.
+ */
+export function queueGameCompleted(tournamentId: string, gameId: string) {
+  const id = String(tournamentId);
+  const queued = (globalThis._tournamentCompletionQueued ??= new Set());
+  if (queued.has(id)) return;
+  queued.add(id);
+  void runExclusive(id, () => {
+    queued.delete(id);
+    return withVersionRetry(() => handleGameCompleted(id, gameId));
+  }).catch((error) => console.error(`[tournament] game-completed pass failed for ${id}`, error));
 }
 
 async function handleGameCompleted(tournamentId: string, _gameId: string) {

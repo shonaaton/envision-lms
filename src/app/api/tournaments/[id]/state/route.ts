@@ -14,7 +14,8 @@ import { redactTournamentForPlayer } from "@/lib/tournament/redact";
 import { maxRoundsWithoutRepeat } from "@/lib/tournament/swiss";
 import { cookies } from "next/headers";
 import { getTournamentGuestUsername, isTournamentGuestRequest } from "@/lib/tournamentGuests";
-import { inactiveStudentMessage, isCurrentStudent } from "@/lib/studentAccess";
+import { inactiveStudentMessage } from "@/lib/studentAccess";
+import { sessionStudentIsActive, sharedRead } from "@/lib/tournament/hotPath";
 import { consumeTournamentRate, rateIdentity, rateLimitedResponse } from "@/lib/tournamentRateLimit";
 
 /**
@@ -61,11 +62,14 @@ export async function GET(request: Request, { params }: { params: { id: string }
   const session = guestRoom ? null : await auth();
 
   await dbConnect();
-  const tournamentQuery = Tournament.findById(params.id);
+  // Every player in the room reads the same tournament, so one read is shared
+  // for a moment (lib/tournament/hotPath.ts): a pairing or a round start sends
+  // all of them here within the same second.
   const tournament: any = await (poll
-    ? tournamentQuery.select("status currentRound participants access externalInvite.token externalParticipants.username")
-    : tournamentQuery.populate("participants", "name username rating")
-  ).lean();
+    ? sharedRead(`t:${params.id}:poll`, 2_000, () =>
+        Tournament.findById(params.id).select("status currentRound participants access externalInvite.token externalParticipants.username").lean()
+      )
+    : sharedRead(`t:${params.id}:full`, 1_000, () => Tournament.findById(params.id).populate("participants", "name username rating").lean()));
   if (!tournament) return NextResponse.json({ error: "Tournament not found" }, { status: 404 });
 
   const cookieStore = await cookies();
@@ -81,7 +85,7 @@ export async function GET(request: Request, { params }: { params: { id: string }
   const limit = consumeTournamentRate("state", rateIdentity({ userId: String(userId || ""), guestUsername, request }));
   if (!limit.allowed) return rateLimitedResponse(limit.retryAfterMs);
 
-  if (role === "student" && !(await isCurrentStudent(String(userId)))) {
+  if (role === "student" && !sessionStudentIsActive(session)) {
     return NextResponse.json({ error: inactiveStudentMessage }, { status: 403 });
   }
 
@@ -116,12 +120,23 @@ export async function GET(request: Request, { params }: { params: { id: string }
     });
   }
 
-  const [activeGameRaw, recentGames, myGamesRaw, liveGames, gameCounts] = await Promise.all([
+  // The player's own boards are read fresh; the event-wide lists are the same
+  // for everyone and shared for a second.
+  const [activeGameRaw, [recentGames, liveGames, gameCounts], myGamesRaw] = await Promise.all([
     TournamentGame.findOne(
       { ...playerGames, status: "active" },
       ACTIVE_GAME_FIELDS
     ).lean(),
-    TournamentGame.find({ tournament: params.id }, GAME_LIST_FIELDS).sort({ createdAt: -1 }).limit(25).lean(),
+    sharedRead(`t:${params.id}:lists`, 1_000, () =>
+      Promise.all([
+        TournamentGame.find({ tournament: params.id }, GAME_LIST_FIELDS).sort({ createdAt: -1 }).limit(25).lean(),
+        TournamentGame.find({ tournament: params.id, status: "active" }, GAME_LIST_FIELDS).sort({ tableNumber: 1 }).limit(24).lean(),
+        TournamentGame.aggregate([
+          { $match: { tournament: new mongoose.Types.ObjectId(String(params.id)) } },
+          { $group: { _id: "$status", count: { $sum: 1 } } },
+        ]),
+      ])
+    ),
     TournamentGame.find(
       playerGames,
       GAME_LIST_FIELDS
@@ -129,11 +144,6 @@ export async function GET(request: Request, { params }: { params: { id: string }
       .sort({ createdAt: -1 })
       .limit(10)
       .lean(),
-    TournamentGame.find({ tournament: params.id, status: "active" }, GAME_LIST_FIELDS).sort({ tableNumber: 1 }).limit(24).lean(),
-    TournamentGame.aggregate([
-      { $match: { tournament: new mongoose.Types.ObjectId(String(params.id)) } },
-      { $group: { _id: "$status", count: { $sum: 1 } } },
-    ]),
   ]);
 
   const countsByStatus = Object.fromEntries((gameCounts as any[]).map((row) => [row._id, row.count]));

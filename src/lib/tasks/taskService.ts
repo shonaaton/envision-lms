@@ -252,7 +252,7 @@ export async function createManualTask(input: TaskCreateInput, actor: TaskActor)
 }
 
 export type TaskScope = "mine" | "assigned_by_me" | "all";
-export type TaskListFilter = { scope?: TaskScope; status?: "open" | "completed" | "cancelled" | "any"; source?: "auto" | "manual"; priority?: TaskPriority; q?: string; page?: number; limit?: number };
+export type TaskListFilter = { scope?: TaskScope; status?: "open" | "pending" | "in_progress" | "overdue" | "completed" | "cancelled" | "any"; owner?: string; source?: "auto" | "manual"; priority?: TaskPriority; q?: string; page?: number; limit?: number };
 
 async function scopeQuery(actor: TaskActor, scope: TaskScope) {
   const me = new Types.ObjectId(actor.id);
@@ -270,6 +270,8 @@ async function scopeQuery(actor: TaskActor, scope: TaskScope) {
 }
 
 function statusQuery(status: TaskListFilter["status"]) {
+  if (status === "pending" || status === "in_progress") return { status };
+  if (status === "overdue") return { status: { $in: OPEN_TASK_STATUSES }, dueAt: { $ne: null, $lt: new Date() } };
   if (status === "completed") return { status: "completed" };
   if (status === "cancelled") return { status: "cancelled" };
   if (status === "any") return {};
@@ -318,6 +320,11 @@ export async function listTasks(actor: TaskActor, filter: TaskListFilter = {}) {
   const limit = Math.min(Math.max(filter.limit || 50, 1), 200);
   const page = Math.max(filter.page || 1, 1);
   const query: any = { $and: [await scopeQuery(actor, scope), statusQuery(filter.status)] };
+  if (filter.owner?.trim()) {
+    const rx = new RegExp(escapeRegex(filter.owner.trim().slice(0, 100)), "i");
+    const people = await User.find({ $or: [{ name: rx }, { email: rx }] }).select("_id").lean();
+    query.$and.push({ assignedTo: { $in: people.map((person: any) => person._id) } });
+  }
   if (filter.source) query.$and.push({ source: filter.source });
   if (filter.priority) query.$and.push({ priority: filter.priority });
   if (filter.q?.trim()) {
@@ -344,9 +351,9 @@ export async function listTasks(actor: TaskActor, filter: TaskListFilter = {}) {
   return { tasks: (tasks as any[]).map(serializeTask), total, page, limit };
 }
 
-export async function taskSummary(actor: TaskActor) {
+export async function taskSummary(actor: TaskActor, requestedScope: TaskScope = "mine") {
   await dbConnect();
-  const scope = await scopeQuery(actor, "mine");
+  const scope = await scopeQuery(actor, requestedScope);
   const open = { $and: [scope, { status: { $in: OPEN_TASK_STATUSES } }] };
   const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
   const [pendingCount, overdueCount, completedThisWeek, assignedByMeOpen] = await Promise.all([

@@ -15,7 +15,7 @@ function errorResponse(error: unknown) {
 }
 
 const SCOPES = ["mine", "assigned_by_me", "all"] as const;
-const STATUSES = ["open", "completed", "cancelled", "any"] as const;
+const STATUSES = ["open", "pending", "in_progress", "overdue", "completed", "cancelled", "any"] as const;
 
 export async function GET(req: Request) {
   const session = await requireTaskAccess("view");
@@ -23,9 +23,10 @@ export async function GET(req: Request) {
   const actor = taskActorFromSession(session);
   const url = new URL(req.url);
   try {
-    if (url.searchParams.get("summary") === "1") return NextResponse.json(await taskSummary(actor));
     const pick = <T extends readonly string[]>(value: string | null, allowed: T) => (allowed.includes(value || "") ? (value as T[number]) : undefined);
+    if (url.searchParams.get("summary") === "1") return NextResponse.json(await taskSummary(actor, pick(url.searchParams.get("scope"), SCOPES)));
     const filter: TaskListFilter = {
+      owner: url.searchParams.get("owner") || undefined,
       scope: pick(url.searchParams.get("scope"), SCOPES),
       status: pick(url.searchParams.get("status"), STATUSES),
       source: pick(url.searchParams.get("source"), ["auto", "manual"] as const),

@@ -127,6 +127,88 @@ export function applyLegalMoveToGame(
   }
 }
 
+export type LiveMoveLineVariation = { id: string; label: string; branchAt: number; moves: string[]; createdAt?: string };
+
+export type LiveMoveLineState = {
+  mainMoves: string[];
+  variations: LiveMoveLineVariation[];
+  activeVariationId: string;
+  /** How many moves of the active line are on the board (pgnMoveIndex). */
+  index: number;
+  navigationStartFen: string;
+};
+
+/**
+ * Adds one legal move to the live board's navigable line, the list the
+ * previous/next buttons and arrow keys replay from `navigationStartFen`.
+ *
+ * Coach moves and student moves (board control) must both go through here.
+ * A student move that skipped it was kept only in moveHistory; the coach's
+ * next move then rebuilt the line from the coach's moves alone (e4, Nf3, ...),
+ * so one step back replayed an impossible line and stopped near the start.
+ *
+ * - The move the line already expects next: just step forward.
+ * - At the end of the active line: append.
+ * - Anywhere else: start a new variation from that point.
+ */
+export function extendLiveMoveLine(
+  state: LiveMoveLineState,
+  moveSan: string,
+  moveStartFen: string,
+  newVariationId: () => string = () => `variation-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+) {
+  const activeVariation = state.variations.find((variation) => variation.id === state.activeVariationId) || null;
+  const activeMoves = activeVariation?.moves || state.mainMoves;
+  const startsNewLine = !state.mainMoves.length && !state.variations.length && !state.navigationStartFen;
+  const startUpdate: { navigationStartFen?: string } = startsNewLine ? { navigationStartFen: moveStartFen } : {};
+  const index = Math.max(0, Math.min(activeMoves.length, Number(state.index) || 0));
+
+  if (activeMoves[index] === moveSan) {
+    const nextIndex = index + 1;
+    return {
+      update: { ...startUpdate, activePgnVariationId: activeVariation?.id || "", pgnMoveIndex: nextIndex, moveHistory: activeMoves.slice(0, nextIndex) },
+      state: { ...state, ...(startUpdate.navigationStartFen ? { navigationStartFen: startUpdate.navigationStartFen } : {}), index: nextIndex },
+    };
+  }
+
+  if (index === activeMoves.length) {
+    const nextMoves = [...activeMoves, moveSan];
+    const nextIndex = nextMoves.length;
+    const nextStart = startUpdate.navigationStartFen ? { navigationStartFen: startUpdate.navigationStartFen } : {};
+    if (activeVariation) {
+      const nextVariations = state.variations.map((variation) => variation.id === activeVariation.id ? { ...variation, moves: nextMoves } : variation);
+      return {
+        update: { ...startUpdate, pgnVariations: nextVariations, activePgnVariationId: activeVariation.id, pgnMoveIndex: nextIndex, moveHistory: nextMoves },
+        state: { ...state, ...nextStart, variations: nextVariations, index: nextIndex },
+      };
+    }
+    return {
+      update: { ...startUpdate, pgnMoves: nextMoves, pgnMoveIndex: nextIndex, moveHistory: nextMoves },
+      state: { ...state, ...nextStart, mainMoves: nextMoves, index: nextIndex },
+    };
+  }
+
+  const variation: LiveMoveLineVariation = {
+    id: newVariationId(),
+    label: `Variation ${state.variations.length + 1}`,
+    branchAt: index,
+    moves: [...activeMoves.slice(0, index), moveSan],
+    createdAt: new Date().toISOString(),
+  };
+  const nextIndex = index + 1;
+  const nextVariations = [...state.variations, variation];
+  return {
+    update: { ...startUpdate, pgnVariations: nextVariations, activePgnVariationId: variation.id, pgnMoveIndex: nextIndex, moveHistory: variation.moves },
+    state: {
+      ...state,
+      ...(startUpdate.navigationStartFen ? { navigationStartFen: startUpdate.navigationStartFen } : {}),
+      variations: nextVariations,
+      activeVariationId: variation.id,
+      index: nextIndex,
+    },
+  };
+}
+
 function entityId(value: any) {
   return value?._id?.toString?.() || value?.toString?.() || "";
 }

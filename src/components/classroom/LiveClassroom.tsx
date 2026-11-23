@@ -81,6 +81,7 @@ import {
   overlayProtectedPoll,
   placeSetupPiece,
   pollResponseAction,
+  extendLiveMoveLine,
   removeObjectsOnPieceSquares,
   selectionAfterSquareClick,
   studentMoveMutation,
@@ -1698,57 +1699,22 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
 
   function pgnUpdateForCoachMove(moveSan: string, moveStartFen: string) {
     const pgnState = pgnStateRef.current;
-    const activeVariation = pgnState.variations.find((variation) => variation.id === pgnState.activeVariationId) || null;
-    const activeMoves = activeVariation?.moves || pgnState.mainMoves;
-    const startsNewLine = !pgnState.mainMoves.length && !pgnState.variations.length && !currentLive()?.navigationStartFen;
-    const startUpdate = startsNewLine ? { navigationStartFen: moveStartFen } : {};
-
-    const index = Math.max(0, Math.min(activeMoves.length, navigationIndexRef.current));
-    const expectedMove = activeMoves[index];
-    if (expectedMove === moveSan) {
-      const nextIndex = index + 1;
-      navigationIndexRef.current = nextIndex;
-      return { ...startUpdate, activePgnVariationId: activeVariation?.id || "", pgnMoveIndex: nextIndex, moveHistory: activeMoves.slice(0, nextIndex) };
-    }
-
-    if (index === activeMoves.length) {
-      const nextMoves = [...activeMoves, moveSan];
-      const nextIndex = nextMoves.length;
-      navigationIndexRef.current = nextIndex;
-      if (activeVariation) {
-        const nextVariations = pgnState.variations.map((variation) => variation.id === activeVariation.id ? { ...variation, moves: nextMoves } : variation);
-        pgnStateRef.current = { ...pgnState, variations: nextVariations };
-        return {
-          ...startUpdate,
-          pgnVariations: nextVariations,
-          activePgnVariationId: activeVariation.id,
-          pgnMoveIndex: nextIndex,
-          moveHistory: nextMoves,
-        };
-      }
-      pgnStateRef.current = { ...pgnState, mainMoves: nextMoves };
-      return { ...startUpdate, pgnMoves: nextMoves, pgnMoveIndex: nextIndex, moveHistory: nextMoves };
-    }
-
-    const variationNumber = pgnState.variations.length + 1;
-    const variation: LivePgnVariation = {
-      id: `variation-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-      label: `Variation ${variationNumber}`,
-      branchAt: index,
-      moves: [...activeMoves.slice(0, index), moveSan],
-      createdAt: new Date().toISOString(),
+    const result = extendLiveMoveLine(
+      {
+        ...pgnState,
+        index: navigationIndexRef.current,
+        navigationStartFen: currentLive()?.navigationStartFen || "",
+      },
+      moveSan,
+      moveStartFen
+    );
+    navigationIndexRef.current = result.state.index;
+    pgnStateRef.current = {
+      mainMoves: result.state.mainMoves,
+      variations: result.state.variations,
+      activeVariationId: result.state.activeVariationId,
     };
-    const nextIndex = index + 1;
-    navigationIndexRef.current = nextIndex;
-    const nextVariations = [...pgnState.variations, variation];
-    pgnStateRef.current = { ...pgnState, variations: nextVariations, activeVariationId: variation.id };
-    return {
-      ...startUpdate,
-      pgnVariations: nextVariations,
-      activePgnVariationId: variation.id,
-      pgnMoveIndex: nextIndex,
-      moveHistory: variation.moves,
-    };
+    return result.update;
   }
 
   function onDrop(source: string, target: string, piece: string, promotion: PromotionPiece = "q") {
@@ -2666,6 +2632,9 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
         orientation: orientationForFen(startFen),
         moveHistory: [],
         setupMode: false,
+        // A playable PGN uses normal rules. Free moves left on from an earlier
+        // board never reach the move line, so back would skip over them.
+        illegalMovesEnabled: false,
         drawings: [],
         challenge: {
           ...(live?.challenge || {}),
@@ -4168,7 +4137,7 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
                 <div className="grid grid-cols-2 gap-2">
                   <button onClick={() => setSelectedPiece("erase")} className={`inline-flex h-10 items-center justify-center gap-2 rounded-md border px-3 text-sm font-semibold ${selectedPiece === "erase" ? "border-red-500 bg-red-50 text-red-700" : "border-slate-200 bg-white text-slate-800"}`}><X size={15} /> Remove</button>
                   <button onClick={() => { setSetupPosition({}); setGamifiedSetup({}); setSetupCastlingRights(emptyCastlingRights); }} className="inline-flex h-10 items-center justify-center gap-2 rounded-md border border-slate-200 px-3 text-sm font-semibold"><Eraser size={15} /> Clear</button>
-                  <button onClick={() => { setSetupPosition(fenToPosition("start")); setGamifiedSetup({}); setSetupCastlingRights(inferCastlingRights(new Chess().fen())); }} className="inline-flex h-10 items-center justify-center gap-2 rounded-md border border-slate-200 px-3 text-sm font-semibold"><RotateCcw size={15} /> Reset</button>
+                  <button onClick={() => { setSetupPosition(fenToPosition("start")); setGamifiedSetup({}); setSetupCastlingRights(inferCastlingRights(new Chess().fen())); setSetupMovementMode("white"); setSetupPieceColor("white"); }} className="inline-flex h-10 items-center justify-center gap-2 rounded-md border border-slate-200 px-3 text-sm font-semibold"><RotateCcw size={15} /> Reset</button>
                   <button onClick={() => navigator.clipboard?.writeText(positionToFen(setupPosition, setupSideToMove(), setupCastlingRights)).then(() => toast.success("FEN copied"))} className="inline-flex h-10 items-center justify-center gap-2 rounded-md border border-slate-200 px-3 text-sm font-semibold"><Download size={15} /> Export</button>
                 </div>
                 <button onClick={loadSetupIntoClassroom} className="h-11 w-full rounded-md bg-purple-700 text-sm font-semibold text-white">Load Position into Classroom</button>

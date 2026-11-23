@@ -5,6 +5,7 @@ import { dbConnect } from "@/lib/db";
 import { ClassroomSession } from "@/models/ClassroomLive";
 import { getRequestedSessionId, markScheduledSessionStarted } from "@/lib/classroomLiveSession";
 import { getLiveClassroomForUser } from "@/lib/liveClassroomAccess";
+import { extendLiveMoveLine } from "@/lib/liveClassroomBoardInteractions";
 
 export const dynamic = "force-dynamic";
 
@@ -140,6 +141,7 @@ export async function POST(req: Request, { params }: { params: { id: string } })
   }
 
   const chess = live.fen && live.fen !== "start" ? new Chess(live.fen) : new Chess();
+  const moveStartFen = chess.fen();
   let move: any = null;
   try {
     move = chess.move({ from, to, promotion });
@@ -167,7 +169,30 @@ export async function POST(req: Request, { params }: { params: { id: string } })
 
   live.fen = chess.fen();
   live.gamifiedObjects = nextGamifiedObjects;
-  live.moveHistory = [...(live.moveHistory || []), move.san];
+  // The move goes into the navigable line too, or the coach's back button
+  // replays a line without it. See extendLiveMoveLine.
+  const plainVariations = (live.pgnVariations || []).map((variation: any) => {
+    const plain = variation?.toObject?.() || variation || {};
+    return {
+      id: String(plain.id || ""),
+      label: String(plain.label || ""),
+      branchAt: Number(plain.branchAt) || 0,
+      moves: Array.isArray(plain.moves) ? plain.moves.map(String) : [],
+      ...(plain.createdAt ? { createdAt: new Date(plain.createdAt).toISOString() } : {}),
+    };
+  });
+  const line = extendLiveMoveLine(
+    {
+      mainMoves: Array.isArray(live.pgnMoves) ? live.pgnMoves.map(String) : [],
+      variations: plainVariations,
+      activeVariationId: String(live.activePgnVariationId || ""),
+      index: Number(live.pgnMoveIndex) || 0,
+      navigationStartFen: String(live.navigationStartFen || ""),
+    },
+    move.san,
+    moveStartFen
+  );
+  Object.assign(live, line.update);
   live.startedAt = live.startedAt || new Date();
   live.status = live.status === "ended" ? "ended" : "live";
   const hadParticipant = (live.participants || []).some((participant: any) => objectId(participant.user) === userId);

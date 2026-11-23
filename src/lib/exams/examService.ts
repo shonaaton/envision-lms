@@ -1,4 +1,5 @@
 import "server-only";
+import { branchAccountIds } from "@/lib/branch/hideFromOnline";
 
 import { dbConnect } from "@/lib/db";
 import { resolvePublicAppUrl } from "@/lib/appUrl";
@@ -1090,7 +1091,8 @@ export async function listAssignmentsForStaff(filters: { tier?: string; levelNum
   if (filters.tier) query.tier = filters.tier;
   if (filters.levelNumber) query.levelNumber = filters.levelNumber;
   if (filters.status) query.status = filters.status;
-  if (filters.studentIds) query.student = { $in: filters.studentIds };
+  // Without named students this is the online Exam Center: Bowbazar's results stay on /bowbazar.
+  query.student = filters.studentIds ? { $in: filters.studentIds } : { $nin: await branchAccountIds() };
   const docs: any[] = await ExamAssignment.find(query)
     .select(STAFF_SELECT)
     .populate("student", "name username")

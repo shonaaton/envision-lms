@@ -16,6 +16,7 @@ export const authConfig = {
   providers: [], // populated in auth.ts (Node runtime)
   callbacks: {
     async jwt({ token, user }) {
+      token.loginSessionId ||= crypto.randomUUID();
       if (user) {
         token.id = (user as any).id;
         token.role = (user as any).role;

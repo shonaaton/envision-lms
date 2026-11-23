@@ -43,6 +43,18 @@ describe("isBranchAllowedPath", () => {
     expect(isBranchAllowedPath("/admin/learn", "student")).toBe(false);
   });
 
+  it("opens only the live room API of a classroom, for the branch's online classes", () => {
+    const room = "/api/classrooms/507f1f77bcf86cd799439011/live";
+    for (const role of ["student", "instructor"]) {
+      for (const path of [room, `${room}/move`, `${room}/chat`, `${room}/question`, `${room}/responses`, "/api/time"]) {
+        expect(isBranchAllowedPath(path, role)).toBe(true);
+      }
+      for (const path of ["/api/classrooms", "/api/classrooms/507f1f77bcf86cd799439011", "/classrooms", "/classrooms/507f1f77bcf86cd799439011/live", `${room}/move/x`, "/api/attendance"]) {
+        expect(isBranchAllowedPath(path, role)).toBe(false);
+      }
+    }
+  });
+
   it("sends each kind of account home", () => {
     expect(branchHomePath("student")).toBe("/bowbazar/me");
     expect(branchHomePath("instructor")).toBe("/bowbazar");

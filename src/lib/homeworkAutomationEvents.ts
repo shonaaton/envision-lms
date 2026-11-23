@@ -73,6 +73,9 @@ export async function baseEventFilter(filters: EventFilters) {
   // an "assigned" row, so they never appear in the feed.
   const and: any[] = [{ status: { $ne: "already_assigned" } }];
   and.push(filters.cleared ? { clearedAt: { $ne: null } } : { clearedAt: null });
+  // Bowbazar's online classes are its own; their events never show in the online feed.
+  const branchRooms: any[] = await Classroom.find({ branch: { $ne: null } }).select("_id").lean();
+  if (branchRooms.length) and.push({ classroom: { $nin: branchRooms.map((room) => room._id) } });
   if (filters.from || filters.to) {
     const createdAt: Record<string, Date> = {};
     if (filters.from) createdAt.$gte = istDayStart(filters.from);

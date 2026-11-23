@@ -5,6 +5,13 @@ import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
 import { X } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { feeForSlots } from "@/lib/branch/rules";
+
+/** The monthly fee the slot rule gives for these slots, as a form patch; nothing when the rule doesn't say. */
+export function slotFee(slotIds: string[]): { monthlyFee: string } | Record<string, never> {
+  const fee = feeForSlots(slotIds.length);
+  return fee === null ? {} : { monthlyFee: String(fee) };
+}
 
 export const rupees = (paise: number) => `₹${Math.round((paise || 0) / 100).toLocaleString("en-IN")}`;
 
@@ -33,6 +40,7 @@ const TABS = [
   { href: "/bowbazar/whatsapp", label: "WhatsApp", need: "whatsapp" },
   { href: "/bowbazar/activity", label: "Activity", need: "activity" },
   { href: "/bowbazar/fees", label: "Fees", need: "fees" },
+  { href: "/bowbazar/accounts", label: "Accounts", need: "fees" },
   { href: "/bowbazar/users", label: "Users", need: "staff" },
   { href: "/bowbazar/access", label: "Feature access", need: "staff" },
   { href: "/bowbazar/settings", label: "Settings", need: "fees" },

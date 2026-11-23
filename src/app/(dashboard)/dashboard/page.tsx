@@ -1,3 +1,4 @@
+import { branchAccountIds, onlineActivityFilter } from "@/lib/branch/hideFromOnline";
 import { auth } from "@/lib/auth";
 import { dbConnect } from "@/lib/db";
 import { requirePtmViewer } from "@/lib/ptm/ptmAccess";
@@ -2376,6 +2377,8 @@ export default async function DashboardPage({ searchParams }: { searchParams: Da
   const needsFees = activeTab === "today" || activeTab === "fees";
   const needsPayments = needsFees || activeTab === "activity";
   const needsActivityFeed = activeTab === "today" || activeTab === "activity";
+  // Bowbazar is a separate academy: its people stay off the online feed.
+  const hiddenIds = needsClassroomActivity || needsActivityFeed ? await branchAccountIds() : [];
 
   const [
     students,
@@ -2420,7 +2423,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Da
       .populate("batches", "name level course")
       .lean() : [],
     needsClassroomActivity ? Homework.find({ ...dateFilter("createdAt", from, to), branch: null }).select("title classroom instructor isPublished puzzles createdAt").lean() : [],
-    needsClassroomActivity ? Submission.find(dateFilter("submittedAt", from, to)).select("student homework totalScore submittedAt reviewedAt feedback").populate("student", "name username").lean() : [],
+    needsClassroomActivity ? Submission.find({ ...dateFilter("submittedAt", from, to), student: { $nin: hiddenIds } }).select("student homework totalScore submittedAt reviewedAt feedback").populate("student", "name username").lean() : [],
     needsClassroomActivity ? Attendance.find(dateFilter("sessionDate", from, to)).select("classroom scheduledSessionId sessionDate records").populate("classroom", "title").lean() : [],
     needsActivityFeed ? Booking.find(dateFilter("startAt", from, to)).select("student instructor startAt status approvalStatus").populate("student instructor", "name").lean() : [],
     needsPayments ? Payment.find({ status: "paid", $or: [dateFilter("paidAt", from, to), dateFilter("createdAt", from, to)] }).select("user amount method status paidAt createdAt").populate("user", "name username").lean() : [],
@@ -2428,7 +2431,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Da
     needsFees ? Invoice.find(dateFilter("createdAt", academicFrom, academicTo)).select("status totalAmount dueDate paidAt updatedAt createdAt").lean() : [],
     needsFees ? Invoice.find({ status: "paid", paidAt: { $gte: academicFrom, $lte: academicTo } }).select("totalAmount paidAt").lean() : [],
     needsClassroomActivity ? PGN.find(dateFilter("createdAt", from, to)).select("title uploadedBy createdAt").populate("uploadedBy", "name username").lean() : [],
-    needsActivityFeed ? Activity.find(dateFilter("occurredAt", from, to))
+    needsActivityFeed ? Activity.find({ ...dateFilter("occurredAt", from, to), ...onlineActivityFilter(hiddenIds) })
       .select("actor targetUser type label occurredAt")
       .populate("actor targetUser", "name username role")
       .sort({ occurredAt: -1 })

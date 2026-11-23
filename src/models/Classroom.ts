@@ -1,5 +1,6 @@
 import { Schema, model, models, type InferSchemaType } from "mongoose";
 import { COURSE_TIER_VALUES } from "@/lib/courseTiers";
+import { ALL_BRANCHES_OPTION, BRANCHES, scopeBranchRecordFilter, scopeBranchRecordPipeline } from "@/lib/branch/scope";
 
 const SlotSchema = new Schema(
   {
@@ -72,6 +73,9 @@ const ScheduledSessionSchema = new Schema(
     // before it sends, so two app instances running the sweep at the same
     // minute cannot both message the family.
     notifiedKinds: [{ type: String }],
+    // A branch class's day ("YYYY-MM-DD", academy calendar). One session per
+    // class time per day; its register is that day's BranchAttendance.
+    branchDate: { type: String },
   },
   { _id: true }
 );
@@ -133,6 +137,12 @@ const ClassroomSchema = new Schema(
     sourceSessionId: { type: String, index: true },
     sessionDate: { type: Date, index: true },
     isTestClassroom: { type: Boolean, default: false, index: true },
+    // Set only on an offline branch's online class (lib/branch/live.ts): the
+    // live room for one BranchSlot. Hidden from every online query by the
+    // hook below; attendance goes to the branch register, never to Attendance,
+    // credits or coach pay.
+    branch: { type: String, enum: [...BRANCHES] },
+    branchSlot: { type: Schema.Types.ObjectId, ref: "BranchSlot" },
     testOwner: { type: Schema.Types.ObjectId, ref: "User", index: true },
 
     // Completion trail. Set only by the "Close as completed" action - an admin
@@ -205,6 +215,40 @@ const ClassroomSchema = new Schema(
 // read the whole Classroom collection. Lookup only: no query result changes.
 ClassroomSchema.index({ "generatedSessions.substituteCoach": 1 });
 ClassroomSchema.index({ "generatedSessions.assignedCoach": 1 });
+// One classroom per online branch class time (lib/branch/live.ts).
+ClassroomSchema.index({ branch: 1, branchSlot: 1 }, { unique: true, partialFilterExpression: { branchSlot: { $exists: true } } });
+
+/**
+ * Keep an offline branch's classrooms out of the online academy: lists, pay,
+ * reminders, sweeps and reports all query without naming a branch, so they
+ * only ever see `branch: null`. Branch code names its branch; lookups by id
+ * (the live room, populate) pass and check access themselves.
+ */
+const BRANCH_SCOPED_QUERIES = [
+  "find",
+  "findOne",
+  "countDocuments",
+  "distinct",
+  "findOneAndUpdate",
+  "updateOne",
+  "updateMany",
+  "deleteOne",
+  "deleteMany",
+] as const;
+ClassroomSchema.pre([...BRANCH_SCOPED_QUERIES], function scopeClassroomsToOnline(this: any, next) {
+  if (!this.getOptions?.()[ALL_BRANCHES_OPTION]) {
+    const scoped = scopeBranchRecordFilter(this.getFilter());
+    if (scoped) this.setQuery(scoped);
+  }
+  next();
+});
+ClassroomSchema.pre("aggregate", function scopeClassroomAggregateToOnline(this: any, next) {
+  if (!this.options?.[ALL_BRANCHES_OPTION]) {
+    const scoped = scopeBranchRecordPipeline(this.pipeline());
+    if (scoped) this.pipeline().splice(0, this.pipeline().length, ...scoped);
+  }
+  next();
+});
 
 export type ClassroomDoc = InferSchemaType<typeof ClassroomSchema> & { _id: any };
 export const Classroom = models.Classroom || model("Classroom", ClassroomSchema);

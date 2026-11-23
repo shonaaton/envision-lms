@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({ auth: vi.fn(), send: vi.fn(), create: vi.fn(), last: vi.fn(), reserve: vi.fn() }));
+vi.mock("@/lib/branch/inboxSeparation", () => ({ isBranchOnlyInboxNumber: async () => false, branchOnlyInboxNationals: async () => new Set(), inboxNational: (p: string) => p.slice(-10) }));
 vi.mock("@/lib/auth", () => ({ auth: mocks.auth }));
 vi.mock("@/lib/featureAccess", () => ({ canAccessFeature: vi.fn(async () => true) }));
 vi.mock("@/lib/db", () => ({ dbConnect: vi.fn() }));

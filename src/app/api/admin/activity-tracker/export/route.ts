@@ -1,3 +1,4 @@
+import { branchAccountIds, onlineActivityFilter } from "@/lib/branch/hideFromOnline";
 import { NextResponse } from "next/server";
 import { dbConnect } from "@/lib/db";
 import { requireAdminApiAccess } from "@/lib/adminApiAccess";
@@ -127,8 +128,10 @@ export async function GET(req: Request) {
   const to = url.searchParams.get("to") ? new Date(String(url.searchParams.get("to"))) : null;
   if (to) to.setHours(23, 59, 59, 999);
 
+  const hiddenIds = await branchAccountIds();
   const [activities, batches] = await Promise.all([
     Activity.find({
+      ...onlineActivityFilter(hiddenIds),
       ...(activityType ? { type: activityType } : {}),
       ...(from || to ? { occurredAt: { ...(from ? { $gte: from } : {}), ...(to ? { $lte: to } : {}) } } : {}),
     })

@@ -1,3 +1,4 @@
+import { branchAccountIds, onlineActivityFilter } from "@/lib/branch/hideFromOnline";
 import { auth } from "@/lib/auth";
 import { canAccessFeature } from "@/lib/featureAccess";
 import type { ReactNode } from "react";
@@ -151,8 +152,10 @@ export default async function ActivityTrackerPage({
   const to = params.to ? new Date(String(params.to)) : null;
   if (to) to.setHours(23, 59, 59, 999);
 
+  const hiddenIds = await branchAccountIds();
   const [activities, users, batches, courses] = await Promise.all([
     Activity.find({
+      ...onlineActivityFilter(hiddenIds),
       ...(activityType ? { type: activityType } : {}),
       ...(from || to ? { occurredAt: { ...(from ? { $gte: from } : {}), ...(to ? { $lte: to } : {}) } } : {}),
     })
@@ -161,7 +164,7 @@ export default async function ActivityTrackerPage({
       .sort({ occurredAt: -1 })
       .limit(2000)
       .lean(),
-    User.find({ isActive: { $ne: false } }, { name: 1, username: 1, email: 1, role: 1, batches: 1 }).sort({ name: 1 }).lean(),
+    User.find({ isActive: { $ne: false }, branch: null }, { name: 1, username: 1, email: 1, role: 1, batches: 1 }).sort({ name: 1 }).lean(),
     Batch.find({ isActive: { $ne: false } }, { name: 1 }).sort({ name: 1 }).lean(),
     Course.find({ isActive: { $ne: false } }, { name: 1 }).sort({ name: 1 }).lean(),
   ]);

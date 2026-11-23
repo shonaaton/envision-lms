@@ -83,6 +83,26 @@ export async function markScheduledSessionStarted({
   await classroom.save();
 }
 
+/**
+ * An offline branch's class (lib/branch/live.ts) only records that it ran.
+ * Its attendance went to the branch register already; there are no credits,
+ * coach pay, syllabus re-planning or homework automation behind it.
+ */
+async function finishBranchSession(classroom: any, scheduledSessionId: string, actorId: string | undefined, endedAt: Date | undefined, summary: Record<string, unknown> | undefined) {
+  const target = classroom.generatedSessions?.id?.(scheduledSessionId);
+  if (!target) return;
+  const finish = endedAt || new Date();
+  target.actualStartedAt = target.actualStartedAt || finish;
+  target.actualEndedAt = finish;
+  target.conductedBy = actorId || target.conductedBy;
+  target.status = "completed";
+  target.coachAttendanceStatus = "present";
+  target.attendanceMarkedAt = new Date();
+  target.summary = { ...(target.summary || {}), ...(summary || {}), creditPolicy: "branch_register" };
+  classroom.status = "scheduled";
+  await classroom.save();
+}
+
 export async function markScheduledSessionFinished({
   classroomId,
   scheduledSessionId,
@@ -98,6 +118,7 @@ export async function markScheduledSessionFinished({
 }) {
   const classroom: any = await Classroom.findById(classroomId);
   if (!classroom) return;
+  if (classroom.branch) return finishBranchSession(classroom, scheduledSessionId, actorId, endedAt, summary);
   const isDemoClassroom = classroom.classroomType === "demo";
   const target = classroom.generatedSessions?.id?.(scheduledSessionId);
   if (!target) return;

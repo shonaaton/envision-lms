@@ -7,6 +7,7 @@ import { getClassroomCreditEligibility } from "@/lib/classroomCreditAccess";
 import { resolveScheduledSession } from "@/lib/classroomLiveSession";
 import { isJoinWindowOpenOnServer } from "@/lib/classroomSessions";
 import { attachClassroomPeople, classroomPeopleIds } from "@/lib/liveClassroomPoll";
+import { resolveBranchAccess } from "@/lib/branch/access";
 
 export type AppRole = "student" | "instructor" | "admin" | "sub-admin";
 
@@ -76,7 +77,8 @@ export type LiveClassroomDenial =
   | "no_scheduled_session"
   | "session_not_open"
   | "not_on_the_roster"
-  | "left_this_classroom";
+  | "left_this_classroom"
+  | "other_branch";
 
 export const LIVE_CLASSROOM_DENIAL_MESSAGES: Record<LiveClassroomDenial, string> = {
   classroom_not_found: "This classroom no longer exists.",
@@ -88,7 +90,37 @@ export const LIVE_CLASSROOM_DENIAL_MESSAGES: Record<LiveClassroomDenial, string>
   session_not_open: "This class is not open yet. The room opens 15 minutes before the start time.",
   not_on_the_roster: "You are not on the student list for this class.",
   left_this_classroom: "You have moved to another batch. Your past classes and homework are still on your account, but this class is not yours to join.",
+  other_branch: "This class belongs to another centre.",
 };
+
+/**
+ * An offline branch's online class (lib/branch/live.ts). Only that branch's
+ * accounts get in - online admins included, who have no branch access - and
+ * none of the online rules apply: no feature-access grant, no credit balance.
+ * Staff need the branch's attendance capability; students must be on the
+ * day's roster.
+ */
+async function branchClassroomAccess(classroom: any, role: AppRole, userId: string, scheduledSessionId?: string) {
+  const deny = (reason: LiveClassroomDenial) => ({ classroom, allowed: false as const, reason });
+  const viewer: any = await User.findById(userId).select("role isActive branch branchRole").lean();
+  if (!viewer || viewer.isActive === false) return deny(role === "student" ? "not_a_current_student" : "no_join_permission");
+  if (viewer.branch !== classroom.branch) return deny("other_branch");
+  if (role !== "student") {
+    const access = await resolveBranchAccess({ role: viewer.role, branch: viewer.branch, branchRole: viewer.branchRole });
+    if (!access?.can.has("attendance")) return deny("no_join_permission");
+  }
+  const scheduledSession: any = resolveScheduledSession(classroom, scheduledSessionId);
+  if (!scheduledSession) return deny("no_scheduled_session");
+  const sessionOpen = Boolean(
+    isJoinWindowOpenOnServer(scheduledSession) ||
+    (scheduledSession.actualStartedAt && !scheduledSession.actualEndedAt && scheduledSession.status !== "cancelled")
+  );
+  if (!sessionOpen) return deny("session_not_open");
+  if (role === "student" && !studentsForSession(classroom, scheduledSessionId).some((student: unknown) => objectId(student) === userId)) {
+    return deny("not_on_the_roster");
+  }
+  return { classroom, allowed: true as const, reason: undefined };
+}
 
 const LIVE_PEOPLE_FIELDS = "name email username role";
 
@@ -102,21 +134,23 @@ export async function getLiveClassroomForUser(
   role: AppRole,
   userId: string,
   scheduledSessionId?: string,
-  verifiedUser?: { role?: string; isActive?: boolean }
+  verifiedUser?: { role?: string; isActive?: boolean; branch?: string }
 ) {
-  const canJoin = await canAccessFeature("classrooms", { id: userId, role }, "join");
   // Coach, instructor and students come from one user query rather than three
   // populate queries; `attachClassroomPeople` returns what populate returned.
-  const classroomDoc: any = await Classroom.findById(classroomId)
-    .populate("generatedSessions.students", LIVE_PEOPLE_FIELDS)
-    .lean();
+  const [canJoin, classroomDoc]: [boolean, any] = await Promise.all([
+    canAccessFeature("classrooms", { id: userId, role }, "join"),
+    Classroom.findById(classroomId).populate("generatedSessions.students", LIVE_PEOPLE_FIELDS).lean(),
+  ]);
   const peopleIds = classroomDoc ? classroomPeopleIds(classroomDoc) : [];
-  const people = peopleIds.length ? await User.find({ _id: { $in: peopleIds } }).select(LIVE_PEOPLE_FIELDS).lean() : [];
+  const people = peopleIds.length ? await User.find({ _id: { $in: peopleIds } }).select(LIVE_PEOPLE_FIELDS).setOptions({ allBranches: true }).lean() : [];
   const classroom: any = classroomDoc ? attachClassroomPeople(classroomDoc, people as Array<Record<string, any>>) : null;
 
   const deny = (reason: LiveClassroomDenial) => ({ classroom, allowed: false as const, reason });
 
   if (!classroom) return { classroom: null, allowed: false as const, reason: "classroom_not_found" as const };
+  if (classroom.branch) return branchClassroomAccess(classroom, role, userId, scheduledSessionId);
+  if ((verifiedUser as any)?.branch) return deny("other_branch");
   if (!canJoin) return deny("no_join_permission");
   if (classroom.isTestClassroom) {
     const ownsSandbox = objectId(classroom.testOwner) === userId;

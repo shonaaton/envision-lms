@@ -62,6 +62,7 @@ export type AdmissionForm = {
   motherName: string;
   phone: string;
   email: string;
+  /** No longer asked for; kept for forms sent before it was dropped. */
   address: string;
 };
 
@@ -96,7 +97,6 @@ export function readAdmissionForm(input: AdmissionFormInput, today: Date = new D
   if (!form.fatherName && !form.motherName && !form.parentName) return { error: "Enter at least one parent's name." };
   if (!form.phone) return { error: "Enter a 10-digit mobile number." };
   if (form.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email)) return { error: "Enter a valid email address." };
-  if (!form.address) return { error: "Enter your address." };
   return { form };
 }
 
@@ -104,6 +104,18 @@ export function readAdmissionForm(input: AdmissionFormInput, today: Date = new D
 export function whatsAppChatLink(phone: string, message: string) {
   const digits = tenDigitPhone(phone);
   return digits ? `https://wa.me/91${digits}?text=${encodeURIComponent(message)}` : "";
+}
+
+/** The message for a student already at the centre, asked to complete their record. */
+export function detailsUpdateMessage(input: { parentName?: string; studentName: string; link: string; branchLabel: string }) {
+  const greeting = input.parentName ? `Hello ${input.parentName},` : "Hello,";
+  return [
+    greeting,
+    "",
+    `Envision Chess Academy's ${input.branchLabel} centre is moving its records online. Please check and complete ${input.studentName}'s details here: ${input.link}`,
+    "",
+    `You will need a photo of ${input.studentName} and an identity document (each under ${formatKb(ADMISSION_MAX_FILE_BYTES)}). The link works for ${ADMISSION_LINK_DAYS} days.`,
+  ].join("\n");
 }
 
 export function admissionMessage(input: { parentName?: string; studentName: string; link: string; branchLabel: string }) {

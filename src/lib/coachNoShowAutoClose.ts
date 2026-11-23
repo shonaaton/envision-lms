@@ -64,6 +64,9 @@ export async function closeAsCoachNoShow(input: { classroomId: string; liveId: s
   const classroomDoc: any = await Classroom.findById(input.classroomId);
   const target = classroomDoc?.generatedSessions?.id?.(input.scheduledSessionId);
   if (!classroomDoc || !target) return false;
+  // An offline branch's class has no online register, credits or coach pay to
+  // record a no-show in; its staff take the branch register.
+  if (classroomDoc.branch) return false;
   if (target.actualEndedAt || !UNRECORDED.has(String(target.status || "scheduled"))) return false;
 
   // Claim the room first: of two closers (a sweep and a late poll), only the

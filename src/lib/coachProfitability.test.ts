@@ -6,6 +6,7 @@ vi.mock("server-only", () => ({}));
 vi.mock("@/lib/coachPayData", () => ({ loadCoachPay: vi.fn() }));
 vi.mock("@/models/Fee", () => ({ Invoice: {} }));
 vi.mock("@/models/User", () => ({ User: {} }));
+vi.mock("@/models/Classroom", () => ({ Classroom: {} }));
 
 import { buildCoachProfitability } from "@/lib/coachProfitability";
 
@@ -37,6 +38,75 @@ function fixture() {
 }
 
 describe("coach profitability", () => {
+  it("recognises annual and quarterly packages after GST per completed session", () => {
+    const { classrooms, events } = fixture();
+    const report = buildCoachProfitability(period, events, classrooms, [
+      { student: "s1", type: "manual", totalAmount: 2500000, gstAmount: 381356, coverageSessions: 96, issueDate: new Date("2026-09-01"), dueDate: new Date("2026-09-01") },
+      { student: "s2", type: "monthly", totalAmount: 800000, gstAmount: 122034, coverageSessions: 24, issueDate: new Date("2026-09-01"), dueDate: new Date("2026-09-01") },
+    ], people);
+    expect(report.revenue).toBe(Math.round(2118644 * 2 / 96) + Math.round(677966 * 2 / 24));
+    expect(report.missingFees).toBe(0);
+  });
+
+  it("limits the final eight-session invoice across months and classroom transfers", () => {
+    const { classrooms, events } = fixture();
+    const previousRoom = {
+      _id: "old-room", students: ["s1"], classroomType: "series",
+      generatedSessions: Array.from({ length: 7 }, (_, i) => ({
+        _id: `old-${i}`, scheduledFor: new Date(`2026-09-${10 + i}T10:00:00Z`), status: "completed",
+      })),
+    };
+    const report = buildCoachProfitability(period, events, classrooms, [{
+      student: "s1", type: "monthly", totalAmount: 236000, gstAmount: 36000, coverageSessions: 8,
+      issueDate: new Date("2026-09-01"), dueDate: new Date("2026-09-01"),
+    }], people, [...classrooms, previousRoom]);
+    expect(report.revenue).toBe(25000);
+    expect(report.rows.flatMap((row) => row.classes).flatMap((item) => item.students)
+      .filter((student) => student.id === "s1" && student.missingFee)).toHaveLength(1);
+  });
+
+  it("uses remaining purchased credits before a later bulk recharge", () => {
+    const { classrooms, events } = fixture();
+    const report = buildCoachProfitability(period, events, classrooms, [
+      { student: "s1", type: "credits", totalAmount: 100001, credits: 1, dueDate: new Date("2026-09-01") },
+      { student: "s1", type: "credits", totalAmount: 400000, credits: 8, dueDate: period.from },
+    ], people);
+    expect(report.revenue).toBe(150001);
+  });
+
+  it.each([
+    { type: "manual", coverageSessions: 32 },
+    { type: "manual", credits: 32 },
+    { type: "credits", credits: 32 },
+  ])("recognises only held sessions of a 32-session package: %j", (packageFields) => {
+    const { classrooms } = fixture();
+    classrooms[0].generatedSessions[1].status = "scheduled";
+    const events = buildPayEvents({
+      classrooms, range: period, plans: [], rates: [],
+      overrides: [], rulings: [], conversions: new Map(),
+    });
+    const report = buildCoachProfitability(period, events, classrooms, [{
+      student: "s1", totalAmount: 3434243, coverageMonths: 1,
+      issueDate: period.from, dueDate: period.from, ...packageFields,
+    }], people);
+    expect(report.revenue).toBe(107320);
+    expect(report.unallocatedRevenue).toBe(0);
+    expect(report.rows.flatMap((row) => row.classes)).toHaveLength(1);
+  });
+
+  it("keeps custom session packages available in later months without recognising unused sessions", () => {
+    const { classrooms, events } = fixture();
+    const report = buildCoachProfitability(period, events, classrooms, [{
+      student: "s1", type: "manual", totalAmount: 3200000, coverageSessions: 32,
+      issueDate: new Date("2026-08-01"), dueDate: new Date("2026-08-01"),
+    }, {
+      student: "unmatched", type: "manual", totalAmount: 3200000, coverageSessions: 32,
+      issueDate: period.from, dueDate: period.from,
+    }], people);
+    expect(report.revenue).toBe(200000);
+    expect(report.unallocatedRevenue).toBe(0);
+  });
+
   it("adds each student's monthly class share and assigns substitutions to the fixed-salary coach", () => {
     const { classrooms, events } = fixture();
     const bills = [

@@ -1,3 +1,4 @@
+import { branchAccountIds } from "@/lib/branch/hideFromOnline";
 import { auth } from "@/lib/auth";
 import { canAccessFeature } from "@/lib/featureAccess";
 import { dbConnect } from "@/lib/db";
@@ -13,7 +14,7 @@ export default async function AdminNotificationsPage() {
   if (!session?.user || !(await canAccessFeature("notifications", session.user as any, "manage"))) redirect("/dashboard");
 
   await dbConnect();
-  const notifications: any[] = await Notification.find({})
+  const notifications: any[] = await Notification.find({ user: { $nin: await branchAccountIds() } })
     .populate("user", "name email role username")
     .sort({ createdAt: -1 })
     .limit(200)

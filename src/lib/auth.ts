@@ -77,6 +77,40 @@ function logLoginFailure(reason: string, identifier: string, extra: Record<strin
 
 const nextAuth = NextAuth({
   ...authConfig,
+  callbacks: {
+    ...authConfig.callbacks,
+    async jwt(params) {
+      const token = await authConfig.callbacks.jwt(params);
+      if (token.role === "instructor" && token.id) {
+        try {
+          const { dbConnect } = await import("./db");
+          const { LoginSession } = await import("@/models/LoginSession");
+          await dbConnect();
+          await LoginSession.updateOne(
+            { sessionId: token.loginSessionId },
+            { $set: { user: token.id, expiresAt: new Date((token.exp || Math.floor(Date.now() / 1000) + 30 * 86400) * 1000) } },
+            { upsert: true },
+          );
+        } catch (error) {
+          console.error("Login session tracking failed", error);
+        }
+      }
+      return token;
+    },
+  },
+  events: {
+    async signOut(message) {
+      if (!("token" in message) || !message.token?.loginSessionId) return;
+      try {
+        const { dbConnect } = await import("./db");
+        const { LoginSession } = await import("@/models/LoginSession");
+        await dbConnect();
+        await LoginSession.updateOne({ sessionId: message.token.loginSessionId }, { $set: { revokedAt: new Date() } });
+      } catch (error) {
+        console.error("Login session logout tracking failed", error);
+      }
+    },
+  },
   providers: [
     Credentials({
       credentials: { email: {}, password: {} },

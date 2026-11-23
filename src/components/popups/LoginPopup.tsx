@@ -137,34 +137,45 @@ export function PopupCard({ popup, onDismiss, onAction, onImageError }: { popup:
   const [brokenImage, setBrokenImage] = useState("");
   const showImage = Boolean(popup.imageUrl) && brokenImage !== popup.imageUrl;
   return (
-    <div role="dialog" aria-modal="true" aria-labelledby="login-popup-title" className="relative w-full max-w-md overflow-hidden rounded-2xl border border-brand/10 bg-white text-left shadow-2xl">
+    // Never taller than the screen (phone, tablet or laptop): the picture shrinks
+    // to fit whole, the text scrolls, and the buttons stay in view.
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="login-popup-title"
+      className="relative flex max-h-[calc(100vh-2rem)] w-full max-w-md flex-col overflow-hidden rounded-2xl border border-brand/10 bg-white text-left shadow-2xl supports-[height:100dvh]:max-h-[calc(100dvh-2rem)]"
+    >
       <button type="button" onClick={onDismiss} className="absolute right-3 top-3 z-10 rounded-full bg-white/90 p-1.5 text-slate-500 shadow-sm hover:bg-slate-100" aria-label="Close">
         <X size={16} />
       </button>
       {showImage ? (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img
-          src={popup.imageUrl}
-          alt=""
-          className="max-h-56 w-full object-cover"
-          onError={() => {
-            // A link to a web page rather than a picture: show the usual header instead of a broken image.
-            setBrokenImage(popup.imageUrl || "");
-            onImageError?.();
-          }}
-        />
+        <div className="flex shrink-0 justify-center bg-gradient-to-br from-brand to-brand-700">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={popup.imageUrl}
+            alt=""
+            className="block h-auto max-h-[45vh] w-auto max-w-full object-contain supports-[height:100dvh]:max-h-[45dvh]"
+            onError={() => {
+              // A link to a web page rather than a picture: show the usual header instead of a broken image.
+              setBrokenImage(popup.imageUrl || "");
+              onImageError?.();
+            }}
+          />
+        </div>
       ) : (
-        <div className="flex items-center gap-3 bg-gradient-to-br from-brand to-brand-700 px-5 pb-5 pt-6 text-white">
+        <div className="flex shrink-0 items-center gap-3 bg-gradient-to-br from-brand to-brand-700 px-5 pb-5 pt-6 text-white">
           <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-white/15">
             <Icon size={22} />
           </span>
           <span className="text-xs font-bold uppercase tracking-[0.14em] text-white/80">{kindLabel(popup.kind)}</span>
         </div>
       )}
-      <div className="p-5">
+      <div className="min-h-0 flex-1 overflow-y-auto px-5 pt-5">
         <h2 id="login-popup-title" className="break-words text-lg font-black leading-snug text-slate-950">{popup.title || "Pop-up title"}</h2>
-        <p className="mt-2 whitespace-pre-line break-words text-sm leading-6 text-slate-600">{popup.body || "Your message appears here."}</p>
-        <div className="mt-5 flex flex-wrap justify-end gap-2">
+        <p className="mt-2 whitespace-pre-line break-words pb-1 text-sm leading-6 text-slate-600">{popup.body || "Your message appears here."}</p>
+      </div>
+      <div className="shrink-0 border-t border-slate-100 px-5 pb-5 pt-3">
+        <div className="flex flex-wrap justify-end gap-2">
           <button type="button" className="btn border border-slate-200 bg-white text-slate-700" onClick={onDismiss}>
             {popup.ctaLabel ? "Maybe later" : "Got it"}
           </button>

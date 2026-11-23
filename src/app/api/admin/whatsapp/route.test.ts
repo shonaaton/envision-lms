@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { Types } from "mongoose";
 const mocks = vi.hoisted(() => ({ auth: vi.fn(), manage: vi.fn(), find: vi.fn(), rows: vi.fn(), summaries: vi.fn(), reads: vi.fn(), count: vi.fn(), updateRead: vi.fn(), updateSummary: vi.fn(), exists: vi.fn(), sync: vi.fn() }));
+vi.mock("@/lib/branch/inboxSeparation", () => ({ isBranchOnlyInboxNumber: async () => false, branchOnlyInboxNationals: async () => new Set(), inboxNational: (p: string) => p.slice(-10) }));
 vi.mock("@/lib/auth", () => ({ auth: mocks.auth }));
 vi.mock("@/lib/featureAccess", () => ({ canAccessFeature: mocks.manage }));
 vi.mock("@/lib/db", () => ({ dbConnect: vi.fn() }));

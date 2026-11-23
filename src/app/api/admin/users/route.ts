@@ -44,7 +44,8 @@ export async function GET(req: Request) {
   // Only admins see staff accounts; a sub-admin's directory is students and coaches.
   const seesStaff = (session.user as any).role === "admin";
   if (!seesStaff && (role === "staff" || STAFF_ROLES.includes(String(role)))) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  const filter: any = {};
+  // Bowbazar accounts are managed at /bowbazar/users, never here.
+  const filter: any = { branch: null };
   if (role === "staff") filter.role = { $in: STAFF_ROLES };
   else if (role) filter.role = role;
   else if (!seesStaff) filter.role = { $nin: STAFF_ROLES };

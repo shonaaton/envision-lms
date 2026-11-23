@@ -12,7 +12,7 @@ import {
 } from "@/lib/branch/admissionRules";
 import { cn } from "@/lib/utils";
 
-type Prefill = { name: string; parentName: string; phone: string; email: string };
+type Prefill = { name: string; parentName: string; phone: string; email: string; fatherName?: string; motherName?: string; school?: string; dateOfBirth?: string };
 type Picked = { file: File; preview: string; note: string };
 
 /**
@@ -46,11 +46,13 @@ async function shrinkImage(file: File): Promise<File> {
 
 export default function AdmissionForm({
   token,
+  kind = "new",
   prefill,
   branchLabel,
   turnstileSiteKey,
 }: {
   token: string;
+  kind?: "new" | "update";
   prefill: Prefill;
   branchLabel: string;
   turnstileSiteKey: string;
@@ -125,8 +127,9 @@ export default function AdmissionForm({
         <CheckCircle2 size={40} className="mx-auto text-emerald-600" />
         <h1 className="mt-3 text-xl font-black text-slate-950">Thank you!</h1>
         <p className="mt-2 text-sm text-slate-600">
-          {done}&apos;s admission form has reached the {branchLabel} centre. Once the centre confirms the place, you will get the login details on
-          WhatsApp{prefill.email ? " and email" : ""}.
+          {kind === "update"
+            ? `${done}'s details have reached the ${branchLabel} centre. Nothing else is needed from you.`
+            : `${done}'s admission form has reached the ${branchLabel} centre. Once the centre confirms the place, you will get the login details on WhatsApp${prefill.email ? " and email" : ""}.`}
         </p>
       </div>
     );
@@ -137,9 +140,11 @@ export default function AdmissionForm({
   return (
     <form onSubmit={submit} className="space-y-5 rounded-xl border border-slate-200 bg-white p-5 shadow-sm" noValidate>
       <div>
-        <h1 className="text-xl font-black text-slate-950">Admission form</h1>
+        <h1 className="text-xl font-black text-slate-950">{kind === "update" ? "Student details" : "Admission form"}</h1>
         <p className="mt-1 text-sm text-slate-600">
-          Please fill in the details below{prefill.name ? ` for ${prefill.name}` : ""}. Fields marked * are needed.
+          {kind === "update"
+            ? `Please check what the centre has for ${prefill.name || "your child"}, fill in anything missing and add a photo. Fields marked * are needed.`
+            : `Please fill in the details below${prefill.name ? ` for ${prefill.name}` : ""}. Fields marked * are needed.`}
         </p>
       </div>
 
@@ -150,10 +155,10 @@ export default function AdmissionForm({
         </Label>
         <div className="grid gap-3 sm:grid-cols-2">
           <Label text="Date of birth">
-            <input name="dateOfBirth" type="date" className={input} />
+            <input name="dateOfBirth" type="date" defaultValue={prefill.dateOfBirth || ""} className={input} />
           </Label>
           <Label text="School">
-            <input name="school" className={input} />
+            <input name="school" defaultValue={prefill.school || ""} className={input} />
           </Label>
         </div>
       </fieldset>
@@ -162,10 +167,10 @@ export default function AdmissionForm({
         <legend className="mb-1 text-xs font-black uppercase tracking-wide text-brand">Family</legend>
         <div className="grid gap-3 sm:grid-cols-2">
           <Label text="Father's name">
-            <input name="fatherName" className={input} autoComplete="off" />
+            <input name="fatherName" defaultValue={prefill.fatherName || ""} className={input} autoComplete="off" />
           </Label>
           <Label text="Mother's name">
-            <input name="motherName" className={input} autoComplete="off" />
+            <input name="motherName" defaultValue={prefill.motherName || ""} className={input} autoComplete="off" />
           </Label>
         </div>
         <Label text="Parent or guardian to contact">
@@ -179,9 +184,6 @@ export default function AdmissionForm({
             <input name="email" type="email" defaultValue={prefill.email} className={input} autoComplete="email" />
           </Label>
         </div>
-        <Label text="Home address *">
-          <textarea name="address" rows={3} className={cn(input, "h-auto py-2")} autoComplete="street-address" required />
-        </Label>
       </fieldset>
 
       <fieldset className="space-y-3">
@@ -218,7 +220,7 @@ export default function AdmissionForm({
         className="flex h-12 w-full items-center justify-center gap-2 rounded-lg bg-brand text-base font-black text-white shadow-sm hover:bg-brand-700 disabled:opacity-60"
       >
         {busy === "send" && <Loader2 size={18} className="animate-spin" />}
-        Send to the centre
+        {kind === "update" ? "Send details" : "Send to the centre"}
       </button>
       <p className="text-center text-xs text-slate-500">Your details are seen only by the academy&apos;s staff.</p>
     </form>

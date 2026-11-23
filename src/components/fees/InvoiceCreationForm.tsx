@@ -263,6 +263,7 @@ export function InvoiceCreationForm({
   const [invoiceDate, setInvoiceDate] = useState(today);
   const [dueDate, setDueDate] = useState(addDays(today, 7));
   const [coverageMonths, setCoverageMonths] = useState("1");
+  const [coverageSessions, setCoverageSessions] = useState("");
   const [referenceNumber, setReferenceNumber] = useState("");
   const [notes, setNotes] = useState("");
   const [markPaid, setMarkPaid] = useState(false);
@@ -317,6 +318,8 @@ export function InvoiceCreationForm({
   else if (dueDate < invoiceDate) missing.push("Due date is before the invoice date");
   if (!title.trim()) missing.push("Add a title");
   const monthsCovered = Number(coverageMonths);
+  const sessionsCovered = Number(coverageSessions);
+  if (!plan && coverageSessions && !(Number.isInteger(sessionsCovered) && sessionsCovered >= 1 && sessionsCovered <= 1000)) missing.push("Sessions covered must be 1 to 1000");
   if (!plan && !(Number.isInteger(monthsCovered) && monthsCovered >= 1 && monthsCovered <= 36)) missing.push("Months covered must be 1 to 36");
   const paymentAllowed = canRecordPayment && (plan?.type !== "credits" || canRecordCreditPayment);
   const recordingPayment = markPaid && paymentAllowed;
@@ -408,6 +411,7 @@ export function InvoiceCreationForm({
     formData.set("invoiceDate", invoiceDate);
     formData.set("dueDate", dueDate);
     if (!plan) formData.set("coverageMonths", String(monthsCovered));
+    if (!plan && coverageSessions) formData.set("coverageSessions", String(sessionsCovered));
     formData.set("referenceNumber", referenceNumber.trim());
     formData.set("notes", notes.trim());
     if (recordingPayment) {
@@ -718,6 +722,9 @@ export function InvoiceCreationForm({
                   <Label htmlFor="invoice-coverage-months">Months this fee covers</Label>
                   <input id="invoice-coverage-months" type="number" inputMode="numeric" min={1} max={36} step={1} value={coverageMonths} onChange={(event) => setCoverageMonths(event.target.value)} className={`${inputClass} md:w-40`} />
                   <span className="mt-1 block text-xs text-slate-500">From the invoice month. A 12-month package is 12, and its fee is spread over those months in Coach Profitability.</span>
+                  <Label htmlFor="invoice-coverage-sessions">Sessions this fee covers (optional)</Label>
+                  <input id="invoice-coverage-sessions" type="number" inputMode="numeric" min={1} max={1000} step={1} value={coverageSessions} onChange={(event) => setCoverageSessions(event.target.value)} className={`${inputClass} md:w-40`} />
+                  <span className="mt-1 block text-xs text-slate-500">For a session package, enter the purchased sessions (for example, 32). This overrides months covered: profitability counts the fee per session only as classes are completed. This does not add class credits.</span>
                 </div>
               ) : null}
               <div>

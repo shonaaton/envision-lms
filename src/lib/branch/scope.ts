@@ -100,6 +100,30 @@ export function scopeStudentFilter(filter: unknown): Filter | null {
   return { ...filter, $and: and };
 }
 
+/**
+ * The same idea for records that belong wholly to one side - today the
+ * `Classroom` behind a branch's online class. The online app never names a
+ * branch, so every one of its queries gets `branch: null`; branch code names
+ * its branch, and a lookup by id (the live room, populate) runs unchanged and
+ * is checked by whoever made it.
+ */
+export function scopeBranchRecordFilter(filter: unknown): Filter | null {
+  const value = filter ?? {};
+  if (!isPlainObject(value)) return null;
+  if (filterNamesBranch(value) || filterNamesAccounts(value)) return null;
+  return { ...value, branch: null };
+}
+
+export function scopeBranchRecordPipeline(pipeline: unknown[]): unknown[] | null {
+  const first = pipeline[0];
+  if (!isPlainObject(first) || !isPlainObject(first.$match)) {
+    return [{ $match: { branch: null } }, ...pipeline];
+  }
+  const scoped = scopeBranchRecordFilter(first.$match);
+  if (!scoped) return null;
+  return [{ ...first, $match: scoped }, ...pipeline.slice(1)];
+}
+
 /** Same rule for an aggregation: only a leading `$match` is scoped. */
 export function scopeStudentPipeline(pipeline: unknown[]): unknown[] | null {
   const first = pipeline[0];

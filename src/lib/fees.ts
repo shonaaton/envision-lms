@@ -145,6 +145,7 @@ export async function createInvoice(input: {
   credits?: number;
   /** Custom invoices only: months the fee pays for (unset = 1). */
   coverageMonths?: number;
+  coverageSessions?: number;
   notes?: string;
   invoiceMode?: "included" | "excluded" | "non_gst";
   gstPercentage?: number;

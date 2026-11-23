@@ -127,6 +127,9 @@ const InvoiceSchema = new Schema(
     // month: a 12-month package is 12. Unset means one month. Coach
     // Profitability spreads the fee evenly over these months.
     coverageMonths: { type: Number, min: 1, max: 36 },
+    // Session packages recognise tuition per completed class, not per month.
+    // Reporting metadata only; does not grant attendance credits.
+    coverageSessions: { type: Number, min: 1, max: 1000 },
     status: { type: String, enum: ["draft", "unpaid", "paid", "overdue", "cancelled"], default: "unpaid", index: true },
     // Why an invoice was voided, and what it was before, so a void driven by an
     // account change can be undone when the account comes back.

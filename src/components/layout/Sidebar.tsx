@@ -357,6 +357,7 @@ function branchSections(role: Role, branchCan: string[]): NavSection[] {
     { href: "/bowbazar/admissions", label: "Admissions", icon: UserPlus, need: "students" },
     { href: "/bowbazar/changes", label: "Time Changes", icon: Repeat, need: "students" },
     { href: "/bowbazar/fees", label: "Fees", icon: BadgeIndianRupee, need: "fees" },
+    { href: "/bowbazar/accounts", label: "Accounts", icon: Landmark, need: "fees" },
     { href: "/bowbazar/messages", label: "Messages & Holidays", icon: Megaphone, need: "messages" },
     { href: "/bowbazar/exams", label: "Exams", icon: GraduationCap, need: "exams" },
     { href: "/bowbazar/achievements", label: "Achievements", icon: Trophy, need: "achievements" },

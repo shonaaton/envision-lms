@@ -569,7 +569,7 @@ export async function GET(req: Request, { params }: { params: { id: string } }) 
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
   await dbConnect();
-  const doc = await Classroom.findById(params.id)
+  const doc = await Classroom.findOne({ _id: params.id, branch: null })
     .populate("instructor coach", "name email username")
     .populate("generatedSessions.students", "name email username isActive")
     .populate("students", "name email username isActive")
@@ -627,7 +627,7 @@ async function patchClassroom(req: Request, { params }: { params: { id: string }
     return NextResponse.json({ error: "Only an admin can close or reopen a course" }, { status: 403 });
   }
   await dbConnect();
-  const existing: any = await Classroom.findById(params.id);
+  const existing: any = await Classroom.findOne({ _id: params.id, branch: null });
   if (!existing) return NextResponse.json({ error: "Not found" }, { status: 404 });
   if (!(await canAccessRecord(existing, session.user as any))) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   // A class held before a permanent coach change is history: coaches cannot change it.
@@ -1478,7 +1478,7 @@ async function patchClassroom(req: Request, { params }: { params: { id: string }
       });
     }
   }
-  const updated = await Classroom.findById(params.id)
+  const updated = await Classroom.findOne({ _id: params.id, branch: null })
     .populate("coach instructor", "name email username")
     .populate("generatedSessions.substituteCoach generatedSessions.assignedCoach", "name email username")
     .populate("generatedSessions.students", "name email username isActive")
@@ -1494,7 +1494,7 @@ export async function DELETE(_: Request, { params }: { params: { id: string } })
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
   await dbConnect();
-  const existing = await Classroom.findById(params.id).select("coach instructor students isTestClassroom testOwner").lean();
+  const existing = await Classroom.findOne({ _id: params.id, branch: null }).select("coach instructor students isTestClassroom testOwner").lean();
   if (!existing) return NextResponse.json({ error: "Not found" }, { status: 404 });
   if (!(await canAccessRecord(existing, session.user as any))) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   await deleteClassroomRecords(params.id);

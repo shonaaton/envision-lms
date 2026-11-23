@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { BookOpenCheck, CheckCheck, ChevronLeft, ChevronRight, ClipboardCheck, Loader2, Plus, Search, X } from "lucide-react";
+import { BookOpenCheck, CheckCheck, ChevronLeft, ChevronRight, ClipboardCheck, Loader2, Plus, Search, Video, X } from "lucide-react";
 import { toast } from "sonner";
 import { DAY_NAMES, shiftDateKey } from "@/lib/branch/rules";
 import { cn } from "@/lib/utils";
@@ -372,6 +372,13 @@ function RegisterEditor({ slotId, date, onSaved }: { slotId: string; date: strin
             </p>
           )}
         </div>
+        {register.slot.mode === "online" && register.slot.isActive && date === register.today && (
+          // The academy's live room (board, PGN, puzzles, chat); its end-of-class
+          // summary fills this register.
+          <Link href={`/bowbazar/live/${register.slot.id}`} className="btn-primary h-9 px-3 text-sm">
+            <Video size={16} /> Open live room
+          </Link>
+        )}
         {!future && rows.length > 0 && (
           <button
             type="button"

@@ -409,6 +409,7 @@ export async function listStudents(branch: BranchKey) {
       dateOfBirth: student.dateOfBirth || null,
       notes: student.notes || "",
       admissionId: student.admission ? id(student.admission) : "",
+      welcomeSentAt: student.welcomeSentAt || null,
       discount: student.discount?.kind ? { kind: student.discount.kind, value: student.discount.value, reason: student.discount.reason || "" } : null,
       admissionFee: student.admissionFee || 0,
       feePlan: student.feePlan || "monthly",

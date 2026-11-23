@@ -8,9 +8,11 @@ import { readSpreadsheet, SpreadsheetFormatError } from "@/lib/sheetReader";
 import { User, createUserWithUsername } from "@/models/User";
 import { BranchFeeBill, BranchSlot, BranchStudent } from "@/models/Branch";
 import type { BranchKey } from "./scope";
-import { billStatus, monthKey, shiftMonth } from "./rules";
+import { billStatus, feeForSlots, monthKey, shiftMonth } from "./rules";
 import { BranchError, listSlots } from "./service";
 import { ImportFormatError, guessSlots, parseBranchImport, type ImportBill, type ImportStudent } from "./importParse";
+import { CARRIED_OVER, importCashRows, importedCashCount } from "./accounts";
+import { CASH_CATEGORIES } from "./statementParse";
 
 export type ImportFiles = { students: { buffer: Buffer; name: string }; report: { buffer: Buffer; name: string } };
 export type ImportOptions = {
@@ -63,15 +65,38 @@ function feeStartMonth(student: ImportStudent, raiseCurrentMonth: boolean) {
 export async function previewBranchImport(branch: BranchKey, files: ImportFiles) {
   await dbConnect();
   const plan = readPlan(files);
-  const [slots, matches, billed] = await Promise.all([
+  const [slots, matches, billed, cashImported] = await Promise.all([
     listSlots(branch, { includeInactive: false }),
     existingMatches(branch, plan.students),
     BranchFeeBill.countDocuments({ branch, source: "import" }),
+    importedCashCount(branch),
   ]);
+  const byCategory = new Map<string, { label: string; kind: string; rows: number; amount: number }>();
+  for (const row of plan.cash) {
+    const key = `${row.kind}|${row.category}`;
+    const entry = byCategory.get(key) || { label: CASH_CATEGORIES.find((c) => c.key === row.category)?.label || row.category, kind: row.kind, rows: 0, amount: 0 };
+    entry.rows += 1;
+    entry.amount += row.amount;
+    byCategory.set(key, entry);
+  }
   const current = monthKey();
   return {
     currentMonth: current,
+    format: plan.format,
     alreadyImportedBills: billed,
+    cash: plan.cashTotals
+      ? {
+          rows: plan.cash.length,
+          income: plan.cashTotals.income,
+          expense: plan.cashTotals.expense,
+          blankRows: plan.cash.filter((row) => !row.amount).length,
+          alreadyImported: cashImported,
+          firstDate: plan.cash.map((row) => row.date).sort()[0] || null,
+          lastDate: plan.cash.map((row) => row.date).sort().pop() || null,
+          categories: [...byCategory.values()].sort((a, b) => a.kind.localeCompare(b.kind) || b.amount - a.amount),
+        }
+      : null,
+    feeOnly: plan.feeOnly,
     slots: slots.map(({ students, ...slot }) => ({ ...slot, seatedIds: students.map((student) => student.id) })),
     classes: plan.classes.map((entry) => ({ ...entry, guess: guessSlots(entry.name, slots) })),
     students: plan.students.map((student) => ({
@@ -99,16 +124,27 @@ function billDoc(branch: BranchKey, studentId: unknown, bill: ImportBill) {
   const amount = Math.max(0, Math.round(bill.total * 100));
   const paid = Math.max(0, Math.round(bill.paid * 100));
   const paidAt = bill.date ? academyDateTime(bill.date, "12:00") : academyDateTime(`${bill.month}-01`, "12:00");
-  const payments = paid
-    ? [{
-        amount: paid,
-        mode: "other",
-        paidAt,
-        reference: bill.receipt ? `Old report #${bill.receipt}` : "",
-        note: "Carried over from the earlier fees report",
-        collectedByName: "Earlier system",
-      }]
-    : [];
+  const payments = bill.payments
+    ? bill.payments
+        .filter((payment) => payment.amount > 0)
+        .map((payment) => ({
+          amount: Math.round(payment.amount * 100),
+          mode: "other",
+          paidAt: academyDateTime(payment.date, "12:00"),
+          reference: "",
+          note: "Carried over from the account statement",
+          collectedByName: CARRIED_OVER,
+        }))
+    : paid
+      ? [{
+          amount: paid,
+          mode: "other",
+          paidAt,
+          reference: bill.receipt ? `Old report #${bill.receipt}` : "",
+          note: "Carried over from the earlier fees report",
+          collectedByName: CARRIED_OVER,
+        }]
+      : [];
   let status: string = billStatus({ amount, paidAmount: paid });
   let waivedReason: string | undefined;
   if (bill.total < 0) {
@@ -116,7 +152,7 @@ function billDoc(branch: BranchKey, studentId: unknown, bill: ImportBill) {
     waivedReason = `The old report shows −₹${Math.abs(bill.total)} for this month (a credit or refund).`;
   } else if (!amount && !paid) {
     status = "waived";
-    waivedReason = "No fee was charged in the old report.";
+    waivedReason = bill.waivedReason || "No fee was charged in the old report.";
   }
   const doc: Record<string, unknown> = { branch, student: studentId, month: bill.month, amount, payments, paidAmount: paid, status, source: "import" };
   if (waivedReason) doc.waivedReason = waivedReason;
@@ -139,7 +175,7 @@ export async function commitBranchImport(branch: BranchKey, files: ImportFiles, 
     const plan = readPlan(files);
     const [slotDocs, matches] = await Promise.all([BranchSlot.find({ branch }).select("_id").lean(), existingMatches(branch, plan.students)]);
     const validSlots = new Set((slotDocs as any[]).map(id));
-    const result = { created: 0, linked: 0, kept: 0, billsCreated: 0, billsKept: 0 };
+    const result = { created: 0, linked: 0, kept: 0, billsCreated: 0, billsKept: 0, cashAdded: 0, cashKept: 0 };
 
     for (const student of plan.students) {
       let studentId: string;
@@ -153,7 +189,12 @@ export async function commitBranchImport(branch: BranchKey, files: ImportFiles, 
           result.kept += 1;
         }
       } else {
-        const fee = Number.isFinite(options.fees?.[student.regNo]) ? Number(options.fees[student.regNo]) : student.monthlyFee;
+        const slots = (options.mapping?.[student.className] || []).filter((slot) => validSlots.has(slot));
+        // A fee typed on the import screen wins; otherwise current students pay by their slots
+        // (1 = ₹1,000, 2 = ₹1,500), and anyone else keeps what they usually paid.
+        const fee = Number.isFinite(options.fees?.[student.regNo])
+          ? Number(options.fees[student.regNo])
+          : (student.active ? feeForSlots(slots.length) : null) ?? student.monthlyFee;
         const password = randomBytes(6).toString("base64url").replace(/[-_]/g, "x");
         const slug = student.name.toLowerCase().replace(/[^a-z0-9]+/g, "").slice(0, 20) || "student";
         const user: any = await createUserWithUsername({
@@ -174,7 +215,6 @@ export async function commitBranchImport(branch: BranchKey, files: ImportFiles, 
           passwordChangedAt: new Date(),
           passwordChangeSource: "registration",
         });
-        const slots = (options.mapping?.[student.className] || []).filter((slot) => validSlots.has(slot));
         const record: any = await BranchStudent.create({
           user: user._id,
           branch,
@@ -220,10 +260,15 @@ export async function commitBranchImport(branch: BranchKey, files: ImportFiles, 
       }
     }
 
+    // Every row of the account statement, fees and expenses alike, goes into the cashbook.
+    const cash = await importCashRows(branch, plan.cash, { id: actorId, name: "" });
+    result.cashAdded = cash.added;
+    result.cashKept = cash.kept;
+
     void recordActivity({
       actor: actorId,
       type: "branch.import",
-      label: `Imported ${branch} students and fees: ${result.created} new students, ${result.billsCreated} monthly bills`,
+      label: `Imported ${branch} students and fees: ${result.created} new students, ${result.billsCreated} monthly bills${plan.format === "statement" ? `, ${result.cashAdded} cashbook lines` : ""}`,
       entityType: "BranchStudent",
       metadata: { ...result, students: files.students.name, report: files.report.name },
     });

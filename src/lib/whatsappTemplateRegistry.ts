@@ -2560,12 +2560,25 @@ export const WHATSAPP_TEMPLATE_DEFINITIONS = [
     "name": "bowbazar_fee_reminder",
     "language": "en",
     "sourceAutomation": "Bowbazar Fee Reminder",
-    "body": "Hello {{1}}, this is a reminder from the Envision Chess Academy Bowbazar centre. The chess class fees for {{2}} of {{3}} are due for {{4}}.\n\nPlease pay at the centre by cash or UPI. If you have already paid, please ignore this message.\n\nTeam Envision Chess Academy",
+    "body": "Hello {{1}}, this is a reminder from the Envision Chess Academy Bowbazar centre. The chess class fees for {{2}} are due: {{3}} for {{4}}.\n\nPlease pay at the centre by cash or UPI. If you have already paid, please ignore this message.\n\nTeam Envision Chess Academy",
     "variables": [
       { "position": 1, "key": "parent_name", "sample": "Mrs Sen" },
       { "position": 2, "key": "student_name", "sample": "Aarav" },
       { "position": 3, "key": "amount", "sample": "₹1,000" },
       { "position": 4, "key": "months", "sample": "October 2026" }
+    ]
+  },
+  {
+    "name": "bowbazar_welcome_login",
+    "language": "en",
+    "sourceAutomation": "Bowbazar Welcome + Set Password",
+    "body": "Hello {{1}}, welcome to the Envision Chess Academy Bowbazar centre portal. {{2}}'s username is {{3}}.\n\nPlease set the password here: {{4}}\nThis link works for {{5}} days.\n\nAfter signing in, open Account Settings to update the profile and photo.\n\nTeam Envision Chess Academy",
+    "variables": [
+      { "position": 1, "key": "parent_name", "sample": "Mrs Sen" },
+      { "position": 2, "key": "student_name", "sample": "Aarav" },
+      { "position": 3, "key": "username", "sample": "Aarav@ENV" },
+      { "position": 4, "key": "set_password_link", "sample": "https://envisionchessacademy.com/reset-password?token=abc123" },
+      { "position": 5, "key": "valid_days", "sample": "7" }
     ]
   },
   {

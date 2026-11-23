@@ -56,7 +56,7 @@ export default async function CoachProfitabilityPage({
       </form>
 
       <p className="text-sm text-slate-600">
-        Revenue uses LMS fee collections excluding GST. Each student’s collections are split by completed classes with each coach in the selected month.
+        Session package revenue is the invoice tuition divided by purchased sessions, counted only for completed classes in the selected month. Unused sessions are not included in profitability.
         Monthly fees count in the month they fall due, and custom invoices are spread over the months they cover, including unpaid invoices, excluding GST and late fees. Fixed monthly salary is counted once, with zero additional cost for covered substitutions. Gain or loss is before overhead and payment processing fees.
       </p>
       {report.unallocatedRevenue !== 0 && (
@@ -68,6 +68,14 @@ export default async function CoachProfitabilityPage({
       {report.missingFees > 0 && (
         <p className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
           {report.missingFees} students have no applicable fee invoice. Their class revenue needs review.
+          <span className="mt-2 block">
+            {report.missingFeeStudents.map((student, index) => (
+              <span key={student.id}>
+                {index > 0 ? ", " : ""}
+                <Link className="font-medium underline" href={`/fees/invoices?student=${encodeURIComponent(student.id)}`}>{student.name}</Link>
+              </span>
+            ))}
+          </span>
         </p>
       )}
       {(report.pendingReview > 0 || report.unpriced > 0) && (

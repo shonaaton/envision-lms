@@ -50,12 +50,13 @@ export default async function AdmissionPage({ params }: { params: { token: strin
           </Notice>
         ) : admission.state === "received" ? (
           <Notice icon={<CheckCircle2 size={24} />} title="Form received">
-            Thank you. The centre has {admission.studentName ? `${admission.studentName}'s` : "your"} details and will be in touch with the login details.
+            Thank you. The centre has {admission.studentName ? `${admission.studentName}'s` : "your"} details
+            {admission.kind === "update" ? " and will update the record." : " and will be in touch with the login details."}
           </Notice>
         ) : (
           <>
             {siteKey ? <Script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer /> : null}
-            <AdmissionForm token={params.token} prefill={admission.prefill} branchLabel={admission.branchLabel} turnstileSiteKey={siteKey} />
+            <AdmissionForm token={params.token} kind={admission.kind} prefill={admission.prefill} branchLabel={admission.branchLabel} turnstileSiteKey={siteKey} />
           </>
         )}
       </div>

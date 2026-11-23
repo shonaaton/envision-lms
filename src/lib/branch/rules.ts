@@ -141,6 +141,19 @@ export function billStatus(bill: BillMoney): "unpaid" | "partial" | "paid" | "wa
 }
 
 /** Rupees typed into a form, to paise. Rejects anything that is not a plain amount. */
+/**
+ * The centre's monthly fee by how many weekly slots a student sits in (rupees):
+ * one class a week is ₹1,000, two are ₹1,500 (the user's rule, 2026-11-24).
+ * Forms fill the fee in from this when slots are picked; staff can still type
+ * over it, for a sibling discount say.
+ */
+export const SLOT_FEES: Readonly<Record<number, number>> = { 1: 1000, 2: 1500 };
+
+/** The fee for this many slots, in rupees, or null when the rule doesn't say (none, or three or more). */
+export function feeForSlots(count: number): number | null {
+  return SLOT_FEES[count] ?? null;
+}
+
 export function rupeesToPaise(value: unknown) {
   const text = String(value ?? "").replace(/[,\s₹]/g, "");
   if (!/^\d+(\.\d{1,2})?$/.test(text)) return null;

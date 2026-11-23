@@ -127,7 +127,7 @@ export async function GET(_: Request, { params }: { params: { id: string } }) {
     if (!role || !userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     // `auth()` read this user's role and active flag from the database for this
     // very request, so the access check can reuse them instead of reading again.
-    const verifiedUser = { role, isActive: (session.user as { isActive?: boolean }).isActive };
+    const verifiedUser = { role, isActive: (session.user as { isActive?: boolean }).isActive, branch: (session.user as { branch?: string }).branch };
     const { classroom, allowed, reason } = await getLiveClassroomForUser(params.id, role, userId, requestedSessionId, verifiedUser);
     if (!classroom) return NextResponse.json({ error: "Not found" }, { status: 404 });
     const classroomDoc = classroom as Record<string, any>;

@@ -2,11 +2,11 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { FileSpreadsheet, History, KeyRound, Loader2, Pencil, Plus, Search, UserCheck, UserX } from "lucide-react";
+import { FileSpreadsheet, History, KeyRound, Loader2, MessageCircle, Pencil, Plus, Search, Send, UserCheck, UserX } from "lucide-react";
 import { toast } from "sonner";
 import { FEE_PLANS, FEE_PLAN_LABEL, monthLabel } from "@/lib/branch/rules";
 import { cn } from "@/lib/utils";
-import { BranchHeader, CredentialsNote, Drawer, Field, ModeBadge, SlotPicker, api, rupees } from "./shared";
+import { BranchHeader, CredentialsNote, Drawer, Field, ModeBadge, SlotPicker, api, rupees, slotFee } from "./shared";
 import type { Slot } from "./SlotsClient";
 import { ClassLogList, HomeworkLogList, type ClassLogEntry, type ClassLogHomework } from "./ClassLog";
 import { CourseProgress, type CourseProgressData } from "./CourseProgress";
@@ -37,6 +37,7 @@ type Student = {
   pendingAmount: number;
   pendingMonths: string[];
   admissionId: string;
+  welcomeSentAt: string | null;
   discount: { kind: "percent" | "flat"; value: number; reason: string } | null;
   admissionFee: number;
   feePlan: string;
@@ -62,6 +63,12 @@ export default function StudentsClient({ can }: { can: string[] }) {
   const [courses, setCourses] = useState<BranchCourse[]>([]);
   const [courseFilter, setCourseFilter] = useState("");
   const [picked, setPicked] = useState<Set<string>>(new Set());
+  const [onlyNoDetails, setOnlyNoDetails] = useState(false);
+  const [detailsResult, setDetailsResult] = useState<DetailsResult | null>(null);
+  const [sendingDetails, setSendingDetails] = useState(false);
+  const [onlyNoWelcome, setOnlyNoWelcome] = useState(false);
+  const [welcomeResult, setWelcomeResult] = useState<WelcomeResult | null>(null);
+  const [sendingWelcome, setSendingWelcome] = useState(false);
 
   useEffect(() => {
     api<{ courses: BranchCourse[] }>("/api/bowbazar/courses")
@@ -96,13 +103,15 @@ export default function StudentsClient({ can }: { can: string[] }) {
       if (status !== "all" && student.status !== status) return false;
       if (slotFilter && !student.slots.some((slot) => slot.id === slotFilter)) return false;
       if (onlyPending && !student.pendingAmount) return false;
+      if (onlyNoDetails && student.admissionId) return false;
+      if (onlyNoWelcome && student.welcomeSentAt) return false;
       if (courseFilter === "none" && student.course) return false;
       if (courseFilter && courseFilter !== "none" && student.course?.levelId !== courseFilter && student.course?.courseId !== courseFilter) return false;
       if (!q) return true;
       return [student.name, student.regNo, student.username, student.phone, student.parentName, student.fatherName, student.motherName, student.school]
         .some((value) => value?.toLowerCase().includes(q));
     });
-  }, [students, query, status, slotFilter, onlyPending, courseFilter]);
+  }, [students, query, status, slotFilter, onlyPending, courseFilter, onlyNoDetails, onlyNoWelcome]);
   const shownPicked = shown.filter((student) => picked.has(student.id));
   const togglePick = (studentId: string) =>
     setPicked((current) => {
@@ -124,6 +133,41 @@ export default function StudentsClient({ can }: { can: string[] }) {
       void load();
     } catch (error: any) {
       toast.error(error.message);
+    }
+  }
+
+  /** The details form: the admission form, pre-filled, that completes an existing record. */
+  async function sendDetails(list: Student[]) {
+    if (!list.length) return;
+    const who = list.length === 1 ? `${list[0].name}'s family` : `the families of ${list.length} students`;
+    if (!window.confirm(`Send the details form to ${who} on WhatsApp${list.length === 1 ? "" : " (and email where known)"}? They add a photo, an ID document and anything missing.`)) return;
+    setSendingDetails(true);
+    try {
+      const data = await api<DetailsResult>("/api/bowbazar/admissions", { method: "POST", json: { action: "details", studentIds: list.map((student) => student.id) } });
+      setDetailsResult(data);
+      setPicked(new Set());
+    } catch (error: any) {
+      toast.error(error.message);
+    } finally {
+      setSendingDetails(false);
+    }
+  }
+
+  /** Each family's own WhatsApp: the username and a private link to choose the password. */
+  async function sendWelcome(list: Student[]) {
+    if (!list.length) return;
+    const who = list.length === 1 ? `${list[0].name}'s family` : `${list.length} families, each in their own message`;
+    if (!window.confirm(`Send the welcome message with the username and a set-password link to ${who}? A link sent earlier stops working; the current password keeps working until they set a new one.`)) return;
+    setSendingWelcome(true);
+    try {
+      const data = await api<WelcomeResult>("/api/bowbazar/students/welcome", { method: "POST", json: { studentIds: list.map((student) => student.id) } });
+      setWelcomeResult(data);
+      setPicked(new Set());
+      void load();
+    } catch (error: any) {
+      toast.error(error.message);
+    } finally {
+      setSendingWelcome(false);
     }
   }
 
@@ -197,7 +241,78 @@ export default function StudentsClient({ can }: { can: string[] }) {
             Fees pending
           </label>
         )}
+        <label className="flex items-center gap-2 whitespace-nowrap text-sm font-semibold text-slate-700">
+          <input type="checkbox" checked={onlyNoDetails} onChange={(event) => setOnlyNoDetails(event.target.checked)} />
+          Details not received yet
+        </label>
+        <label className="flex items-center gap-2 whitespace-nowrap text-sm font-semibold text-slate-700">
+          <input type="checkbox" checked={onlyNoWelcome} onChange={(event) => setOnlyNoWelcome(event.target.checked)} />
+          Login not sent
+        </label>
       </div>
+
+      {welcomeResult && (
+        <section className="rounded-lg border border-sky-200 bg-sky-50 p-3 text-sm text-sky-950">
+          <div className="flex items-start justify-between gap-2">
+            <div className="font-black">
+              Welcome + set-password link made for {welcomeResult.sent} {welcomeResult.sent === 1 ? "family" : "families"}
+              {welcomeResult.sent > 0 && ` · ${welcomeResult.viaWhatsApp} sent on WhatsApp`}
+              {welcomeResult.skipped > 0 && ` · ${welcomeResult.skipped} skipped`}
+            </div>
+            <button type="button" className="text-xs font-bold underline" onClick={() => setWelcomeResult(null)}>Done</button>
+          </div>
+          {welcomeResult.sent > welcomeResult.viaWhatsApp && (
+            <p className="mt-1 text-xs font-bold">
+              WhatsApp couldn&apos;t send {welcomeResult.sent - welcomeResult.viaWhatsApp} automatically (the message may still be waiting for Meta&apos;s approval). Tap Open WhatsApp on each one: the message is typed for you, press send.
+            </p>
+          )}
+          <ul className="mt-2 divide-y divide-sky-100">
+            {welcomeResult.results.map((result) => (
+              <li key={result.studentId} className="flex flex-wrap items-center justify-between gap-2 py-1 text-xs">
+                <span>
+                  <span className="font-bold">{result.name || result.studentId}</span>
+                  {result.username && <span className="ml-1 font-mono text-sky-800">{result.username}</span>}
+                  {result.status === "skipped" && <span className="ml-1 text-amber-800">skipped: {result.reason}</span>}
+                  {result.whatsapp === "sent" && <span className="ml-1 text-emerald-700">sent on WhatsApp</span>}
+                </span>
+                {result.whatsappLink && (
+                  <a href={result.whatsappLink} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 rounded-md bg-emerald-600 px-2 py-1 font-bold text-white hover:bg-emerald-700">
+                    <MessageCircle size={13} /> Open WhatsApp
+                  </a>
+                )}
+              </li>
+            ))}
+          </ul>
+          <p className="mt-1 text-xs">Each link works for 7 days and only once. Sending again makes a new link.</p>
+        </section>
+      )}
+
+      {detailsResult && (
+        <section className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-950">
+          <div className="flex items-start justify-between gap-2">
+            <div className="font-black">
+              Details form sent to {detailsResult.sent} {detailsResult.sent === 1 ? "family" : "families"}
+              {detailsResult.skipped > 0 && `, ${detailsResult.skipped} skipped`}
+            </div>
+            <button type="button" className="text-xs font-bold underline" onClick={() => setDetailsResult(null)}>Done</button>
+          </div>
+          <ul className="mt-1 space-y-0.5 text-xs">
+            {detailsResult.results.map((result) => (
+              <li key={result.studentId}>
+                <span className="font-bold">{result.name || result.studentId}</span>:{" "}
+                {result.status === "sent"
+                  ? result.whatsapp !== "failed"
+                    ? `sent on WhatsApp${result.email === "sent" ? " and email" : ""}`
+                    : result.email === "sent"
+                      ? "sent by email only. WhatsApp didn't go; Send again on Admissions gives a link to share"
+                      : "form made, but WhatsApp didn't go and there is no email. Use Send again on Admissions for a link to share by hand"
+                  : <span className="text-amber-800">skipped: {result.reason}</span>}
+              </li>
+            ))}
+          </ul>
+          <p className="mt-1 text-xs">Forms that come back wait under Admissions → To review. Saving one fills in the student&apos;s record and photo, with no new account.</p>
+        </section>
+      )}
 
       {canEdit && shown.length > 0 && (
         <BulkCourseBar
@@ -205,6 +320,10 @@ export default function StudentsClient({ can }: { can: string[] }) {
           shown={shown}
           picked={shownPicked}
           onPickAll={(all) => setPicked(all ? new Set(shown.map((student) => student.id)) : new Set())}
+          sendingDetails={sendingDetails}
+          onSendDetails={() => void sendDetails(shownPicked)}
+          sendingWelcome={sendingWelcome}
+          onSendWelcome={() => void sendWelcome(shownPicked)}
           onDone={() => {
             setPicked(new Set());
             void load();
@@ -233,6 +352,17 @@ export default function StudentsClient({ can }: { can: string[] }) {
                   <span className="text-base font-black text-slate-950">{student.name}</span>
                   <span className="font-mono text-xs text-slate-500">{[student.regNo, student.username].filter(Boolean).join(" · ")}</span>
                   {student.status === "inactive" && <span className="rounded-full bg-slate-200 px-2 py-0.5 text-xs font-bold text-slate-700">Inactive</span>}
+                  {!student.admissionId && student.status === "active" && (
+                    <span className="rounded-full bg-amber-50 px-2 py-0.5 text-xs font-bold text-amber-800">Details not received yet</span>
+                  )}
+                  {student.status === "active" &&
+                    (student.welcomeSentAt ? (
+                      <span className="rounded-full bg-sky-50 px-2 py-0.5 text-xs font-bold text-sky-800" title={`Welcome sent ${new Date(student.welcomeSentAt).toLocaleString("en-IN")}`}>
+                        Login sent {new Date(student.welcomeSentAt).toLocaleDateString("en-IN", { day: "numeric", month: "short" })}
+                      </span>
+                    ) : (
+                      <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-bold text-slate-600">Login not sent</span>
+                    ))}
                 </div>
                 <div className="text-sm text-slate-600">
                   {[student.parentName, student.phone, student.school].filter(Boolean).join(" · ") || "No contact details"}
@@ -285,6 +415,8 @@ export default function StudentsClient({ can }: { can: string[] }) {
                 {canEdit && (
                   <>
                     <IconButton label="Edit" onClick={() => setEditing(student)}><Pencil size={15} /></IconButton>
+                    <IconButton label="Send details form" onClick={() => void sendDetails([student])}><Send size={15} /></IconButton>
+                    <IconButton label="Send welcome + login" onClick={() => void sendWelcome([student])}><MessageCircle size={15} /></IconButton>
                     <IconButton label="New password" onClick={() => resetPassword(student)}><KeyRound size={15} /></IconButton>
                     {student.status === "active" ? (
                       <IconButton label="Mark inactive" tone="bad" onClick={() => setLeaving(student)}><UserX size={15} /></IconButton>
@@ -494,7 +626,7 @@ function StudentDrawer({
         <textarea className="input min-h-[64px]" value={form.address} onChange={(event) => set({ address: event.target.value })} />
       </Field>
       <div className="grid gap-3 sm:grid-cols-2">
-        <Field label="Monthly fee (₹)" hint="This student's own amount; no GST.">
+        <Field label="Monthly fee (₹)" hint="Filled in when you pick slots: 1 slot ₹1,000, 2 slots ₹1,500. Change it for a special case. No GST.">
           <input className="input" inputMode="decimal" value={form.monthlyFee} onChange={(event) => set({ monthlyFee: event.target.value })} />
         </Field>
         {isNew && (
@@ -532,7 +664,7 @@ function StudentDrawer({
       {!isNew && form.discountKind !== (student.discount?.kind || "none") && (
         <p className="text-xs text-slate-500">A discount change applies to bills raised from now on. Adjust bills already raised on the Fees page.</p>
       )}
-      <SlotPicker slots={slots} value={form.slots} onChange={(value) => set({ slots: value })} seatedIn={(student.slots || []).map((slot) => slot.id)} />
+      <SlotPicker slots={slots} value={form.slots} onChange={(value) => set({ slots: value, ...slotFee(value) })} seatedIn={(student.slots || []).map((slot) => slot.id)} />
       <CoursePicker courses={courses} courseId={form.courseId} levelId={form.levelId} onChange={(courseId, levelId) => set({ courseId, levelId })} />
       <Field label="Notes">
         <textarea className="input min-h-[64px]" value={form.notes} onChange={(event) => set({ notes: event.target.value })} />
@@ -645,12 +777,20 @@ function BulkCourseBar({
   picked,
   onPickAll,
   onDone,
+  onSendDetails,
+  sendingDetails,
+  onSendWelcome,
+  sendingWelcome,
 }: {
   courses: BranchCourse[];
   shown: Student[];
   picked: Student[];
   onPickAll: (all: boolean) => void;
   onDone: () => void;
+  onSendDetails: () => void;
+  sendingDetails: boolean;
+  onSendWelcome: () => void;
+  sendingWelcome: boolean;
 }) {
   const [courseId, setCourseId] = useState("");
   const [levelId, setLevelId] = useState("");
@@ -693,8 +833,27 @@ function BulkCourseBar({
           <button type="button" className="btn-primary h-10 shrink-0" onClick={apply} disabled={saving}>
             {saving && <Loader2 size={16} className="animate-spin" />} {courseId ? "Set course" : "Remove course"}
           </button>
+          <button type="button" className="btn-outline h-10 shrink-0" onClick={onSendDetails} disabled={sendingDetails}>
+            {sendingDetails ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />} Send details form to {picked.length}
+          </button>
+          <button type="button" className="btn-outline h-10 shrink-0" onClick={onSendWelcome} disabled={sendingWelcome}>
+            {sendingWelcome ? <Loader2 size={16} className="animate-spin" /> : <MessageCircle size={16} />} Send welcome + login to {picked.length}
+          </button>
         </>
       )}
     </div>
   );
 }
+
+type DetailsResult = {
+  sent: number;
+  skipped: number;
+  results: { studentId: string; name: string; status: "sent" | "skipped"; reason?: string; whatsapp?: string; email?: string }[];
+};
+
+type WelcomeResult = {
+  sent: number;
+  skipped: number;
+  viaWhatsApp: number;
+  results: { studentId: string; name: string; username: string; status: "sent" | "skipped"; reason?: string; whatsapp?: string; whatsappLink?: string }[];
+};

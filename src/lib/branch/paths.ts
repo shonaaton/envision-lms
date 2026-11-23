@@ -53,6 +53,15 @@ const STUDENT_TOOL_PREFIXES = [
   "/api/exams",
 ];
 
+/**
+ * The academy's live room, for a branch's own online classes (lib/branch/live.ts).
+ * Only the live API of one classroom - never the classroom list or editor - and
+ * the room itself refuses any classroom that isn't the caller's branch's.
+ */
+const LIVE_ROOM_API = /^\/api\/classrooms\/[0-9a-f]{24}\/live(\/[a-z]+)?$/;
+/** The server clock the Join button and the room's timers read. */
+const CLOCK_API = "/api/time";
+
 const matches = (pathname: string, prefix: string) => pathname === prefix || pathname.startsWith(`${prefix}/`);
 
 /** A branch student gets their own pages from the branch portal, never the staff screens. */
@@ -60,6 +69,7 @@ export function isBranchAllowedPath(pathname: string, role?: string) {
   if (role === "student" && (matches(pathname, "/bowbazar") || matches(pathname, "/api/bowbazar"))) {
     return matches(pathname, "/bowbazar/me") || matches(pathname, "/api/bowbazar/me");
   }
+  if (LIVE_ROOM_API.test(pathname) || pathname === CLOCK_API) return true;
   if (role !== "student" && STAFF_TOOL_PREFIXES.some((prefix) => matches(pathname, prefix))) return true;
   if (role === "student" && STUDENT_TOOL_PREFIXES.some((prefix) => matches(pathname, prefix))) return true;
   return SHARED_PREFIXES.some((prefix) => matches(pathname, prefix));

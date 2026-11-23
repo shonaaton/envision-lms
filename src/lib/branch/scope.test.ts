@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { scopeStudentFilter, scopeStudentPipeline } from "@/lib/branch/scope";
+import { scopeBranchRecordFilter, scopeBranchRecordPipeline, scopeStudentFilter, scopeStudentPipeline } from "@/lib/branch/scope";
 
 describe("scopeStudentFilter", () => {
   it("narrows a plain student query to online accounts", () => {
@@ -59,5 +59,30 @@ describe("scopeStudentPipeline", () => {
   it("ignores pipelines that do not start by matching students", () => {
     expect(scopeStudentPipeline([{ $group: { _id: "$role" } }])).toBeNull();
     expect(scopeStudentPipeline([{ $match: { role: "admin" } }])).toBeNull();
+  });
+});
+
+describe("scopeBranchRecordFilter (classrooms)", () => {
+  it("keeps every online classroom query to online classrooms", () => {
+    expect(scopeBranchRecordFilter({ coach: "c1", isActive: true })).toEqual({ coach: "c1", isActive: true, branch: null });
+    expect(scopeBranchRecordFilter({})).toEqual({ branch: null });
+    expect(scopeBranchRecordFilter(undefined)).toEqual({ branch: null });
+    expect(scopeBranchRecordFilter({ $or: [{ coach: "c1" }, { instructor: "c1" }] })).toEqual({ $or: [{ coach: "c1" }, { instructor: "c1" }], branch: null });
+  });
+
+  it("leaves branch queries and lookups by id alone", () => {
+    expect(scopeBranchRecordFilter({ branch: "bowbazar", branchSlot: "s1" })).toBeNull();
+    expect(scopeBranchRecordFilter({ _id: "507f1f77bcf86cd799439011" })).toBeNull();
+    expect(scopeBranchRecordFilter({ _id: { $in: ["a", "b"] } })).toBeNull();
+  });
+
+  it("still scopes an everyone-but-one query", () => {
+    expect(scopeBranchRecordFilter({ _id: { $ne: "a" } })).toEqual({ _id: { $ne: "a" }, branch: null });
+  });
+
+  it("scopes aggregations, adding a match when the pipeline has none", () => {
+    expect(scopeBranchRecordPipeline([{ $match: { status: "scheduled" } }, { $count: "n" }])).toEqual([{ $match: { status: "scheduled", branch: null } }, { $count: "n" }]);
+    expect(scopeBranchRecordPipeline([{ $unwind: "$students" }])).toEqual([{ $match: { branch: null } }, { $unwind: "$students" }]);
+    expect(scopeBranchRecordPipeline([{ $match: { branch: "bowbazar" } }])).toBeNull();
   });
 });

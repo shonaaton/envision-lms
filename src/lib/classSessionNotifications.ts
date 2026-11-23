@@ -13,6 +13,7 @@ import { Booking } from "@/models/Booking";
 import { Classroom } from "@/models/Classroom";
 import { Notification } from "@/models/Fee";
 import { User } from "@/models/User";
+import { LoginSession } from "@/models/LoginSession";
 import { raiseCoachMissingTask } from "@/lib/tasks/taskTriggers";
 
 /**
@@ -21,7 +22,7 @@ import { raiseCoachMissingTask } from "@/lib/tasks/taskTriggers";
  * Demo classes have had reminders for a long time; the paid classes families
  * are billed for had none. This covers the four moments that matter:
  *
- *   - the class is about to start (T-30 and T-10)
+ *   - the class is about to start (student WhatsApp T-60/T-10; others T-30/T-10)
  *   - the coach has not joined and somebody needs to intervene
  *   - a class was cancelled on the day it was due to run
  *   - the course finished
@@ -56,7 +57,7 @@ const SWEEP_LIMIT = 200;
 
 const TIME_ZONE_LABEL = ACADEMY_TIME_ZONE === "Asia/Kolkata" ? "IST" : ACADEMY_TIME_ZONE;
 
-type SessionNotificationKind = "starting_t30" | "starting_t10" | "coach_missing" | "cancelled_same_day";
+type SessionNotificationKind = "student_whatsapp_t60" | "student_whatsapp_t10" | "starting_t30" | "starting_t10" | "coach_missing" | "cancelled_same_day";
 
 function objectId(value: any) {
   return value?._id?.toString?.() ?? value?.toString?.() ?? "";
@@ -75,9 +76,9 @@ function startReminderKind(minutes: number): SessionNotificationKind {
  * window is what counts, not landing exactly on it — and because the remaining
  * minutes only fall, each offset can be reached at most once.
  */
-export function dueStartReminderOffset(minutesUntilStart: number) {
+export function dueStartReminderOffset(minutesUntilStart: number, offsets: readonly number[] = START_REMINDER_OFFSETS) {
   if (minutesUntilStart <= 0) return null;
-  const candidates = START_REMINDER_OFFSETS.filter((offset) => minutesUntilStart <= offset);
+  const candidates = offsets.filter((offset) => minutesUntilStart <= offset);
   if (!candidates.length) return null;
   return Math.min(...candidates);
 }
@@ -133,7 +134,7 @@ function joinUrl(classroom: any, session: any) {
 /* Class starting soon                                                 */
 /* ------------------------------------------------------------------ */
 
-async function sendStartingSoonReminder(classroom: any, session: any, start: Date, minutes: number) {
+export async function sendStartingSoonReminder(classroom: any, session: any, start: Date, minutes: number, studentWhatsAppOnly = false) {
   const { students, coach } = await classroomRecipients(classroom, session);
   if (!students.length && !coach) return { sent: 0 };
 
@@ -163,7 +164,7 @@ async function sendStartingSoonReminder(classroom: any, session: any, start: Dat
     return { student, name, message };
   });
 
-  await Promise.all(
+  if (!studentWhatsAppOnly) await Promise.all(
     studentSends.map(({ student, message }) =>
       Promise.all(
         resolveAudienceEmails(
@@ -181,18 +182,18 @@ async function sendStartingSoonReminder(classroom: any, session: any, start: Dat
     ),
   );
 
-  await sendWhatsAppAutomationTemplates(
+  if (studentWhatsAppOnly) await sendWhatsAppAutomationTemplates(
     studentSends.map(({ student, name }) => ({
       user: student,
       templateName: "class_starting_soon_student",
       bodyParameters: [name, title, String(minutes), timeLabel],
-      // The dedup key keeps T-30 and T-10 distinct while collapsing a student
+      // The dedup key keeps T-60 and T-10 distinct while collapsing a student
       // and parent copy of the same one onto the shared number.
       metadata: { ...metadata, studentId: objectId(student._id), dedupKey: `class_start:${objectId(session._id)}:${minutes}` },
     })),
   );
 
-  if (coach?.phone || coach?.email) {
+  if (!studentWhatsAppOnly && (coach?.phone || coach?.email)) {
     const coachName = String(coach.name || coach.username || "Coach");
     const coachMessage = [
       `Hello ${coachName},`,
@@ -211,7 +212,10 @@ async function sendStartingSoonReminder(classroom: any, session: any, start: Dat
         metadata: { ...metadata, recipientType: "coach" },
       }).catch(() => null);
     }
-    await sendWhatsAppAutomationTemplate({
+    const activeLogin = minutes !== 10 && await LoginSession.exists({
+      user: coach._id, revokedAt: null, expiresAt: { $gt: new Date() },
+    });
+    if (!activeLogin) await sendWhatsAppAutomationTemplate({
       user: coach,
       templateName: "class_starting_soon_coach",
       bodyParameters: [coachName, title, String(minutes), timeLabel],
@@ -361,7 +365,7 @@ async function cancelledDemoClassroomIds(classrooms: any[]) {
 export async function processDueClassSessionReminders() {
   await dbConnect();
   const now = new Date();
-  const horizon = new Date(now.getTime() + (Math.max(...START_REMINDER_OFFSETS) + 1) * 60_000);
+  const horizon = new Date(now.getTime() + (60 + 1) * 60_000);
   const lookBehind = new Date(now.getTime() - (COACH_ALERT_WINDOW_MINUTES + 1) * 60_000);
 
   const classrooms: any[] = await Classroom.find(reminderSweepFilter(lookBehind, horizon))
@@ -383,6 +387,19 @@ export async function processDueClassSessionReminders() {
       const start = getSessionStart(session);
       if (!start) continue;
       const minutesUntilStart = (start.getTime() - now.getTime()) / 60_000;
+
+      // WhatsApp students have their own timing; email and coach timings remain 30/10.
+      const studentOffset = dueStartReminderOffset(minutesUntilStart, [60, 10]);
+      if (studentOffset !== null) {
+        const studentKind = studentOffset === 60 ? "student_whatsapp_t60" : "student_whatsapp_t10";
+        // Old releases included student WhatsApp in the shared 10-minute claim.
+        const alreadySent = studentOffset === 10 && (session.notifiedKinds || []).includes("starting_t10");
+        if (!alreadySent && !(session.notifiedKinds || []).includes(studentKind) &&
+            await claimSessionNotification(objectId(classroom._id), objectId(session._id), studentKind)) {
+          await sendStartingSoonReminder(classroom, session, start, studentOffset, true);
+          startReminders += 1;
+        }
+      }
 
       const offset = dueStartReminderOffset(minutesUntilStart);
       if (offset !== null) {

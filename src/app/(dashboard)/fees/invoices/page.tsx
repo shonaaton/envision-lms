@@ -146,6 +146,32 @@ async function markInvoicePaid(formData: FormData) {
   redirect(`/fees/invoices?${paidParams.toString()}`);
 }
 
+async function updateInvoiceSessionCoverage(formData: FormData) {
+  "use server";
+  const session = await requireFeesAccess("edit", "invoices");
+  if (!session) throw new Error("Forbidden");
+  const invoiceId = String(formData.get("invoice") || "");
+  const coverageSessions = Number(formData.get("coverageSessions"));
+  if (!/^[a-f0-9]{24}$/i.test(invoiceId) || !Number.isInteger(coverageSessions) || coverageSessions < 1 || coverageSessions > 1000) {
+    throw new Error("Enter a whole number of purchased sessions from 1 to 1000.");
+  }
+  await dbConnect();
+  const previous: any = await Invoice.findOneAndUpdate(
+    { _id: invoiceId, status: { $ne: "cancelled" } },
+    { $set: { coverageSessions } },
+    { runValidators: true },
+  ).lean();
+  if (!previous) throw new Error("Invoice not found.");
+  await recordActivity({
+    actor: (session.user as any).id, targetUser: String(previous.student),
+    type: "fees.invoice.coverage_updated", label: `Set ${coverageSessions} purchased sessions for ${previous.invoiceNumber}`,
+    entityType: "Invoice", entityId: invoiceId,
+    metadata: { previousCoverageSessions: previous.coverageSessions || null, coverageSessions },
+  });
+  revalidatePath("/fees/invoices");
+  revalidatePath("/coach-pay/profitability");
+}
+
 async function updateInvoiceDates(formData: FormData) {
   "use server";
   const session = await requireFeesAccess("edit", "invoices");
@@ -895,6 +921,19 @@ export default async function FeeInvoicesPage({ searchParams }: { searchParams?:
                       )}
                       {manager && permissions.invoice && (
                         <SendInvoiceWhatsAppButton invoiceId={invoiceId} invoiceNumber={invoice.invoiceNumber || ""} studentFilter={selectedStudent} defaultMessage={invoiceReminderMessage(invoice, "")} action={sendInvoiceWhatsApp} />
+                      )}
+                      {manager && permissions.edit && invoice.status !== "cancelled" && (
+                        <details className="text-xs">
+                          <summary className="cursor-pointer text-brand">Session package</summary>
+                          <form action={updateInvoiceSessionCoverage} className="mt-2 space-y-2">
+                            <input type="hidden" name="invoice" value={invoiceId} />
+                            <label className="block">Purchased sessions
+                              <input name="coverageSessions" type="number" min={1} max={1000} step={1} required defaultValue={invoice.coverageSessions || invoice.credits || ""} className="input mt-1 w-24" />
+                            </label>
+                            <p className="max-w-56 text-slate-500">Profitability counts only completed sessions. Payment and class credits stay unchanged.</p>
+                            <button type="submit" className="btn-outline">Save sessions</button>
+                          </form>
+                        </details>
                       )}
                       {manager && permissions.edit && (
                         <UpdateIssueDateButton

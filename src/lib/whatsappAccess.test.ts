@@ -1,10 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-const mocks = vi.hoisted(() => ({ auth: vi.fn(), permission: vi.fn(), exists: vi.fn() }));
+const mocks = vi.hoisted(() => ({ auth: vi.fn(), permission: vi.fn(), exists: vi.fn(), branchOnly: vi.fn() }));
+vi.mock("@/lib/branch/inboxSeparation", () => ({ isBranchOnlyInboxNumber: mocks.branchOnly, branchOnlyInboxNationals: vi.fn(async () => new Set()), inboxNational: (p: string) => p.slice(-10) }));
 vi.mock("@/lib/auth", () => ({ auth: mocks.auth }));
 vi.mock("@/lib/featureAccess", () => ({ canAccessFeature: mocks.permission }));
 vi.mock("@/models/WhatsAppConversation", () => ({ WhatsAppConversation: { exists: mocks.exists } }));
 import { canAccessWhatsAppPhone, whatsappConversationScope, whatsappSession } from "./whatsappAccess";
-beforeEach(() => { vi.resetAllMocks(); mocks.permission.mockResolvedValue(true); });
+beforeEach(() => { vi.resetAllMocks(); mocks.permission.mockResolvedValue(true); mocks.branchOnly.mockResolvedValue(false); });
 describe("WhatsApp staff and assigned-coach access", () => {
   it("restricts coaches to the phone numbers assigned to their own account", async () => {
     const user = { id: "coach-a", role: "instructor" };
@@ -24,5 +25,9 @@ describe("WhatsApp staff and assigned-coach access", () => {
   it("checks the requested feature permission rather than trusting the role name", async () => {
     mocks.auth.mockResolvedValue({ user: { id: "staff", role: "sub-admin" } }); mocks.permission.mockResolvedValue(false);
     expect(await whatsappSession("manage")).toBeNull(); expect(mocks.permission).toHaveBeenCalledWith("whatsapp", expect.objectContaining({ id: "staff" }), "manage");
+  });
+  it("refuses a Bowbazar-only family chat even to an online admin", async () => {
+    mocks.branchOnly.mockResolvedValue(true);
+    expect(await canAccessWhatsAppPhone({ id: "admin", role: "admin" }, "919876543210")).toBe(false);
   });
 });

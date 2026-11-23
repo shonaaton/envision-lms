@@ -241,7 +241,7 @@ export default async function ClassroomSummaryPage({
 
   await dbConnect();
 
-  const classroom: any = await Classroom.findById(params.id)
+  const classroom: any = await Classroom.findOne({ _id: params.id, branch: null })
     .populate("coach instructor students batches", "name username email")
     .populate("generatedSessions.students", "name username email")
     .lean();

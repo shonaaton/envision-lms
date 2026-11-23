@@ -8,7 +8,7 @@ import { WhatsAppConversation, WhatsAppReadState } from "@/models/WhatsAppConver
 import { isWhatsAppResolved, needsWhatsAppReply, syncWhatsAppConversations } from "@/lib/whatsappInbox";
 import "@/models/User";
 import { canAccessFeature } from "@/lib/featureAccess";
-import { whatsappSession, whatsappConversationScope, canAccessWhatsAppPhone } from "@/lib/whatsappAccess";
+import { whatsappSession, whatsappConversationScope, canAccessWhatsAppPhone, withoutBranchChats } from "@/lib/whatsappAccess";
 
 export const dynamic = "force-dynamic";
 
@@ -255,7 +255,7 @@ export async function GET(req: Request) {
     WhatsAppReadState.find({ actorId: user.id }).lean(),
   ]);
   const reads = new Map(readStates.map((state) => [state.phoneNumber, state.readInboundCount || 0]));
-  const conversations = summaries.map((summary) => {
+  const conversations = (await withoutBranchChats(summaries)).map((summary) => {
     const whatsapp = windowState(summary.lastInboundAt);
     const resolved = isWhatsAppResolved(summary);
     const matchedUser = summary.linkedManually ? summary.linkedUser : summary.matchedUser;

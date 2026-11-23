@@ -57,7 +57,7 @@ export default async function ClassroomDetail({ params, searchParams }: { params
   const role = (session?.user as any).role as "student" | "instructor" | "admin" | "sub-admin";
   if (!(await canAccessFeature("classrooms", session.user as any, "join"))) redirect("/classrooms");
   await dbConnect();
-  const classroom: any = await Classroom.findById(params.id).lean();
+  const classroom: any = await Classroom.findOne({ _id: params.id, branch: null }).lean();
   if (!classroom) notFound();
   const isSuperAdmin = await isSuperAdminSession(session?.user as any);
   if (classroom.isTestClassroom && (!isSuperAdmin || String(classroom.testOwner || "") !== userId)) redirect("/dashboard");

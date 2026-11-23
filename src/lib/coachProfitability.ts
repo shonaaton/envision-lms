@@ -6,6 +6,8 @@ import { summarizePayEvents, type PayEvent } from "@/lib/coachPay";
 import type { PayPeriod } from "@/lib/payPeriods";
 import { Invoice } from "@/models/Fee";
 import { User } from "@/models/User";
+import { Classroom } from "@/models/Classroom";
+import { scheduledStartDate } from "@/lib/teachingStats";
 
 type StudentInvoice = {
   student: unknown;
@@ -17,7 +19,13 @@ type StudentInvoice = {
   dueDate: Date;
   issueDate?: Date;
   coverageMonths?: number;
+  coverageSessions?: number;
 };
+
+function purchasedSessions(bill: StudentInvoice) {
+  const count = Number(bill.coverageSessions || bill.credits || 0);
+  return Number.isInteger(count) && count > 0 ? count : 0;
+}
 
 const IST_OFFSET_MS = 330 * 60 * 1000;
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -61,6 +69,7 @@ function creditStartDay(bill: StudentInvoice) {
 
 export type ProfitabilityClass = {
   id: string;
+  sessionKey: string;
   coachId: string;
   title: string;
   date: Date;
@@ -86,6 +95,7 @@ export function buildCoachProfitability(
   classrooms: any[],
   invoices: StudentInvoice[],
   people: { _id: unknown; name?: string; role?: string }[],
+  historyClassrooms: any[] = classrooms,
 ) {
   // Staff salary plans alone do not establish that someone teaches.
   const teachingIds = new Set(people.filter((person) => person.role === "instructor").map(idOf));
@@ -107,6 +117,7 @@ export function buildCoachProfitability(
     if (!session) continue;
     classes.push({
       id: event.id,
+      sessionKey: `${event.classroomId}:${event.sessionId}`,
       coachId: event.coachId,
       title: event.classroomTitle,
       date: event.date,
@@ -138,12 +149,30 @@ export function buildCoachProfitability(
     invoicesByStudent.set(id, bills);
   }
 
+  // Include earlier months and previous classrooms so a package cannot restart
+  // at every report boundary or after a student changes batch.
+  const historyByStudent = new Map<string, { key: string; date: Date }[]>();
+  for (const room of historyClassrooms) {
+    if (room.classroomType === "demo") continue;
+    for (const session of room.generatedSessions || []) {
+      if (session.status !== "completed") continue;
+      const date = scheduledStartDate(session, room);
+      if (date > period.to) continue;
+      const key = `${idOf(room)}:${idOf(session)}`;
+      for (const studentId of new Set(rosterForSession(room, session).map(idOf))) {
+        const history = historyByStudent.get(studentId) || [];
+        history.push({ key, date });
+        historyByStudent.set(studentId, history);
+      }
+    }
+  }
+
   let unallocatedRevenue = 0;
   const missingStudents = new Set<string>();
   const fromMonth = istMonth(period.from);
   const toMonth = istMonth(period.to);
   for (const [studentId, bills] of invoicesByStudent) {
-    const shares = bills.filter((bill) => bill.type === "monthly" || bill.type === "manual")
+    const shares = bills.filter((bill) => (bill.type === "monthly" || bill.type === "manual") && !purchasedSessions(bill))
       .map((bill) => feeShareInMonths(bill, fromMonth, toMonth))
       .filter((share): share is number => share !== null);
     const enrolled = classesByStudent.get(studentId) || [];
@@ -152,18 +181,33 @@ export function buildCoachProfitability(
       unallocatedRevenue += monthlyFee;
       continue;
     }
+    const packages = bills.filter((bill) => purchasedSessions(bill) > 0)
+      .sort((a, b) => creditStartDay(a) - creditStartDay(b) || new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime())
+      .map((bill) => ({ bill, used: 0 }));
+    const sessionRevenue = new Map<string, number>();
+    const history = [...(historyByStudent.get(studentId) || [])]
+      .sort((a, b) => a.date.getTime() - b.date.getTime() || a.key.localeCompare(b.key));
+    for (const session of history) {
+      if (sessionRevenue.has(session.key)) continue;
+      const month = istMonth(session.date);
+      if (bills.some((bill) => !purchasedSessions(bill) && ["monthly", "manual"].includes(bill.type) &&
+        feeShareInMonths(bill, month, month) !== null)) continue;
+      const pack = packages.find(({ bill, used }) => used < purchasedSessions(bill) && creditStartDay(bill) <= istDay(session.date));
+      if (!pack) continue;
+      const count = purchasedSessions(pack.bill);
+      const net = netTuition(pack.bill);
+      // Cumulative rounding keeps the recognised package total exact to a paise.
+      sessionRevenue.set(session.key, Math.round(net * (pack.used + 1) / count) - Math.round(net * pack.used / count));
+      pack.used += 1;
+    }
     enrolled.forEach((item, index) => {
       const student = item.students.find((entry) => entry.id === studentId)!;
       if (shares.length) {
         student.revenue = Math.round(monthlyFee * (index + 1) / enrolled.length) -
           Math.round(monthlyFee * index / enrolled.length);
       } else {
-        // Credit invoices retain the purchased package price across later plan changes.
-        // Compared by IST day: a recharge raised later on the day of a class still paid for it.
-        const creditBill = bills.filter((bill) => bill.type === "credits" && Number(bill.credits) > 0 &&
-          creditStartDay(bill) <= istDay(item.date))
-          .sort((a, b) => creditStartDay(b) - creditStartDay(a) || new Date(b.dueDate).getTime() - new Date(a.dueDate).getTime())[0];
-        if (creditBill) student.revenue = Math.round(netTuition(creditBill) / Number(creditBill.credits));
+        const revenue = sessionRevenue.get(item.sessionKey);
+        if (revenue !== undefined) student.revenue = revenue;
         else student.missingFee = true;
       }
     });
@@ -196,6 +240,8 @@ export function buildCoachProfitability(
     cost: summary.totalAmount,
     unallocatedRevenue,
     missingFees: missingStudents.size,
+    missingFeeStudents: [...missingStudents].map((id) => ({ id, name: names.get(id) || "Student" }))
+      .sort((a, b) => a.name.localeCompare(b.name)),
     pendingReview: summary.pendingReview,
     unpriced: summary.unpriced,
   };
@@ -212,11 +258,19 @@ export async function loadCoachProfitability(period: PayPeriod) {
         { type: "monthly", dueDate: { $gte: lookback, $lte: period.to } },
         { type: "manual", issueDate: { $gte: lookback, $lte: period.to } },
         { type: "credits", $or: [{ dueDate: { $lte: period.to } }, { issueDate: { $lte: period.to } }] },
+        { coverageSessions: { $gt: 0 }, issueDate: { $lte: period.to } },
+        { type: "manual", credits: { $gt: 0 }, issueDate: { $lte: period.to } },
       ],
-    }).select("student type totalAmount gstAmount lateFee credits dueDate issueDate coverageMonths").lean<StudentInvoice[]>(),
+    }).select("student type totalAmount gstAmount lateFee credits dueDate issueDate coverageMonths coverageSessions").lean<StudentInvoice[]>(),
     User.find({ $or: [{ role: "instructor" }, { _id: { $in: classrooms.flatMap((classroom) =>
       [...(classroom.students || []), ...(classroom.generatedSessions || []).flatMap((session: any) => session.students || [])]) } }] })
       .select("name role").lean<{ _id: unknown; name?: string; role?: string }[]>(),
   ]);
-  return buildCoachProfitability(period, events, classrooms, invoices, people);
+  const packageStudentIds = [...new Set(invoices.filter((bill) => purchasedSessions(bill) > 0).map((bill) => idOf(bill.student)))];
+  const historyClassrooms = packageStudentIds.length ? await Classroom.find({
+    isSessionInstance: { $ne: true }, isTestClassroom: { $ne: true }, classroomType: { $ne: "demo" },
+    $or: [{ students: { $in: packageStudentIds } }, { "generatedSessions.students": { $in: packageStudentIds } }],
+    "generatedSessions.status": "completed",
+  }).select("students studentExits generatedSessions classroomType classDate startDate startTime").lean() : [];
+  return buildCoachProfitability(period, events, classrooms, invoices, people, historyClassrooms);
 }

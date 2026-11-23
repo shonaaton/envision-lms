@@ -773,7 +773,15 @@ function submissionLabel(result: any, summary: ReturnType<typeof aggregateLiveRe
   return summary.feedback || "Recorded";
 }
 
-export default function LiveClassroom({ classroomId, role, userId, sessionId }: { classroomId: string; role: Role; userId: string; sessionId?: string }) {
+/**
+ * An offline branch's online class (lib/branch/live.ts): where the room exits
+ * to, and where the end-of-class attendance is saved - the branch register in
+ * place of the online /api/attendance, so no credits or coach pay follow.
+ */
+export type LiveClassroomBranchMode = { exitHref: string; finishUrl: string };
+
+export default function LiveClassroom({ classroomId, role, userId, sessionId, branchMode }: { classroomId: string; role: Role; userId: string; sessionId?: string; branchMode?: LiveClassroomBranchMode }) {
+  const exitHref = branchMode?.exitHref || "/classrooms";
   const router = useRouter();
   const [data, setData] = useState<any>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -1371,15 +1379,15 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
       setDemoExitWarningOpen(true);
       return;
     }
-    router.push("/classrooms");
+    router.push(exitHref);
   }
 
   useEffect(() => {
     if (live?.status === "ended") {
       toast.info("This classroom session has already ended");
-      router.push("/classrooms");
+      router.push(exitHref);
     }
-  }, [live?.status, router]);
+  }, [live?.status, router, exitHref]);
 
   useEffect(() => {
     if (setupOpen) return;
@@ -2378,8 +2386,8 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
         toast.error(payload?.error || "Could not leave classroom");
         return;
       }
-      toast.success("You left the waiting room. No credit will be used unless the class is later completed.");
-      router.push("/classrooms");
+      toast.success(branchMode ? "You left the waiting room." : "You left the waiting room. No credit will be used unless the class is later completed.");
+      router.push(exitHref);
     } catch {
       toast.error("Could not leave classroom");
     } finally {
@@ -2445,7 +2453,13 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
         creditPolicy: isDemoClassroom ? "demo_no_charge" : classOutcome === "completed" || classOutcome === "completed_continue_topic" ? "charge_present_students" : classOutcome === "student_no_show" ? "repeat_no_show_policy" : "no_charge",
         feedbackRequired: isDemoClassroom && savedOutcome === "completed",
       };
-      const res = await fetch("/api/attendance", {
+      const res = branchMode
+        ? await fetch(branchMode.finishUrl, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ classroomId, sessionId, records, topic: live?.topic || "" }),
+          })
+        : await fetch("/api/attendance", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -2461,7 +2475,8 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
         }),
       });
       if (!res.ok) {
-        toast.error("Could not save attendance");
+        const failure = await res.json().catch(() => null);
+        toast.error(failure?.error || "Could not save attendance");
         return;
       }
       await patch({ endedAt: new Date().toISOString(), status: "ended", summary, usedResources: snapshotUsedResources(), boardControlStudents: [], selectedStudents: [], challenge: { active: false } });
@@ -2471,7 +2486,7 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
         window.location.assign(`/demo-feedback/${entityId(classroom.demoBooking)}`);
         return;
       }
-      window.location.assign(`/classrooms?updated=${Date.now()}`);
+      window.location.assign(branchMode ? exitHref : `/classrooms?updated=${Date.now()}`);
     } catch {
       toast.error("Could not save attendance");
     } finally {
@@ -3082,7 +3097,16 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
               <span className="sm:hidden">Leave</span>
             </button>
           ) : null}
-          {googleMeetUrl ? (
+          {googleMeetUrl && branchMode ? (
+            <a
+              href={googleMeetUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex h-7 items-center gap-1.5 rounded-md border border-brand/15 bg-white px-2.5 text-xs font-bold text-brand shadow-sm transition hover:bg-brand/5"
+            >
+              <ExternalLink size={15} /> Open Google Meet
+            </a>
+          ) : googleMeetUrl ? (
             <CreditGatedGoogleMeetLink
               href={googleMeetUrl}
               className="inline-flex h-7 items-center gap-1.5 rounded-md border border-brand/15 bg-white px-2.5 text-xs font-bold text-brand shadow-sm transition hover:bg-brand/5"

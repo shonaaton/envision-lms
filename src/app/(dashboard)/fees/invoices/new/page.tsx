@@ -102,6 +102,11 @@ async function createManualInvoice(formData: FormData): Promise<CreateInvoiceRes
   if (Number.isNaN(issueDate.getTime()) || Number.isNaN(dueDate.getTime())) return { status: "error", error: "Enter a valid invoice date and due date." };
   if (dueDate < issueDate) return { status: "error", error: "The due date cannot be before the invoice date." };
   const coverageMonths = invoiceType === "manual" ? Number(formData.get("coverageMonths") || 1) : undefined;
+  const coverageSessions = invoiceType === "manual" && formData.get("coverageSessions")
+    ? Number(formData.get("coverageSessions")) : undefined;
+  if (coverageSessions !== undefined && !(Number.isInteger(coverageSessions) && coverageSessions >= 1 && coverageSessions <= 1000)) {
+    return { status: "error", error: "Sessions covered must be a whole number from 1 to 1000." };
+  }
   if (coverageMonths !== undefined && !(Number.isInteger(coverageMonths) && coverageMonths >= 1 && coverageMonths <= 36)) {
     return { status: "error", error: "Months covered must be a whole number from 1 to 36." };
   }
@@ -149,6 +154,7 @@ async function createManualInvoice(formData: FormData): Promise<CreateInvoiceRes
       referenceNumber: String(formData.get("referenceNumber") || ""),
       credits: invoiceType === "credits" ? Number(plan?.credits || 0) : 0,
       coverageMonths,
+      coverageSessions,
       notes: String(formData.get("notes") || "").trim(),
       invoiceMode,
       gstPercentage,

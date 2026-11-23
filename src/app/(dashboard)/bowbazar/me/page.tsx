@@ -55,6 +55,11 @@ export default async function BowbazarMyClassPage() {
       ])
     : [[], []];
   const meetingFor = new Map(changeSlots.map((slot) => [String(slot._id), slot.mode === "online" ? slot.meetingUrl || "" : ""]));
+  const onlineChangeSlots = new Set(changeSlots.filter((slot) => slot.mode === "online").map((slot) => String(slot._id)));
+  // Today's online classes open the live room; a class moved away this week doesn't.
+  const today = todayKey();
+  const todayDay = new Date(`${today}T12:00:00Z`).getUTCDay();
+  const movedAwayToday = new Set(changes.filter((change) => change.status === "approved" && change.type === "week" && change.fromDate === today).map((change) => String(change.fromSlot)));
 
   if (!view) {
     return (
@@ -112,7 +117,12 @@ export default async function BowbazarMyClassPage() {
             {view.slots.map((slot) => (
               <li key={slot.id} className="flex items-center justify-between gap-2 rounded-lg bg-slate-50 px-3 py-2">
                 <span className="font-bold text-slate-900">{slot.label}</span>
-                {slot.mode === "online" ? (
+                {slot.mode === "online" && slot.dayOfWeek === todayDay && !movedAwayToday.has(slot.id) ? (
+                  // Today's class: the academy's live room, which also links the Meet call.
+                  <Link href={`/bowbazar/me/live/${slot.id}`} className="btn-primary h-8 px-3 text-xs">
+                    <Video size={14} /> Join live class
+                  </Link>
+                ) : slot.mode === "online" ? (
                   slot.meetingUrl ? (
                     <a href={slot.meetingUrl} target="_blank" rel="noreferrer" className="btn-primary h-8 px-3 text-xs">
                       <Video size={14} /> Join online
@@ -132,7 +142,11 @@ export default async function BowbazarMyClassPage() {
                 <li key={String(change._id)} className={`rounded-lg px-3 py-2 text-sm ${change.status === "pending" ? "bg-amber-50 text-amber-900" : "bg-emerald-50 text-emerald-900"}`}>
                   <span className="font-bold">{change.status === "pending" ? "Waiting for the centre: " : "Confirmed: "}</span>
                   {describeChange(change)}
-                  {change.status === "approved" && meetingFor.get(String(change.toSlot)) && (
+                  {change.status === "approved" && change.type === "week" && change.toDate === today && onlineChangeSlots.has(String(change.toSlot)) ? (
+                    <Link href={`/bowbazar/me/live/${String(change.toSlot)}`} className="ml-2 font-bold underline">
+                      Join live class
+                    </Link>
+                  ) : change.status === "approved" && meetingFor.get(String(change.toSlot)) && (
                     <a href={meetingFor.get(String(change.toSlot))} target="_blank" rel="noreferrer" className="ml-2 font-bold underline">
                       Join online
                     </a>

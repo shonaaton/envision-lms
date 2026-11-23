@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   billBalance,
+  feeForSlots,
   billStatus,
   absenceStreak,
   billDue,
@@ -228,5 +229,14 @@ describe("feature access overrides", () => {
     expect([...manager.can]).toEqual(["view"]);
     const admin = branchAccess({ role: "instructor", branch: "bowbazar", branchRole: "admin" }, { manager: [] })!;
     expect(admin.can.has("activity")).toBe(true);
+  });
+});
+
+describe("feeForSlots", () => {
+  it("is ₹1,000 for one slot and ₹1,500 for two, and says nothing otherwise", () => {
+    expect(feeForSlots(1)).toBe(1000);
+    expect(feeForSlots(2)).toBe(1500);
+    expect(feeForSlots(0)).toBeNull();
+    expect(feeForSlots(3)).toBeNull();
   });
 });

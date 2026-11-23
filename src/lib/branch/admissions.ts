@@ -17,6 +17,7 @@ import { rupeesToPaise, slotLabel } from "./rules";
 import {
   ADMISSION_LINK_DAYS,
   admissionMessage,
+  detailsUpdateMessage,
   checkAdmissionFile,
   readAdmissionForm,
   tenDigitPhone,
@@ -50,12 +51,17 @@ function serialize(admission: any, slotById: Map<string, any>) {
   const prefill = admission.prefill || {};
   return {
     id: id(admission),
+    kind: (admission.kind || "new") as "new" | "update",
     status: isExpired(admission) ? "expired" : (admission.status as string),
     prefill: {
       name: prefill.name || "",
       parentName: prefill.parentName || "",
       phone: prefill.phone || "",
       email: prefill.email || "",
+      fatherName: prefill.fatherName || "",
+      motherName: prefill.motherName || "",
+      school: prefill.school || "",
+      dateOfBirth: prefill.dateOfBirth || "",
       slots: (prefill.slots || []).map(id),
       slotLabels: (prefill.slots || []).map((slot: any) => slotById.get(id(slot))).filter(Boolean).map(slotLabel),
       monthlyFee: prefill.monthlyFee || 0,
@@ -91,16 +97,19 @@ async function slotMap(branch: BranchKey) {
 async function deliverLink(admission: any, link: string) {
   const prefill = admission.prefill || {};
   const branchLabel = BRANCH_LABELS[admission.branch as BranchKey];
-  const message = admissionMessage({ parentName: prefill.parentName, studentName: prefill.name, link, branchLabel });
+  const update = admission.kind === "update";
+  const message = (update ? detailsUpdateMessage : admissionMessage)({ parentName: prefill.parentName, studentName: prefill.name, link, branchLabel });
   const metadata = { kind: "branch_admission_form", admissionId: id(admission), dedupKey: `branch-admission:${id(admission)}:${admission.sends || 1}` };
   const [email, whatsapp] = await Promise.all([
     prefill.email
       ? sendAutomationEmail({
           to: prefill.email,
-          subject: `Admission form: ${prefill.name} at Envision Chess Academy ${branchLabel}`,
+          subject: update
+            ? `Please complete ${prefill.name}'s details for Envision Chess Academy ${branchLabel}`
+            : `Admission form: ${prefill.name} at Envision Chess Academy ${branchLabel}`,
           message,
           actionUrl: link,
-          actionLabel: "Fill in the admission form",
+          actionLabel: update ? "Complete the details" : "Fill in the admission form",
           metadata,
         }).catch(() => ({ delivered: false }))
       : null,
@@ -170,6 +179,154 @@ export async function startAdmission(branch: BranchKey, input: any, actor: Actor
   return { admission: serialize(admission.toObject(), await slotMap(branch)), delivery };
 }
 
+/** A real address the family reads, not the `.invalid` placeholder siblings' logins get. */
+const realEmail = (value: unknown) => {
+  const email = text(value, 200).toLowerCase();
+  return email && !email.endsWith(".invalid") ? email : "";
+};
+const dateText = (value: unknown) => (value instanceof Date && !Number.isNaN(value.getTime()) ? value.toISOString().slice(0, 10) : "");
+
+export type DetailsSendResult = { studentId: string; name: string; status: "sent" | "skipped"; reason?: string; whatsapp?: string; email?: string };
+
+/**
+ * Sends the details form to students who are already at the centre (the
+ * imported ones, mostly). It is the admission form, filled in with what the
+ * centre already has; approving it completes that student's record and makes
+ * no new account. A student with a form still open, or with no usable phone
+ * number, is skipped and the reason given.
+ */
+export async function sendDetailsForms(branch: BranchKey, studentIds: string[], actor: Actor, request?: Request) {
+  await dbConnect();
+  const ids = [...new Set((studentIds || []).map(String))].filter(isObjectId);
+  if (!ids.length) throw new BranchError("Choose at least one student.");
+  if (ids.length > 200) throw new BranchError("Send to at most 200 students at a time.");
+  const [students, open]: [any[], any[]] = await Promise.all([
+    BranchStudent.find({ _id: { $in: ids }, branch }).lean(),
+    BranchAdmission.find({ branch, kind: "update", student: { $in: ids }, status: { $in: ["sent", "submitted"] } }).select("student status expiresAt").lean(),
+  ]);
+  const users: any[] = await User.find({ _id: { $in: students.map((student) => student.user) } }).select("email parentEmail").setOptions({ allBranches: true }).lean();
+  const userById = new Map(users.map((user) => [id(user), user]));
+  const openFor = new Map(open.filter((admission) => !isExpired(admission)).map((admission) => [id(admission.student), admission.status]));
+
+  const results: DetailsSendResult[] = [];
+  for (const student of students.sort((a, b) => a.name.localeCompare(b.name))) {
+    const base = { studentId: id(student), name: student.name as string };
+    const state = openFor.get(id(student));
+    if (state) {
+      results.push({ ...base, status: "skipped", reason: state === "submitted" ? "Already filled in; waiting for your review" : "A form is already open (use Send again on Admissions)" });
+      continue;
+    }
+    const phone = tenDigitPhone(student.phone);
+    if (!phone) {
+      results.push({ ...base, status: "skipped", reason: "No 10-digit mobile number on the record" });
+      continue;
+    }
+    const user = userById.get(id(student.user));
+    const { token, tokenHash, expiresAt } = newToken();
+    const admission: any = await BranchAdmission.create({
+      branch,
+      kind: "update",
+      student: student._id,
+      tokenHash,
+      expiresAt,
+      prefill: {
+        name: student.name,
+        parentName: student.parentName || student.fatherName || student.motherName || "",
+        phone,
+        email: realEmail(student.email) || realEmail(user?.parentEmail) || realEmail(user?.email),
+        fatherName: student.fatherName || "",
+        motherName: student.motherName || "",
+        school: student.school || "",
+        dateOfBirth: dateText(student.dateOfBirth),
+        slots: student.slots || [],
+        monthlyFee: student.monthlyFee || 0,
+      },
+      lastSentAt: new Date(),
+      createdBy: actor.id,
+      createdByName: actor.name || "",
+    });
+    const delivery = await deliverLink(admission.toObject(), linkFor(token, request));
+    results.push({ ...base, status: "sent", whatsapp: delivery.whatsapp, email: delivery.email });
+  }
+  for (const missing of ids.filter((value) => !students.some((student) => id(student) === value))) {
+    results.push({ studentId: missing, name: "", status: "skipped", reason: "Not a student of this branch" });
+  }
+  const sent = results.filter((result) => result.status === "sent").length;
+  if (sent) {
+    void recordActivity({
+      actor: actor.id,
+      type: "branch.details_forms_sent",
+      label: `Sent the ${branch} details form to ${sent} student${sent === 1 ? "" : "s"}`,
+      entityType: "BranchAdmission",
+    });
+  }
+  return { results, sent, skipped: results.length - sent };
+}
+
+/** The admission photo becomes the account's picture. */
+async function photoToAvatar(admission: any, userId: unknown) {
+  if (!admission.photo?.storedName) return false;
+  const data = await readAdmissionFile(admission.photo.storedName);
+  if (!data) return false;
+  const extension = admission.photo.storedName.slice(admission.photo.storedName.lastIndexOf("."));
+  const avatar = await saveUpload("profiles", `avatar-${id(userId)}-${Date.now()}${extension}`, data).catch(() => "");
+  if (!avatar) return false;
+  await User.updateOne({ _id: userId }, { $set: { avatar } }).setOptions({ allBranches: true });
+  return true;
+}
+
+/**
+ * Completes an existing student's record from the details form. Only answers
+ * the family gave are written, so a blank box never wipes what the centre had.
+ * Slots, fees and the login stay as they are.
+ */
+async function approveDetailsUpdate(branch: BranchKey, admission: any, input: any, actor: Actor) {
+  const student: any = await BranchStudent.findOne({ _id: admission.student, branch }).lean();
+  if (!student) throw new BranchError("The student this form belongs to is no longer in the portal.", 404);
+  const answers = { ...(admission.form || {}), ...pickDetails(input) };
+  const set: Record<string, unknown> = {};
+  for (const key of ["name", "school", "parentName", "fatherName", "motherName", "address"] as const) {
+    const value = text(answers[key], key === "address" ? 500 : 200);
+    if (value) set[key] = value;
+  }
+  const phone = tenDigitPhone(answers.phone);
+  if (phone) set.phone = phone;
+  const email = realEmail(answers.email);
+  if (email) set.email = email;
+  if (answers.dateOfBirth && /^\d{4}-\d{2}-\d{2}$/.test(String(answers.dateOfBirth))) set.dateOfBirth = new Date(`${answers.dateOfBirth}T00:00:00Z`);
+  if (!set.parentName && !student.parentName) set.parentName = set.fatherName || set.motherName;
+  set.admission = admission._id;
+
+  await BranchStudent.updateOne({ _id: student._id }, { $set: set });
+  const userSet: Record<string, unknown> = {};
+  if (set.name) userSet.name = set.name;
+  if (set.phone) userSet.phone = set.phone;
+  if (set.parentName) userSet.parentName = set.parentName;
+  if (set.email) userSet.parentEmail = set.email;
+  if (Object.keys(userSet).length) await User.updateOne({ _id: student.user }, { $set: userSet }).setOptions({ allBranches: true });
+  const photoSet = await photoToAvatar(admission, student.user);
+  await BranchAdmission.updateOne({ _id: admission._id }, { $set: { student: student._id } });
+
+  void recordActivity({
+    actor: actor.id,
+    targetUser: id(student.user),
+    type: "branch.details_updated",
+    label: `Updated ${set.name || student.name}'s details from the family's form`,
+    entityType: "BranchAdmission",
+    entityId: id(admission),
+  });
+  return { studentId: id(student), updated: Object.keys(set).filter((key) => key !== "admission"), photoSet };
+}
+
+/** Corrections staff may make on the review screen before saving. */
+function pickDetails(input: any) {
+  const out: Record<string, unknown> = {};
+  for (const key of ["name", "dateOfBirth", "school", "parentName", "fatherName", "motherName", "phone", "email", "address"]) {
+    if (typeof input?.[key] === "string") out[key] = input[key];
+  }
+  return out;
+}
+
 async function findAdmission(branch: BranchKey, admissionId: string) {
   if (!isObjectId(admissionId)) throw new BranchError("Admission not found.", 404);
   const admission: any = await BranchAdmission.findOne({ _id: admissionId, branch }).lean();
@@ -222,6 +379,18 @@ export async function approveAdmission(branch: BranchKey, admissionId: string, i
   );
   if (!claimed) throw new BranchError("This form has already been decided.");
 
+  if (admission.kind === "update") {
+    try {
+      return { kind: "update" as const, ...(await approveDetailsUpdate(branch, admission, input, actor)) };
+    } catch (error) {
+      await BranchAdmission.updateOne(
+        { _id: admission._id, status: "approved" },
+        { $set: { status: "submitted" }, $unset: { decidedBy: 1, decidedByName: 1, decidedAt: 1 } }
+      );
+      throw error;
+    }
+  }
+
   const form = admission.form || {};
   let created: Awaited<ReturnType<typeof createStudent>>;
   try {
@@ -245,14 +414,7 @@ export async function approveAdmission(branch: BranchKey, admissionId: string, i
   }
 
   // The photo becomes the account's picture; the identity document stays private here.
-  if (admission.photo?.storedName) {
-    const data = await readAdmissionFile(admission.photo.storedName);
-    if (data) {
-      const extension = admission.photo.storedName.slice(admission.photo.storedName.lastIndexOf("."));
-      const avatar = await saveUpload("profiles", `avatar-${id(created.user)}-${Date.now()}${extension}`, data).catch(() => "");
-      if (avatar) await User.updateOne({ _id: created.user._id }, { $set: { avatar } });
-    }
-  }
+  await photoToAvatar(admission, created.user._id);
   await Promise.all([
     BranchStudent.updateOne({ _id: created.student._id }, { $set: { admission: admission._id } }),
     BranchAdmission.updateOne({ _id: admission._id }, { $set: { student: created.student._id } }),
@@ -283,7 +445,7 @@ export async function approveAdmission(branch: BranchKey, admissionId: string, i
     entityType: "BranchAdmission",
     entityId: id(admission),
   });
-  return { studentId: id(created.student), username: created.username, password: created.password, emailSent };
+  return { kind: "new" as const, studentId: id(created.student), username: created.username, password: created.password, emailSent };
 }
 
 /** Closes a form without a student. The uploaded photo and identity document are deleted. */
@@ -334,9 +496,20 @@ export async function publicAdmission(token: string) {
   const prefill = admission.prefill || {};
   return {
     state: state as "open" | "expired" | "closed" | "received",
+    kind: (admission.kind || "new") as "new" | "update",
     branchLabel: BRANCH_LABELS[admission.branch as BranchKey],
     studentName: prefill.name || "",
-    prefill: { name: prefill.name || "", parentName: prefill.parentName || "", phone: prefill.phone || "", email: prefill.email || "" },
+    // The family's own details only: never fees, slots or staff notes.
+    prefill: {
+      name: prefill.name || "",
+      parentName: prefill.parentName || "",
+      phone: prefill.phone || "",
+      email: prefill.email || "",
+      fatherName: prefill.fatherName || "",
+      motherName: prefill.motherName || "",
+      school: prefill.school || "",
+      dateOfBirth: prefill.dateOfBirth || "",
+    },
   };
 }
 
@@ -378,12 +551,12 @@ export async function submitAdmission(token: string, fields: Record<string, unkn
     await removeAdmissionFiles(Object.values(stored).map((file) => file.storedName));
     throw new BranchError("This form has already been sent to the centre.", 409);
   }
-  void notifyStaff(admission.branch, read.form.name, id(admission));
+  void notifyStaff(admission.branch, read.form.name, id(admission), admission.kind === "update");
   return { studentName: read.form.name };
 }
 
 /** Tells the people who run the branch - its admin and managers - that a form is waiting. */
-async function notifyStaff(branch: BranchKey, studentName: string, admissionId: string) {
+async function notifyStaff(branch: BranchKey, studentName: string, admissionId: string, update = false) {
   try {
     const staff: any[] = await User.find({ branch, role: "instructor", branchRole: { $in: ["admin", "manager"] }, isActive: { $ne: false } })
       .select("_id")
@@ -393,8 +566,10 @@ async function notifyStaff(branch: BranchKey, studentName: string, admissionId: 
       staff.map((user) => ({
         user: user._id,
         type: "branch_admission_submitted",
-        title: "Admission form received",
-        message: `${studentName}'s family filled in the ${BRANCH_LABELS[branch]} admission form. Review it to add them.`,
+        title: update ? "Student details received" : "Admission form received",
+        message: update
+          ? `${studentName}'s family sent their details and photo. Review them on Admissions to update the record.`
+          : `${studentName}'s family filled in the ${BRANCH_LABELS[branch]} admission form. Review it to add them.`,
         metadata: { admissionId, href: "/bowbazar/admissions" },
       }))
     );

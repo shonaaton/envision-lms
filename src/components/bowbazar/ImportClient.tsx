@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useMemo, useState } from "react";
 import { AlertTriangle, CheckCircle2, FileSpreadsheet, Loader2 } from "lucide-react";
 import { toast } from "sonner";
-import { monthLabel } from "@/lib/branch/rules";
+import { feeForSlots, monthLabel } from "@/lib/branch/rules";
 import { cn } from "@/lib/utils";
 import { BranchHeader, ModeBadge, Stat } from "./shared";
 
@@ -28,13 +28,25 @@ type PreviewStudent = {
 };
 type Preview = {
   currentMonth: string;
+  format: "report" | "statement";
+  cash: {
+    rows: number;
+    income: number;
+    expense: number;
+    blankRows: number;
+    alreadyImported: number;
+    firstDate: string | null;
+    lastDate: string | null;
+    categories: { label: string; kind: string; rows: number; amount: number }[];
+  } | null;
+  feeOnly: { regNo: string; months: number; paid: number; firstMonth: string; lastMonth: string }[];
   alreadyImportedBills: number;
   slots: PreviewSlot[];
   classes: { name: string; active: number; total: number; guess: string[] }[];
   students: PreviewStudent[];
   skipped: { sheet: string; row: number; reason: string }[];
 };
-type Result = { created: number; linked: number; kept: number; billsCreated: number; billsKept: number };
+type Result = { created: number; linked: number; kept: number; billsCreated: number; billsKept: number; cashAdded: number; cashKept: number };
 
 const inr = (rupees: number) => `₹${Math.round(rupees).toLocaleString("en-IN")}`;
 const count = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
@@ -118,7 +130,7 @@ export default function ImportClient({ can }: { can: string[] }) {
 
       <section className="grid gap-3 rounded-lg border border-brand/10 bg-white p-4 shadow-sm md:grid-cols-[1fr_1fr_auto] md:items-end">
         <FilePick label="Student list (current students)" hint="Sr, Reg #, Student Name, Father Name, Class, Fee Remaining, Phone" file={studentsFile} onChange={setStudentsFile} />
-        <FilePick label="Fees report" hint="Sr#, Date, Reg No, Student Name, Class, Fee Month, Total, Paid, Balance" file={reportFile} onChange={setReportFile} />
+        <FilePick label="Account statement or fees report" hint="Date, Description, Expense, Income (or the old fees report: Reg No, Fee Month, Total, Paid)" file={reportFile} onChange={setReportFile} />
         <button type="button" className="btn-primary h-10" disabled={!studentsFile || !reportFile || Boolean(busy)} onClick={() => send("preview")}>
           {busy === "preview" ? <Loader2 size={16} className="animate-spin" /> : <FileSpreadsheet size={16} />} Read files
         </button>
@@ -130,10 +142,14 @@ export default function ImportClient({ can }: { can: string[] }) {
           <ul className="mt-1 list-disc pl-5">
             <li>{count(result.created, "student")} added{result.linked ? `, ${count(result.linked, "student")} matched to records already in the portal by name` : ""}{result.kept ? `, ${count(result.kept, "student")} already imported and left as they were` : ""}.</li>
             <li>{count(result.billsCreated, "monthly fee record")} added{result.billsKept ? `; ${count(result.billsKept, "month")} already had a bill and ${result.billsKept === 1 ? "was" : "were"} kept` : ""}.</li>
+            {(result.cashAdded > 0 || result.cashKept > 0) && (
+              <li>{count(result.cashAdded, "account statement line")} added to Accounts{result.cashKept ? `; ${result.cashKept} were already there` : ""}.</li>
+            )}
           </ul>
           <div className="mt-2 flex flex-wrap gap-2">
             <Link href="/bowbazar/students" className="btn-outline h-9 bg-white">Students</Link>
             <Link href="/bowbazar/fees" className="btn-outline h-9 bg-white">Fees</Link>
+            <Link href="/bowbazar/accounts" className="btn-outline h-9 bg-white">Accounts</Link>
             <Link href="/bowbazar/slots" className="btn-outline h-9 bg-white">Slots</Link>
           </div>
           <p className="mt-2 text-xs">Students sign in with the user ID on their row in Students. Use the key button there to make a password to give each family.</p>
@@ -144,10 +160,37 @@ export default function ImportClient({ can }: { can: string[] }) {
         <>
           <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
             <Stat label="Current students" value={current.length} hint={`${current.filter((student) => !student.existing).length} new to the portal`} />
-            <Stat label="Former students" value={former.length} hint="In the report only; added as inactive" />
+            {preview.format === "statement" ? (
+              <Stat label="Fees of others" value={preview.feeOnly.length} hint="Reg # not on the list; kept in Accounts" />
+            ) : (
+              <Stat label="Former students" value={former.length} hint="In the report only; added as inactive" />
+            )}
             <Stat label="Monthly fee records" value={preview.students.reduce((sum, student) => sum + student.months, 0)} hint={`${monthLabel(preview.students.map((s) => s.firstMonth || "9999").sort()[0])} onwards`} />
-            <Stat label="Owed in the report" value={inr(preview.students.reduce((sum, student) => sum + student.reportOwed, 0))} tone="warn" hint={`${inr(preview.students.reduce((sum, student) => sum + student.paid, 0))} paid in total`} />
+            {preview.cash ? (
+              <Stat label="Statement lines" value={preview.cash.rows} hint={`${inr(preview.cash.income)} in, ${inr(preview.cash.expense)} out`} />
+            ) : (
+              <Stat label="Owed in the report" value={inr(preview.students.reduce((sum, student) => sum + student.reportOwed, 0))} tone="warn" hint={`${inr(preview.students.reduce((sum, student) => sum + student.paid, 0))} paid in total`} />
+            )}
           </div>
+
+          {preview.cash && (
+            <section className="rounded-lg border border-brand/10 bg-white p-4 shadow-sm">
+              <h2 className="text-base font-black text-slate-950">Account statement into Accounts</h2>
+              <p className="text-xs text-slate-500">
+                All {preview.cash.rows} rows{preview.cash.firstDate && preview.cash.lastDate ? ` from ${preview.cash.firstDate} to ${preview.cash.lastDate}` : ""} are kept, word for word, in the branch cashbook: fees, &quot;fee deleted&quot; corrections, expenses and other income.
+                {preview.cash.blankRows > 0 && ` ${count(preview.cash.blankRows, "row")} with no amount ${preview.cash.blankRows === 1 ? "is" : "are"} kept as ₹0.`}
+                {" "}A fee row also becomes that student&apos;s payment for the month, and a &quot;fee deleted&quot; row takes back the payment it corrects.
+              </p>
+              {preview.cash.alreadyImported > 0 && <p className="mt-1 text-xs font-bold text-sky-800">{preview.cash.alreadyImported} statement lines are already in Accounts. Only new rows are added.</p>}
+              <div className="mt-2 flex flex-wrap gap-1.5">
+                {preview.cash.categories.map((entry) => (
+                  <span key={`${entry.kind}-${entry.label}`} className={cn("rounded-full px-2.5 py-1 text-xs font-bold", entry.kind === "income" ? "bg-emerald-50 text-emerald-800" : "bg-red-50 text-red-800")}>
+                    {entry.label}: {inr(entry.amount)} ({entry.rows})
+                  </span>
+                ))}
+              </div>
+            </section>
+          )}
 
           {preview.alreadyImportedBills > 0 && (
             <Notice tone="info">This branch already has {preview.alreadyImportedBills} imported fee records. Running the import again only adds what is missing.</Notice>
@@ -201,7 +244,7 @@ export default function ImportClient({ can }: { can: string[] }) {
           <section className="overflow-x-auto rounded-lg border border-brand/10 bg-white shadow-sm">
             <div className="border-b border-slate-100 px-4 py-3">
               <h2 className="text-base font-black text-slate-950">2. Current students and their monthly fee</h2>
-              <p className="text-xs text-slate-500">The fee is the amount they usually paid after their first month. Change any that are wrong; leave the box empty to keep the suggestion.</p>
+              <p className="text-xs text-slate-500">The fee follows the slots their class goes into: 1 slot ₹1,000, 2 slots ₹1,500 (paid before: shown underneath). Type a different amount for a special case; leave the box empty to keep the suggestion.</p>
             </div>
             <table className="w-full min-w-[820px] text-sm">
               <thead className="bg-slate-50 text-left text-xs font-black uppercase tracking-wide text-slate-500">
@@ -236,10 +279,13 @@ export default function ImportClient({ can }: { can: string[] }) {
                           className="input h-8 w-24 text-sm"
                           inputMode="numeric"
                           disabled={Boolean(student.existing)}
-                          placeholder={String(student.monthlyFee)}
+                          placeholder={String(feeForSlots((mapping[student.className] || []).length) ?? student.monthlyFee)}
                           value={fees[student.regNo] ?? ""}
                           onChange={(event) => setFees((all) => ({ ...all, [student.regNo]: event.target.value }))}
                         />
+                        {feeForSlots((mapping[student.className] || []).length) !== null && feeForSlots((mapping[student.className] || []).length) !== student.monthlyFee && (
+                          <div className="text-[11px] text-slate-400">paid {inr(student.monthlyFee)} before</div>
+                        )}
                       </td>
                       <td className={cn("px-4 py-2 text-right font-bold", student.reportOwed ? "text-red-700" : "text-slate-400")}>{inr(student.reportOwed)}</td>
                       <td className={cn("px-4 py-2 text-right", mismatch ? "font-bold text-amber-700" : "text-slate-400")}>
@@ -259,6 +305,27 @@ export default function ImportClient({ can }: { can: string[] }) {
             </Notice>
           )}
 
+          {preview.format === "statement" ? (
+          <section className="rounded-lg border border-brand/10 bg-white shadow-sm">
+            <button type="button" className="flex w-full items-center justify-between px-4 py-3 text-left" onClick={() => setShowFormer((value) => !value)}>
+              <span>
+                <span className="text-base font-black text-slate-950">3. Fees from students not on the list ({preview.feeOnly.length})</span>
+                <span className="block text-xs text-slate-500">The statement has no names, so these get no account. Their payments stay in Accounts under their registration number.</span>
+              </span>
+              <span className="text-xs font-bold text-brand">{showFormer ? "Hide" : "Show"}</span>
+            </button>
+            {showFormer && (
+              <div className="divide-y divide-slate-100 border-t border-slate-100">
+                {preview.feeOnly.map((entry) => (
+                  <div key={entry.regNo} className="flex justify-between gap-2 px-4 py-2 text-sm">
+                    <span className="font-bold">{entry.regNo}</span>
+                    <span className="text-xs text-slate-600">{monthLabel(entry.firstMonth)} to {monthLabel(entry.lastMonth)} · {count(entry.months, "month")} · {inr(entry.paid)} paid</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </section>
+          ) : (
           <section className="rounded-lg border border-brand/10 bg-white shadow-sm">
             <button type="button" className="flex w-full items-center justify-between px-4 py-3 text-left" onClick={() => setShowFormer((value) => !value)}>
               <span>
@@ -283,12 +350,13 @@ export default function ImportClient({ can }: { can: string[] }) {
               </div>
             )}
           </section>
+          )}
 
           {preview.skipped.length > 0 && (
             <Notice tone="warn">
-              <div className="font-bold">Rows that will not be imported ({preview.skipped.length})</div>
+              <div className="font-bold">{preview.format === "statement" ? `Rows kept in Accounts only, not as a student's fee (${preview.skipped.length})` : `Rows that will not be imported (${preview.skipped.length})`}</div>
               <ul className="mt-1 list-disc pl-5">
-                {preview.skipped.map((entry) => <li key={`${entry.sheet}-${entry.row}`}>{entry.sheet === "report" ? "Fees report" : "Student list"} row {entry.row}: {entry.reason}</li>)}
+                {preview.skipped.map((entry) => <li key={`${entry.sheet}-${entry.row}`}>{entry.sheet === "report" ? (preview.format === "statement" ? "Statement" : "Fees report") : "Student list"} row {entry.row}: {entry.reason}</li>)}
               </ul>
             </Notice>
           )}
@@ -309,7 +377,7 @@ export default function ImportClient({ can }: { can: string[] }) {
               </p>
             )}
             <button type="button" className="btn-primary h-11" disabled={Boolean(busy)} onClick={() => send("commit")}>
-              {busy === "commit" && <Loader2 size={16} className="animate-spin" />} Import {count(current.filter((s) => !s.existing).length + former.filter((s) => !s.existing).length, "student")} and their fees
+              {busy === "commit" && <Loader2 size={16} className="animate-spin" />} Import {count(current.filter((s) => !s.existing).length + former.filter((s) => !s.existing).length, "student")} and their fees{preview.cash ? ` + ${preview.cash.rows} account lines` : ""}
             </button>
           </section>
         </>

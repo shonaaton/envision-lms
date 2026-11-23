@@ -63,7 +63,7 @@ export default async function ClassroomLivePage({ params, searchParams }: { para
   const role = (session?.user as any).role as "student" | "instructor" | "admin" | "sub-admin";
   if (!(await canAccessFeature("classrooms", session.user as any, "join"))) bounce("/classrooms", "no_join_permission");
   await dbConnect();
-  const classroom: any = await Classroom.findById(params.id).lean();
+  const classroom: any = await Classroom.findOne({ _id: params.id, branch: null }).lean();
   if (!classroom) notFound();
   const isSuperAdmin = await isSuperAdminSession(session?.user as any);
   if (classroom.isTestClassroom && (!isSuperAdmin || String(classroom.testOwner || "") !== userId)) bounce("/dashboard", "test_classroom");

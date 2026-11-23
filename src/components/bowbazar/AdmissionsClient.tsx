@@ -4,13 +4,27 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Check, Copy, ExternalLink, FileText, Loader2, MessageCircle, Plus, RotateCw, X } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
-import { BranchHeader, CredentialsNote, Drawer, Field, SlotPicker, api, rupees } from "./shared";
+import { BranchHeader, CredentialsNote, Drawer, Field, SlotPicker, api, rupees, slotFee } from "./shared";
 import type { Slot } from "./SlotsClient";
 
 type Admission = {
   id: string;
+  kind: "new" | "update";
   status: "sent" | "expired" | "submitted" | "approved" | "rejected" | "cancelled";
-  prefill: { name: string; parentName: string; phone: string; email: string; slots: string[]; slotLabels: string[]; monthlyFee: number; note: string };
+  prefill: {
+    name: string;
+    parentName: string;
+    phone: string;
+    email: string;
+    fatherName: string;
+    motherName: string;
+    school: string;
+    dateOfBirth: string;
+    slots: string[];
+    slotLabels: string[];
+    monthlyFee: number;
+    note: string;
+  };
   form: null | {
     name: string;
     dateOfBirth: string;
@@ -53,6 +67,9 @@ const TABS = [
   { key: "waiting", label: "Waiting for family", statuses: ["sent", "expired"] },
   { key: "done", label: "Done", statuses: ["approved", "rejected", "cancelled"] },
 ] as const;
+
+const statusLabel = (admission: Admission) =>
+  admission.kind === "update" && admission.status === "approved" ? "Record updated" : STATUS[admission.status].label;
 
 const day = (value: string | null) => (value ? new Date(value).toLocaleDateString("en-IN", { day: "numeric", month: "short" }) : "");
 
@@ -117,7 +134,7 @@ export default function AdmissionsClient({ can }: { can: string[] }) {
     <div className="space-y-4">
       <BranchHeader
         title="Admissions"
-        subtitle="Send a family the admission form, then review what they send back and add the student."
+        subtitle="Send a family the admission form, then review what they send back and add the student. Details forms for current students are sent from Students."
         can={can}
         actions={
           <button type="button" className="btn-primary h-10" onClick={() => setStarting(true)}>
@@ -156,7 +173,8 @@ export default function AdmissionsClient({ can }: { can: string[] }) {
                 <div className="min-w-0 space-y-1">
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="text-base font-black text-slate-950">{admission.form?.name || admission.prefill.name}</span>
-                    <span className={cn("rounded-full px-2 py-0.5 text-xs font-bold", STATUS[admission.status].style)}>{STATUS[admission.status].label}</span>
+                    <span className={cn("rounded-full px-2 py-0.5 text-xs font-bold", STATUS[admission.status].style)}>{statusLabel(admission)}</span>
+                    {admission.kind === "update" && <span className="rounded-full bg-violet-100 px-2 py-0.5 text-xs font-bold text-violet-800">Details update</span>}
                   </div>
                   <div className="text-sm text-slate-600">
                     {[admission.form?.parentName || admission.form?.fatherName || admission.prefill.parentName, admission.form?.phone || admission.prefill.phone]
@@ -167,10 +185,10 @@ export default function AdmissionsClient({ can }: { can: string[] }) {
                     {admission.status === "submitted" && `Filled in ${day(admission.submittedAt)}`}
                     {admission.status === "sent" && `Sent ${day(admission.lastSentAt)} by ${admission.createdByName || "staff"} · link works until ${day(admission.expiresAt)}`}
                     {admission.status === "expired" && `Link expired ${day(admission.expiresAt)}`}
-                    {["approved", "rejected", "cancelled"].includes(admission.status) && `${STATUS[admission.status].label} ${day(admission.decidedAt)} by ${admission.decidedByName || "staff"}`}
+                    {["approved", "rejected", "cancelled"].includes(admission.status) && `${statusLabel(admission)} ${day(admission.decidedAt)} by ${admission.decidedByName || "staff"}`}
                     {admission.rejectReason && ` · ${admission.rejectReason}`}
-                    {admission.prefill.slotLabels.length > 0 && ` · ${admission.prefill.slotLabels.join(", ")}`}
-                    {admission.prefill.monthlyFee > 0 && ` · ${rupees(admission.prefill.monthlyFee)}/month`}
+                    {admission.kind === "new" && admission.prefill.slotLabels.length > 0 && ` · ${admission.prefill.slotLabels.join(", ")}`}
+                    {admission.kind === "new" && admission.prefill.monthlyFee > 0 && ` · ${rupees(admission.prefill.monthlyFee)}/month`}
                   </div>
                 </div>
                 <div className="flex shrink-0 flex-wrap gap-2">
@@ -269,11 +287,11 @@ function StartDrawer({ slots, onClose, onSent }: { slots: Slot[]; onClose: () =>
         <Field label="Email" hint="Optional; the link goes here too">
           <input className="input" type="email" value={form.email} onChange={(event) => set({ email: event.target.value })} />
         </Field>
-        <Field label="Monthly fee (₹)" hint="Can be changed when you approve">
+        <Field label="Monthly fee (₹)" hint="Filled in from the slots (1 = ₹1,000, 2 = ₹1,500); can be changed when you approve">
           <input className="input" inputMode="decimal" value={form.monthlyFee} onChange={(event) => set({ monthlyFee: event.target.value })} />
         </Field>
       </div>
-      <SlotPicker slots={slots} value={form.slots} onChange={(value) => set({ slots: value })} />
+      <SlotPicker slots={slots} value={form.slots} onChange={(value) => set({ slots: value, ...slotFee(value) })} />
       <p className="text-xs text-slate-500">The seat is only taken when you approve the form.</p>
       <Field label="Note for the centre" hint="Not shown to the family">
         <textarea className="input min-h-[60px]" value={form.note} onChange={(event) => set({ note: event.target.value })} />
@@ -328,6 +346,12 @@ function SentDrawer({ name, delivery, onClose }: { name: string; delivery: Deliv
 
 function ReviewDrawer({ admission, slots, onClose, onDone }: { admission: Admission; slots: Slot[]; onClose: () => void; onDone: () => void }) {
   const source = admission.form!;
+  const update = admission.kind === "update";
+  // On a details form, what the centre had before, shown under any answer the family changed.
+  const before = (key: keyof Admission["prefill"], now: string) => {
+    const had = String(admission.prefill[key] || "");
+    return update && had && had !== now ? `Was: ${had}` : undefined;
+  };
   const [form, setForm] = useState({
     name: source.name,
     dateOfBirth: source.dateOfBirth,
@@ -353,6 +377,17 @@ function ReviewDrawer({ admission, slots, onClose, onDone }: { admission: Admiss
   async function approve() {
     setBusy("approve");
     try {
+      if (update) {
+        const { monthlyFee: _fee, slots: _slots, sendLogin: _login, notes: _notes, ...details } = form;
+        const data = await api<{ updated: string[]; photoSet: boolean }>(`/api/bowbazar/admissions/${admission.id}`, {
+          method: "PATCH",
+          json: { action: "approve", ...details },
+        });
+        toast.success(`${form.name}'s record updated${data.photoSet ? " with the new photo" : ""}.`);
+        onDone();
+        onClose();
+        return;
+      }
       const data = await api<{ username: string; password: string; emailSent: boolean }>(`/api/bowbazar/admissions/${admission.id}`, {
         method: "PATCH",
         json: { action: "approve", ...form },
@@ -398,7 +433,7 @@ function ReviewDrawer({ admission, slots, onClose, onDone }: { admission: Admiss
 
   return (
     <Drawer
-      title={`Review ${source.name}`}
+      title={update ? `Review ${source.name}'s details` : `Review ${source.name}`}
       onClose={onClose}
       footer={
         rejecting ? (
@@ -414,7 +449,7 @@ function ReviewDrawer({ admission, slots, onClose, onDone }: { admission: Admiss
               <X size={16} /> Turn down
             </button>
             <button type="button" className="btn-primary h-10" disabled={busy !== ""} onClick={() => void approve()}>
-              {busy === "approve" && <Loader2 size={16} className="animate-spin" />} Approve and add student
+              {busy === "approve" && <Loader2 size={16} className="animate-spin" />} {update ? "Save to the student's record" : "Approve and add student"}
             </button>
           </>
         )
@@ -446,44 +481,56 @@ function ReviewDrawer({ admission, slots, onClose, onDone }: { admission: Admiss
         </Field>
       ) : (
         <>
-          <p className="text-xs text-slate-500">Correct anything the family got wrong before approving.</p>
-          <Field label="Student's name *">
+          <p className="text-xs text-slate-500">
+            {update
+              ? "This student is already at the centre. Saving fills in their record and sets the photo; their batch, fees and login stay as they are. Blank boxes leave what the centre had."
+              : "Correct anything the family got wrong before approving."}
+          </p>
+          <Field label="Student's name *" hint={before("name", form.name)}>
             <input className="input" value={form.name} onChange={(event) => set({ name: event.target.value })} />
           </Field>
           <div className="grid gap-3 sm:grid-cols-2">
-            <Field label="Date of birth">
+            <Field label="Date of birth" hint={before("dateOfBirth", form.dateOfBirth)}>
               <input className="input" type="date" value={form.dateOfBirth} onChange={(event) => set({ dateOfBirth: event.target.value })} />
             </Field>
-            <Field label="School">
+            <Field label="School" hint={before("school", form.school)}>
               <input className="input" value={form.school} onChange={(event) => set({ school: event.target.value })} />
             </Field>
-            <Field label="Father's name">
+            <Field label="Father's name" hint={before("fatherName", form.fatherName)}>
               <input className="input" value={form.fatherName} onChange={(event) => set({ fatherName: event.target.value })} />
             </Field>
-            <Field label="Mother's name">
+            <Field label="Mother's name" hint={before("motherName", form.motherName)}>
               <input className="input" value={form.motherName} onChange={(event) => set({ motherName: event.target.value })} />
             </Field>
-            <Field label="Parent to contact">
+            <Field label="Parent to contact" hint={before("parentName", form.parentName)}>
               <input className="input" value={form.parentName} onChange={(event) => set({ parentName: event.target.value })} />
             </Field>
-            <Field label="Phone *">
+            <Field label="Phone *" hint={before("phone", form.phone)}>
               <input className="input" inputMode="tel" value={form.phone} onChange={(event) => set({ phone: event.target.value })} />
             </Field>
-            <Field label="Email">
+            <Field label="Email" hint={before("email", form.email)}>
               <input className="input" type="email" value={form.email} onChange={(event) => set({ email: event.target.value })} />
             </Field>
-            <Field label="Monthly fee (₹)">
-              <input className="input" inputMode="decimal" value={form.monthlyFee} onChange={(event) => set({ monthlyFee: event.target.value })} />
-            </Field>
+            {!update && (
+              <Field label="Monthly fee (₹)">
+                <input className="input" inputMode="decimal" value={form.monthlyFee} onChange={(event) => set({ monthlyFee: event.target.value })} />
+              </Field>
+            )}
           </div>
-          <Field label="Address">
-            <textarea className="input min-h-[60px]" value={form.address} onChange={(event) => set({ address: event.target.value })} />
-          </Field>
-          <SlotPicker slots={slots} value={form.slots} onChange={(value) => set({ slots: value })} />
-          <label className="flex items-center gap-2 text-sm font-semibold text-slate-700">
-            <input type="checkbox" checked={form.sendLogin} onChange={(event) => set({ sendLogin: event.target.checked })} />
-            Send the login details to the family (WhatsApp + email)
-          </label>
+          {(source.address || form.address) && (
+            <Field label="Address">
+              <textarea className="input min-h-[60px]" value={form.address} onChange={(event) => set({ address: event.target.value })} />
+            </Field>
+          )}
+          {!update && (
+            <>
+              <SlotPicker slots={slots} value={form.slots} onChange={(value) => set({ slots: value, ...slotFee(value) })} />
+              <label className="flex items-center gap-2 text-sm font-semibold text-slate-700">
+                <input type="checkbox" checked={form.sendLogin} onChange={(event) => set({ sendLogin: event.target.checked })} />
+                Send the login details to the family (WhatsApp + email)
+              </label>
+            </>
+          )}
         </>
       )}
     </Drawer>

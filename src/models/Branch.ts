@@ -78,6 +78,8 @@ const BranchStudentSchema = new Schema(
     courseLevelSince: Date,
     // The admission form the family filled in, which holds their identity document.
     admission: { type: Schema.Types.ObjectId, ref: "BranchAdmission" },
+    // When the family was last sent the welcome message with a set-password link.
+    welcomeSentAt: Date,
     createdBy: { type: Schema.Types.ObjectId, ref: "User" },
   },
   { timestamps: true }
@@ -207,12 +209,19 @@ const BranchAdmissionSchema = new Schema(
     tokenHash: { type: String, required: true, unique: true },
     expiresAt: { type: Date, required: true },
     status: { type: String, enum: ["sent", "submitted", "approved", "rejected", "cancelled"], default: "sent", index: true },
+    // "new" makes a student on approval; "update" completes the record of the
+    // student in `student`, who is already at the centre.
+    kind: { type: String, enum: ["new", "update"], default: "new" },
     // What the centre knew when it sent the link.
     prefill: {
       name: String,
       parentName: String,
       phone: String,
       email: String,
+      fatherName: String,
+      motherName: String,
+      school: String,
+      dateOfBirth: String, // "YYYY-MM-DD"
       slots: [{ type: Schema.Types.ObjectId, ref: "BranchSlot" }],
       monthlyFee: { type: Number, default: 0 }, // paise
       note: String,
@@ -413,6 +422,36 @@ const BranchAchievementSchema = new Schema(
 );
 BranchAchievementSchema.index({ branch: 1, date: -1 });
 
+
+/**
+ * One line of the branch's cashbook: an expense, or income that is not a fee
+ * collected in the portal (those are read live from the fee bills). Imported
+ * lines keep the account statement's own wording; `sourceKey` lets the import
+ * run again without adding a line twice.
+ */
+const BranchCashEntrySchema = new Schema(
+  {
+    branch: { type: String, enum: [...BRANCHES], required: true, index: true },
+    date: { type: String, required: true }, // "YYYY-MM-DD", academy calendar
+    kind: { type: String, enum: ["income", "expense"], required: true },
+    amount: { type: Number, required: true, min: 0 }, // paise
+    description: { type: String, required: true },
+    category: { type: String, required: true, default: "other" },
+    // On the statement's fee rows and fee corrections.
+    regNo: String,
+    month: String, // "YYYY-MM"
+    note: String,
+    source: { type: String, enum: ["import", "manual"], required: true },
+    sourceKey: String,
+    createdBy: { type: Schema.Types.ObjectId, ref: "User" },
+    createdByName: String,
+    updatedByName: String,
+  },
+  { timestamps: true }
+);
+BranchCashEntrySchema.index({ branch: 1, date: -1 });
+BranchCashEntrySchema.index({ branch: 1, sourceKey: 1 }, { unique: true, partialFilterExpression: { sourceKey: { $type: "string" } } });
+
 export type BranchSlotDoc = InferSchemaType<typeof BranchSlotSchema> & { _id: any };
 export type BranchStudentDoc = InferSchemaType<typeof BranchStudentSchema> & { _id: any };
 export type BranchFeeBillDoc = InferSchemaType<typeof BranchFeeBillSchema> & { _id: any };
@@ -433,4 +472,5 @@ export const BranchMonthlyReport = models.BranchMonthlyReport || model("BranchMo
 export const BranchReminderLog = models.BranchReminderLog || model("BranchReminderLog", BranchReminderLogSchema);
 export const BranchAnnouncement = models.BranchAnnouncement || model("BranchAnnouncement", BranchAnnouncementSchema);
 export const BranchHoliday = models.BranchHoliday || model("BranchHoliday", BranchHolidaySchema);
+export const BranchCashEntry = models.BranchCashEntry || model("BranchCashEntry", BranchCashEntrySchema);
 export const BranchAchievement = models.BranchAchievement || model("BranchAchievement", BranchAchievementSchema);

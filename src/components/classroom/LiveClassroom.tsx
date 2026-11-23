@@ -97,6 +97,11 @@ type Role = "student" | "instructor" | "admin" | "sub-admin";
 type TabKey = "students" | "chat" | "moves" | "engine" | "leaderboard" | "pgns";
 type AttendanceStatus = "present" | "absent" | "late" | "excused" | "student_no_show" | "technical_issue";
 type ClassOutcome = "completed" | "completed_continue_topic" | "abandoned" | "absent" | "student_no_show" | "technical_issue" | "cancelled";
+// Demo-only choice in the End demo dialog: the student joined the Google Meet
+// but never opened the portal classroom, so the room saw nobody. It is saved as
+// a completed (Present) demo with every student marked present; the server
+// never sees this name.
+type DemoMeetOutcome = "completed_gmeet";
 type ToolKey = "move" | "highlight" | "arrow" | "setup";
 type ModifierKey = "default" | "shift" | "ctrl" | "alt";
 type SetupTab = "pieces" | "objects";
@@ -814,8 +819,9 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
   const [attendanceDraft, setAttendanceDraft] = useState<Record<string, AttendanceStatus>>({});
   // "" = not chosen yet. A demo never starts on "Present": defaulting to it sent
   // coaches whose student never joined straight into an assessment form.
-  const [classOutcome, setClassOutcome] = useState<ClassOutcome | "">("completed");
+  const [classOutcome, setClassOutcome] = useState<ClassOutcome | DemoMeetOutcome | "">("completed");
   const [notCompletedConfirmed, setNotCompletedConfirmed] = useState(false);
+  const [meetPromptOpen, setMeetPromptOpen] = useState(false);
   const [setupPosition, setSetupPosition] = useState<BoardPosition>({});
   const [modifier, setModifier] = useState<ModifierKey>("default");
   const [engineText, setEngineText] = useState("Engine ready");
@@ -2381,11 +2387,21 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
     }
   }
 
-  async function saveAttendanceAndClose() {
-    if (isDemoClassroom && !classOutcome) {
-      toast.error("Choose the demo result first: Present, Absent or No Show.");
+  async function saveAttendanceAndClose(outcomeOverride?: DemoMeetOutcome) {
+    const chosenOutcome = outcomeOverride || classOutcome;
+    if (isDemoClassroom && !chosenOutcome) {
+      toast.error("Choose the demo result first: Present, Demo Done on Gmeet or No Show.");
       return;
     }
+    // Present on a demo the portal never saw the student in: the class can only
+    // have happened on Google Meet, so ask the coach to record it that way.
+    if (isDemoClassroom && chosenOutcome === "completed" && !demoStudentSeenOnPortal) {
+      setMeetPromptOpen(true);
+      return;
+    }
+    setMeetPromptOpen(false);
+    const doneOnMeet = isDemoClassroom && chosenOutcome === "completed_gmeet";
+    const savedOutcome: ClassOutcome | "" = doneOnMeet ? "completed" : (chosenOutcome as ClassOutcome | "");
     if (needsNotCompletedConfirmation && !notCompletedConfirmed) {
       setNotCompletedConfirmed(true);
       return;
@@ -2399,6 +2415,14 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
         const suggestedStatus = isDemoClassroom && summaryRow?.suggestedStatus === "late" ? "present" : summaryRow?.suggestedStatus || "absent";
         const selectedStatus = attendanceDraft[studentId] || suggestedStatus;
         const hasRecordedActivity = Number(summaryRow?.timeMinutes || 0) > 0 || Number(summaryRow?.submissions || 0) > 0;
+        if (doneOnMeet) {
+          return { student: studentId, status: "present", note: "Demo done on Google Meet (student did not join the portal classroom)" };
+        }
+        // Present on a demo means the student attended, whatever the room's
+        // own join tracking suggested for the row.
+        if (isDemoClassroom && savedOutcome === "completed") {
+          return { student: studentId, status: "present", note: "Marked present from demo summary" };
+        }
         return {
           student: studentId,
           status: classOutcome === "student_no_show"
@@ -2415,10 +2439,11 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
       });
       const summary = {
         ...classSummary,
-        classOutcome,
-        topicCompleted: classOutcome === "completed",
+        classOutcome: savedOutcome,
+        ...(doneOnMeet ? { demoDeliveredOn: "google_meet" } : {}),
+        topicCompleted: savedOutcome === "completed",
         creditPolicy: isDemoClassroom ? "demo_no_charge" : classOutcome === "completed" || classOutcome === "completed_continue_topic" ? "charge_present_students" : classOutcome === "student_no_show" ? "repeat_no_show_policy" : "no_charge",
-        feedbackRequired: isDemoClassroom && classOutcome === "completed",
+        feedbackRequired: isDemoClassroom && savedOutcome === "completed",
       };
       const res = await fetch("/api/attendance", {
         method: "POST",
@@ -2431,7 +2456,7 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
           coach: classroom?.coach?._id || classroom?.instructor?._id,
           coachStatus: classOutcome === "technical_issue" ? "technical_issue" : "present",
           teachingMinutes: classSummary.durationMinutes || minutesBetween(live?.startedAt, new Date().toISOString()),
-          classOutcome,
+          classOutcome: savedOutcome,
           metadata: { summary, liveSessionId: live?._id },
         }),
       });
@@ -2442,7 +2467,7 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
       await patch({ endedAt: new Date().toISOString(), status: "ended", summary, usedResources: snapshotUsedResources(), boardControlStudents: [], selectedStudents: [], challenge: { active: false } });
       toast.success(isDemoClassroom ? "Demo attendance saved" : "Class ended and attendance saved");
       setSummaryOpen(false);
-      if (isDemoClassroom && classOutcome === "completed" && classroom?.demoBooking) {
+      if (isDemoClassroom && savedOutcome === "completed" && classroom?.demoBooking) {
         window.location.assign(`/demo-feedback/${entityId(classroom.demoBooking)}`);
         return;
       }
@@ -2922,6 +2947,10 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
     const status = attendanceDraft[entityId(row.student)] || row.suggestedStatus;
     return status === "present" || status === "late";
   }).length;
+  // Whether any student showed up in the portal classroom at all (time in the
+  // room or a submission). A demo saved as Present without this was really
+  // taught on Google Meet.
+  const demoStudentSeenOnPortal = classSummary.rows.some((row: any) => Number(row.timeMinutes || 0) > 0 || Number(row.submissions || 0) > 0);
   const needsNotCompletedConfirmation =
     !isDemoClassroom && classOutcome === "abandoned" && classSummary.durationMinutes >= 30 && attendingStudentCount > 0;
 
@@ -4246,7 +4275,7 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
             <div className="mt-5 grid gap-3 lg:grid-cols-[280px_minmax(0,1fr)]">
               <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
                 <div className="text-sm font-black text-slate-950">{isDemoClassroom ? "End demo" : "Class outcome"}</div>
-                <p className="mt-1 text-xs leading-5 text-slate-500">{isDemoClassroom ? "Choose the actual demo result. Present opens the assessment; Absent and No Show return the lead to admin for rebooking." : "Only completed classes of 30+ minutes consume the topic and regular student credits."}</p>
+                <p className="mt-1 text-xs leading-5 text-slate-500">{isDemoClassroom ? "Choose the actual demo result. Present and Demo Done on Gmeet open the assessment; No Show returns the lead to admin for rebooking." : "Only completed classes of 30+ minutes consume the topic and regular student credits."}</p>
                 {!isDemoClassroom && classSummary.durationMinutes < 30 ? (
                   <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs font-semibold leading-5 text-amber-800">
                     This class is under 30 minutes. It will carry the topic forward unless an admin later overrides it.
@@ -4255,7 +4284,7 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
                 <select
                   value={classOutcome}
                   onChange={(event) => {
-                    setClassOutcome(event.target.value as ClassOutcome);
+                    setClassOutcome(event.target.value as ClassOutcome | DemoMeetOutcome);
                     setNotCompletedConfirmed(false);
                   }}
                   className="mt-3 h-10 w-full rounded-md border border-slate-200 bg-white px-2 text-sm"
@@ -4264,7 +4293,7 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
                     <>
                       <option value="" disabled>Choose the demo result</option>
                       <option value="completed">Present</option>
-                      <option value="absent">Absent</option>
+                      <option value="completed_gmeet">Demo Done on Gmeet</option>
                       <option value="student_no_show">No Show</option>
                     </>
                   ) : (
@@ -4281,10 +4310,12 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
                 <div className="mt-3 rounded-lg bg-white p-3 text-xs text-slate-600">
                   {!classOutcome
                     ? attendingStudentCount === 0
-                      ? "The student was not seen in this classroom. Choose No Show or Absent unless they really attended."
+                      ? "The student was not seen in this classroom. If they attended on Google Meet only, choose Demo Done on Gmeet; otherwise choose No Show."
                       : "Choose what happened in the demo. Only Present asks you for an assessment."
+                    : classOutcome === "completed_gmeet"
+                    ? "The demo happened on Google Meet. The student is marked present and the assessment form will open next."
                     : classOutcome === "completed"
-                    ? isDemoClassroom ? "The demo was attended. The assessment form will open next." : "Present/late students are charged and the topic is marked taught."
+                    ? isDemoClassroom ? "The student is marked present. The assessment form will open next." : "Present/late students are charged and the topic is marked taught."
                     : classOutcome === "completed_continue_topic"
                       ? "Present/late students are charged. The same topic repeats next class, later topics shift down, and an extra class is added at the end."
                     : classOutcome === "student_no_show"
@@ -4332,8 +4363,8 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
                         <span>{row.points} pts</span>
                       </div>
                       <select
-                        value={classOutcome === "student_no_show" ? "student_no_show" : classOutcome === "absent" ? "absent" : attendanceDraft[entityId(row.student)] || row.suggestedStatus}
-                        disabled={classOutcome === "student_no_show" || classOutcome === "absent"}
+                        value={classOutcome === "student_no_show" ? "student_no_show" : classOutcome === "absent" ? "absent" : classOutcome === "completed_gmeet" || (isDemoClassroom && classOutcome === "completed") ? "present" : attendanceDraft[entityId(row.student)] || row.suggestedStatus}
+                        disabled={classOutcome === "student_no_show" || classOutcome === "absent" || classOutcome === "completed_gmeet" || (isDemoClassroom && classOutcome === "completed")}
                         onChange={(event) => setAttendanceDraft((current) => ({ ...current, [entityId(row.student)]: event.target.value as AttendanceStatus }))}
                         className="h-9 rounded-md border border-slate-200 px-2 text-sm disabled:bg-slate-100 disabled:text-slate-500"
                       >
@@ -4351,7 +4382,7 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
             </div>
             <div className="mt-5 flex justify-end gap-2">
               <button
-                onClick={saveAttendanceAndClose}
+                onClick={() => saveAttendanceAndClose()}
                 className={cn("h-10 rounded-md px-4 text-sm font-semibold text-white", needsNotCompletedConfirmation && notCompletedConfirmed ? "bg-red-700" : "bg-purple-700")}
               >
                 {isDemoClassroom
@@ -4364,12 +4395,36 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId }: 
           </div>
         </div>
       )}
+      {meetPromptOpen && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-950/55 p-4">
+          <div className="w-full max-w-md rounded-xl bg-white p-5 shadow-2xl">
+            <h2 className="text-lg font-black text-slate-950">Student did not join the portal</h2>
+            <p className="mt-2 text-sm leading-6 text-slate-600">
+              The student was not seen in this portal classroom. If the demo happened on Google Meet, mark it as Demo Done on Gmeet. The student is still counted as present and the assessment opens next.
+            </p>
+            <div className="mt-5 flex justify-end gap-2">
+              <button type="button" onClick={() => setMeetPromptOpen(false)} className="btn-outline bg-white">Go Back</button>
+              <button
+                type="button"
+                disabled={endingClass}
+                onClick={() => {
+                  setClassOutcome("completed_gmeet");
+                  void saveAttendanceAndClose("completed_gmeet");
+                }}
+                className="h-10 rounded-md bg-purple-700 px-4 text-sm font-semibold text-white disabled:opacity-60"
+              >
+                Mark Demo Done on Gmeet
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       {demoExitWarningOpen && (
         <div className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-950/55 p-4">
           <div className="w-full max-w-md rounded-xl bg-white p-5 shadow-2xl">
             <h2 className="text-lg font-black text-slate-950">Mark demo result first</h2>
             <p className="mt-2 text-sm leading-6 text-slate-600">
-              Before leaving this demo classroom, please mark whether the student was Present, Absent, or No Show. If Present is selected, the assessment opens immediately after saving.
+              Before leaving this demo classroom, please mark whether the student was Present, Demo Done on Gmeet, or No Show. If Present or Demo Done on Gmeet is selected, the assessment opens immediately after saving.
             </p>
             <div className="mt-5 flex justify-end gap-2">
               <button type="button" onClick={() => setDemoExitWarningOpen(false)} className="btn-outline bg-white">Stay Here</button>

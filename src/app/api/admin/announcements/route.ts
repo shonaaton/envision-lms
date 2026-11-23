@@ -33,6 +33,15 @@ function formatEditedAt(value: Date) {
   }).format(value);
 }
 
+/** The email turns the first link into a button; name it after where it goes. */
+function announcementActionLabel(message: string) {
+  const url = message.match(/https?:\/\/[^\s<>"')]+/i)?.[0] || "";
+  if (!url) return undefined;
+  if (/\/blog\//i.test(url)) return "Read the article";
+  if (/envisionchessacademy\.com/i.test(url)) return "Open in LMS";
+  return "Open link";
+}
+
 async function resolveRecipients(targetType: string, targetId?: string) {
   if (targetType === "all_students") {
     const users = await User.find({ role: "student", isActive: { $ne: false } }, { _id: 1, email: 1, name: 1 }).lean();
@@ -134,6 +143,7 @@ export async function POST(req: Request) {
             to: String(user.email),
             subject: title,
             message,
+            actionLabel: announcementActionLabel(message),
             metadata: {
               kind: "announcement",
               priority,

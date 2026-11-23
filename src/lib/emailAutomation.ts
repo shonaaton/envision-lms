@@ -99,14 +99,21 @@ function normalizeAction(input: AutomationEmailInput) {
 
 function stripActionUrlLines(message: string, actionUrl: string) {
   if (!actionUrl) return message;
-  return message
-    .split(/\n/)
-    .filter((line) => {
-      const trimmed = line.trim();
-      if (!trimmed) return true;
-      if (trimmed.includes(actionUrl)) return false;
-      return !/https?:\/\/[^\s<>"')]+/i.test(trimmed);
-    })
+  const kept: string[] = [];
+  for (const line of message.split(/\n/)) {
+    const trimmed = line.trim();
+    const isUrlLine = Boolean(trimmed) && (trimmed.includes(actionUrl) || /https?:\/\/[^\s<>"')]+/i.test(trimmed));
+    if (!isUrlLine) {
+      kept.push(line);
+      continue;
+    }
+    // "...read our guide:" followed by the link line: the link becomes the
+    // button, so the sentence must not end on a colon pointing at nothing.
+    let previous = kept.length - 1;
+    while (previous >= 0 && !kept[previous].trim()) previous -= 1;
+    if (previous >= 0) kept[previous] = kept[previous].replace(/:\s*$/, ".");
+  }
+  return kept
     .join("\n")
     .replace(/\n{3,}/g, "\n\n")
     .trim();

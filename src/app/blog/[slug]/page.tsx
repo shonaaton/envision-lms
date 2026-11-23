@@ -3,7 +3,9 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ArrowRight, CalendarDays, Clock3, GraduationCap } from "lucide-react";
 import { ChessDiagramDefs } from "@/components/blog/ChessDiagram";
+import { PostViewCounter } from "@/components/blog/BlogViews";
 import PostBody from "@/components/blog/PostBody";
+import ShareButtons from "@/components/blog/ShareButtons";
 import TableOfContents from "@/components/blog/TableOfContents";
 import RelatedLinks from "@/components/marketing/RelatedLinks";
 import { MarketingFooter, MarketingHeader } from "@/components/marketing/MarketingChrome";
@@ -109,7 +111,9 @@ export default function BlogPostPage({ params }: { params: { slug: string } }) {
               <CalendarDays size={15} className="text-brand" /> Updated <time dateTime={post.updatedAt}>{formatPostDate(post.updatedAt)}</time>
             </span>
             <span className="inline-flex items-center gap-1.5"><Clock3 size={15} className="text-brand" /> {minutes} min read</span>
+            <PostViewCounter slug={post.slug} />
           </div>
+          <ShareButtons url={url} title={post.h1} className="mt-6" />
         </div>
       </header>
 
@@ -139,6 +143,13 @@ export default function BlogPostPage({ params }: { params: { slug: string } }) {
               </div>
             </section>
           ) : null}
+
+          <ShareButtons
+            url={url}
+            title={post.h1}
+            heading="Found this useful? Share it with another chess parent or player"
+            className="mt-12 rounded-2xl border border-brand/10 bg-brand-50/60 p-5"
+          />
         </article>
 
         <aside className="hidden lg:block">

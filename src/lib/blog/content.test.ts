@@ -175,6 +175,43 @@ describe.each(blogPosts.map((post) => [post.slug, post] as const))("blog post %s
     }
   });
 
+  it("has illustrations that exist in its own folder, with alt text", () => {
+    for (const block of post.body) {
+      if (block.type !== "image") continue;
+      expect(block.src.startsWith(`/blog/${post.slug}/`), block.src).toBe(true);
+      expect(existsSync(path.join(PUBLIC_DIR, block.src)), `${block.src} is missing from public/`).toBe(true);
+      expect(block.width).toBeGreaterThan(0);
+      expect(block.height).toBeGreaterThan(0);
+      expect(block.alt.length).toBeGreaterThanOrEqual(40);
+      expect(block.alt).not.toBe(block.caption);
+    }
+  });
+
+  it("has quizzes and match calculators that make sense", () => {
+    for (const block of post.body) {
+      if (block.type === "quiz") {
+        expect(block.questions.length).toBeGreaterThan(0);
+        for (const question of block.questions) {
+          expect(question.options.length, question.q).toBeGreaterThanOrEqual(2);
+          expect(new Set(question.options).size, question.q).toBe(question.options.length);
+          expect(question.options[question.answer], question.q).toBeDefined();
+          for (const href of inlineHrefs(question.explain)) {
+            if (/^https:\/\//.test(href)) continue;
+            expect(knownRoutes.has(href.split("#")[0]), `${href} is not a public route`).toBe(true);
+          }
+        }
+      }
+      if (block.type === "matchPredictor") {
+        expect(block.games).toBeGreaterThan(0);
+        expect(block.presets.length).toBeGreaterThan(0);
+        for (const preset of block.presets) {
+          expect(preset.aWin + preset.bWin, preset.label).toBeLessThanOrEqual(100);
+          expect(Math.min(preset.aWin, preset.bWin), preset.label).toBeGreaterThanOrEqual(0);
+        }
+      }
+    }
+  });
+
   it("supports only city pages that exist, and links to each one in its text", () => {
     for (const slug of post.relatedCities ?? []) {
       expect(cityPages.some((page) => page.slug === slug), slug).toBe(true);

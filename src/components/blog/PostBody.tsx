@@ -2,6 +2,8 @@ import Image from "next/image";
 import Link from "next/link";
 import { ArrowRight, Lightbulb, Monitor, Smartphone } from "lucide-react";
 import ChessDiagram from "@/components/blog/ChessDiagram";
+import MatchPredictor from "@/components/blog/MatchPredictor";
+import Quiz from "@/components/blog/Quiz";
 import { parseInline } from "@/lib/blog/inline";
 import type { Block, ScreenshotBlock, ScreenshotImage } from "@/lib/blog/types";
 
@@ -164,6 +166,32 @@ export default function PostBody({ blocks }: { blocks: Block[] }) {
             return <ChessDiagram key={index} diagram={block} />;
           case "screenshots":
             return <Screenshots key={index} block={block} />;
+          case "image":
+            return (
+              <figure key={index} className="mt-6">
+                {/* Illustrations are SVG, which the image optimiser does not resize. */}
+                <Image
+                  src={block.src}
+                  width={block.width}
+                  height={block.height}
+                  alt={block.alt}
+                  unoptimized={block.src.endsWith(".svg")}
+                  sizes="(min-width: 768px) 720px, 100vw"
+                  className="h-auto w-full rounded-xl border border-brand/10"
+                />
+                <figcaption className="mt-2 text-sm leading-5 text-brand-900/60">{block.caption}</figcaption>
+              </figure>
+            );
+          case "matchPredictor":
+            return <MatchPredictor key={index} block={block} />;
+          case "quiz":
+            return (
+              <Quiz
+                key={index}
+                block={block}
+                explanations={block.questions.map((question) => <Inline key={question.q} text={question.explain} />)}
+              />
+            );
         }
       })}
     </div>

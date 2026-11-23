@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { ArrowRight, Clock3 } from "lucide-react";
+import { BlogViewsProvider, CardViewCount } from "@/components/blog/BlogViews";
 import { BoardSvg, ChessDiagramDefs } from "@/components/blog/ChessDiagram";
 import RelatedLinks from "@/components/marketing/RelatedLinks";
 import { MarketingFooter, MarketingHeader } from "@/components/marketing/MarketingChrome";
@@ -53,7 +54,10 @@ function PostCard({ post, featured = false }: { post: BlogPost; featured?: boole
         <Heading className={`mt-2 font-black leading-snug text-brand-900 group-hover:text-brand ${featured ? "text-2xl sm:text-3xl" : "text-lg"}`}>{post.h1}</Heading>
         <p className={`mt-3 flex-1 leading-6 text-brand-900/70 ${featured ? "text-base" : "text-sm"}`}>{post.excerpt}</p>
         <span className="mt-4 flex items-center justify-between text-xs font-bold text-brand-900/60">
-          <span className="inline-flex items-center gap-1.5"><Clock3 size={14} /> {readingMinutes(post)} min read</span>
+          <span className="inline-flex flex-wrap items-center gap-x-3 gap-y-1">
+            <span className="inline-flex items-center gap-1.5"><Clock3 size={14} /> {readingMinutes(post)} min read</span>
+            <CardViewCount slug={post.slug} />
+          </span>
           <span className="inline-flex items-center gap-1 text-brand">Read the guide <ArrowRight size={14} className="transition-transform group-hover:translate-x-0.5" /></span>
         </span>
       </div>
@@ -134,6 +138,7 @@ export default function BlogIndexPage() {
         </div>
       </header>
 
+      <BlogViewsProvider slugs={blogPosts.map((post) => post.slug)}>
       {featured ? (
         <section className="mx-auto max-w-7xl px-4 pt-10 sm:px-6 lg:px-8 lg:pt-14" aria-label="Featured guide">
           <PostCard post={featured} featured />
@@ -155,6 +160,7 @@ export default function BlogIndexPage() {
           </section>
         );
       })}
+      </BlogViewsProvider>
 
       <RelatedLinks
         eyebrow="Learn with a coach"

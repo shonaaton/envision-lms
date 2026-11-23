@@ -34,6 +34,7 @@ import joinDemoGuide from "@/lib/blog/posts/how-to-join-a-free-demo-chess-class"
 import tournamentsGuide from "@/lib/blog/posts/online-chess-tournaments-for-students";
 import progressGuide from "@/lib/blog/posts/track-your-chess-progress-and-fees";
 import worldChampionship2026 from "@/lib/blog/posts/fide-world-chess-championship-2026";
+import worldChampionshipPredictions from "@/lib/blog/posts/world-chess-championship-2026-predictions";
 
 /**
  * Every published post. A post exists on the site, in the sitemap, on the blog
@@ -62,6 +63,7 @@ const ALL_POSTS: BlogPost[] = [
   progressGuide,
   // News: the 2026 title match.
   worldChampionship2026,
+  worldChampionshipPredictions,
   // City guides: each supports one city page (or, for online vs offline, all
   // of them) without targeting that page's own phrases.
   onlineVsOffline,
@@ -152,6 +154,12 @@ function blockText(block: Block): string {
       return block.caption;
     case "screenshots":
       return block.images.map((image) => image.caption).join(" ");
+    case "image":
+      return block.caption;
+    case "matchPredictor":
+      return [block.heading, ...block.presets.map((preset) => `${preset.label} ${preset.note}`)].join(" ");
+    case "quiz":
+      return [block.heading, ...block.questions.flatMap((question) => [question.q, ...question.options, plainText(question.explain)])].join(" ");
     default:
       return plainText(block.text);
   }

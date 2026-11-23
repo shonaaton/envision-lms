@@ -52,6 +52,37 @@ export type ScreenshotImage = {
 
 export type ScreenshotBlock = { type: "screenshots"; images: ScreenshotImage[] };
 
+/** An illustration or chart, served from `public/blog/<post slug>/`. */
+export type ImageBlock = {
+  type: "image";
+  src: string;
+  width: number;
+  height: number;
+  caption: string;
+  /** What the picture shows, in words - the numbers, not just "a chart". */
+  alt: string;
+};
+
+/**
+ * An interactive match calculator: readers set each player's chance of
+ * winning a single game and see the chance of winning the whole match.
+ * Players are [A, B]; preset chances are percentages per game.
+ */
+export type MatchPredictorBlock = {
+  type: "matchPredictor";
+  heading: string;
+  players: [string, string];
+  games: number;
+  presets: { label: string; aWin: number; bWin: number; note: string }[];
+};
+
+/** A multiple-choice quiz; the reader picks an answer and sees why. */
+export type QuizBlock = {
+  type: "quiz";
+  heading: string;
+  questions: { q: string; options: string[]; answer: number; explain: string }[];
+};
+
 export type Block =
   | { type: "h2"; id: string; text: string }
   | { type: "h3"; id: string; text: string }
@@ -63,7 +94,10 @@ export type Block =
   /** A call to action box. `href` is usually the demo form. */
   | { type: "cta"; heading: string; text: string; href: string; label: string }
   | DiagramBlock
-  | ScreenshotBlock;
+  | ScreenshotBlock
+  | ImageBlock
+  | MatchPredictorBlock
+  | QuizBlock;
 
 export type BlogPost = {
   slug: string;

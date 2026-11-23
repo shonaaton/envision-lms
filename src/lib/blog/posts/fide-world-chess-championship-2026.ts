@@ -35,6 +35,7 @@ const post: BlogPost = {
   updatedAt: "2026-11-23",
   relatedCourses: ["beginner-chess-course", "intermediate-chess-course", "semi-pro-chess-course"],
   relatedPosts: [
+    "world-chess-championship-2026-predictions",
     "why-chennai-is-the-chess-capital-of-india",
     "online-chess-tournaments-for-students",
     "how-to-get-fide-rating-india",
@@ -88,7 +89,7 @@ const post: BlogPost = {
     },
     {
       type: "p",
-      text: "A rating gap does not decide a World Championship. Match play is different from tournament play: preparation, nerves and the ability to bounce back after a loss matter as much as rating.",
+      text: "A rating gap does not decide a World Championship. Match play is different from tournament play: preparation, nerves and the ability to bounce back after a loss matter as much as rating. Our [World Chess Championship 2026 predictions](/blog/world-chess-championship-2026-predictions) weigh the odds, the form and the expert picks, with a calculator to make your own.",
     },
     { type: "h2", id: "format", text: "How the match works" },
     {

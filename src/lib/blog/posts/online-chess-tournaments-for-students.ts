@@ -24,7 +24,7 @@ const post: BlogPost = {
   publishedAt: "2026-11-04",
   updatedAt: "2026-11-04",
   relatedCourses: ["beginner-chess-course", "intermediate-chess-course"],
-  relatedPosts: ["how-to-get-fide-rating-india", "online-chess-practice-tools-for-kids", "how-to-join-an-online-chess-class"],
+  relatedPosts: ["fide-world-chess-championship-2026", "how-to-get-fide-rating-india", "online-chess-practice-tools-for-kids", "how-to-join-an-online-chess-class"],
   priority: 35,
   body: [
     {

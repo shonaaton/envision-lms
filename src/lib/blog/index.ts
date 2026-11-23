@@ -33,6 +33,7 @@ import joinClassGuide from "@/lib/blog/posts/how-to-join-an-online-chess-class";
 import joinDemoGuide from "@/lib/blog/posts/how-to-join-a-free-demo-chess-class";
 import tournamentsGuide from "@/lib/blog/posts/online-chess-tournaments-for-students";
 import progressGuide from "@/lib/blog/posts/track-your-chess-progress-and-fees";
+import worldChampionship2026 from "@/lib/blog/posts/fide-world-chess-championship-2026";
 
 /**
  * Every published post. A post exists on the site, in the sitemap, on the blog
@@ -59,6 +60,8 @@ const ALL_POSTS: BlogPost[] = [
   ptmGuide,
   tournamentsGuide,
   progressGuide,
+  // News: the 2026 title match.
+  worldChampionship2026,
   // City guides: each supports one city page (or, for online vs offline, all
   // of them) without targeting that page's own phrases.
   onlineVsOffline,

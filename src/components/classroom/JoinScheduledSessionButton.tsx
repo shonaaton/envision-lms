@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { normalizeGoogleMeetUrl } from "@/lib/meetingUrl";
 import { isJoinWindowOpen } from "@/lib/classroomSessions";
+import { serverNow, syncServerClock } from "@/lib/serverClock";
 import CreditGateModal, { type CreditGateKind } from "@/components/classroom/CreditGateModal";
 import type { ClassroomCreditEligibility } from "@/lib/classroomCreditAccess";
 import { getCachedClassroomEligibility, loadClassroomEligibility, resetJoinEligibilityCache } from "@/components/classroom/classroomCreditEligibilityClient";
@@ -58,10 +59,32 @@ export default function JoinScheduledSessionButton({
 
   useEffect(() => {
     if (!scheduledFor) return;
-    const refresh = () => setJoinOpen(isJoinWindowOpen({ scheduledFor, startTime, durationMinutes }));
-    refresh();
-    const timer = window.setInterval(refresh, 15000);
-    return () => window.clearInterval(timer);
+    let active = true;
+    // Judged on the server's clock, not the device's: see lib/serverClock.ts.
+    const refresh = () => {
+      if (active) setJoinOpen(isJoinWindowOpen({ scheduledFor, startTime, durationMinutes }, serverNow()));
+    };
+    const resync = () => {
+      refresh();
+      void syncServerClock().then(refresh);
+    };
+    resync();
+    const timer = window.setInterval(refresh, 5000);
+    // Phones pause timers while the screen is off or the tab is in the
+    // background; check again the moment the student comes back.
+    const onVisible = () => {
+      if (document.visibilityState === "visible") resync();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("focus", resync);
+    window.addEventListener("online", resync);
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("focus", resync);
+      window.removeEventListener("online", resync);
+    };
   }, [durationMinutes, scheduledFor, startTime]);
 
   useEffect(() => {

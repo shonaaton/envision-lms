@@ -5,7 +5,7 @@ import { User } from "@/models/User";
 import { coachCanAccessClassroomSession } from "@/lib/classroomCoachAccess";
 import { getClassroomCreditEligibility } from "@/lib/classroomCreditAccess";
 import { resolveScheduledSession } from "@/lib/classroomLiveSession";
-import { isJoinWindowOpen } from "@/lib/classroomSessions";
+import { isJoinWindowOpenOnServer } from "@/lib/classroomSessions";
 import { attachClassroomPeople, classroomPeopleIds } from "@/lib/liveClassroomPoll";
 
 export type AppRole = "student" | "instructor" | "admin" | "sub-admin";
@@ -85,7 +85,7 @@ export const LIVE_CLASSROOM_DENIAL_MESSAGES: Record<LiveClassroomDenial, string>
   not_a_current_student: "This student account is not active.",
   credit_balance_blocked: "Class credits have run out. Recharge to join a class.",
   no_scheduled_session: "This class has no scheduled session to join.",
-  session_not_open: "This class is not open yet. The room opens 5 minutes before the start time.",
+  session_not_open: "This class is not open yet. The room opens 15 minutes before the start time.",
   not_on_the_roster: "You are not on the student list for this class.",
   left_this_classroom: "You have moved to another batch. Your past classes and homework are still on your account, but this class is not yours to join.",
 };
@@ -140,7 +140,7 @@ export async function getLiveClassroomForUser(
   const scheduledSession: any = resolveScheduledSession(classroom, scheduledSessionId);
   if (!scheduledSession) return deny("no_scheduled_session");
   const sessionOpen = Boolean(
-    isJoinWindowOpen(scheduledSession) ||
+    isJoinWindowOpenOnServer(scheduledSession) ||
     (scheduledSession.actualStartedAt && !scheduledSession.actualEndedAt && scheduledSession.status !== "cancelled")
   );
   if (!sessionOpen) return deny("session_not_open");

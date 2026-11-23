@@ -29,7 +29,7 @@ const post: BlogPost = {
   body: [
     {
       type: "p",
-      text: "Envision classes are live, and you join them from the student portal. Log in, find the class on your **dashboard** or under **Class Tools → Classrooms**, and press **Join Classroom**. The room opens **5 minutes before the start time**, and you get a reminder 10 minutes before. The same portal has your **calendar**, your **attendance record** and **Ask Coach** for messages. This guide shows each screen on a computer and on a phone.",
+      text: "Envision classes are live, and you join them from the student portal. Log in, find the class on your **dashboard** or under **Class Tools → Classrooms**, and press **Join Classroom**. The room opens **15 minutes before the start time**, and you get a reminder 10 minutes before. The same portal has your **calendar**, your **attendance record** and **Ask Coach** for messages. This guide shows each screen on a computer and on a phone.",
     },
     {
       type: "p",
@@ -62,7 +62,7 @@ const post: BlogPost = {
     { type: "h2", id: "join", text: "Step 3: Join when the room opens" },
     {
       type: "p",
-      text: "Until the class is about to start, **Join Classroom** is greyed out and the card says when it opens (for example \"Opens 6 Nov, 5:00 pm\"). The room opens **5 minutes before the start time**; press **Join Classroom** then. Inside, you see the coach's board, the class chat and the questions the coach sets during the lesson.",
+      text: "Until the class is about to start, **Join Classroom** is greyed out and the card says when it opens (for example \"Opens 6 Nov, 5:00 pm\"). The room opens **15 minutes before the start time**; press **Join Classroom** then. Inside, you see the coach's board, the class chat and the questions the coach sets during the lesson.",
     },
     {
       type: "ul",
@@ -148,7 +148,7 @@ const post: BlogPost = {
     },
   ],
   faqs: [
-    { q: "When can we join the class?", a: "The class room opens 5 minutes before the start time. Until then Join Classroom is greyed out and shows when it opens. You also get a reminder 10 minutes before." },
+    { q: "When can we join the class?", a: "The class room opens 15 minutes before the start time. Until then Join Classroom is greyed out and shows when it opens. You also get a reminder 10 minutes before." },
     { q: "Why does a class show as absent when my child attended?", a: "Attendance comes from the live class room. A student who joined only the video call and never opened the portal room can appear absent. Tell the coach or the academy and it can be corrected." },
     { q: "What times are classes shown in?", a: "All class times in the portal are in India time (IST). Families abroad should convert to their local time." },
     { q: "Can I message the coach outside class?", a: "Yes, use Ask Coach in the portal. Keep messages to chess questions; phone numbers and outside apps are flagged." },

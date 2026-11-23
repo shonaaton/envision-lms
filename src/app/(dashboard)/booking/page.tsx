@@ -188,7 +188,7 @@ export default function BookingPage() {
               <div className="mt-1">{new Date(approvedDemoBooking.startAt).toLocaleString()}</div>
               <div className="text-xs font-semibold">
                 {approvedDemoBooking.instructor?.name ? `Coach ${approvedDemoBooking.instructor.name}. ` : ""}
-                The Join button opens on your Classrooms page 5 minutes before the class starts.
+                The Join button opens on your Classrooms page 15 minutes before the class starts.
               </div>
               <Link href="/classrooms" className="btn-primary mt-3 w-full sm:w-auto">
                 <PlayCircle size={16} /> Go to my classroom

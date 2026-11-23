@@ -38,13 +38,33 @@ export function getSessionEnd(session: ScheduledSessionLike) {
   return new Date(start.getTime() + Math.max(15, Number(session.durationMinutes || 60)) * 60000);
 }
 
-export function isJoinWindowOpen(session: ScheduledSessionLike, now = new Date(), earlyMinutes = 5, graceMinutes = 120) {
+/**
+ * How early a class room opens. Was 5 minutes: a student whose phone or tablet
+ * clock ran a few minutes slow saw Join greyed out at the start time (the button
+ * reads the device clock), so the window is wider and the button now corrects
+ * for the device clock against the server's (see lib/serverClock.ts).
+ */
+export const JOIN_OPENS_MINUTES_BEFORE = 15;
+
+/**
+ * The server checks (live room page, live API) accept a join this much earlier
+ * than the button opens, so a second or two of clock difference between the
+ * device and the server never bounces a click the button allowed.
+ */
+export const JOIN_SERVER_SLACK_MINUTES = 2;
+
+export function isJoinWindowOpen(session: ScheduledSessionLike, now = new Date(), earlyMinutes = JOIN_OPENS_MINUTES_BEFORE, graceMinutes = 120) {
   const start = getSessionStart(session);
   const end = getSessionEnd(session);
   if (!start || !end) return false;
   const opensAt = new Date(start.getTime() - earlyMinutes * 60000);
   const closesAt = new Date(end.getTime() + graceMinutes * 60000);
   return now >= opensAt && now <= closesAt;
+}
+
+/** The window the server enforces: the button's window plus the clock slack. */
+export function isJoinWindowOpenOnServer(session: ScheduledSessionLike, now = new Date()) {
+  return isJoinWindowOpen(session, now, JOIN_OPENS_MINUTES_BEFORE + JOIN_SERVER_SLACK_MINUTES);
 }
 
 export function deriveScheduledSessionStatus(
@@ -73,7 +93,7 @@ export function deriveScheduledSessionStatus(
   const end = getSessionEnd(session);
   if (!start || !end) return "upcoming";
 
-  const opensAt = new Date(start.getTime() - 5 * 60000);
+  const opensAt = new Date(start.getTime() - JOIN_OPENS_MINUTES_BEFORE * 60000);
   if (now >= opensAt && now < start) return "join_available";
   if (now < opensAt) return "upcoming";
   if (now >= start && now <= end) return "ongoing";

@@ -29,7 +29,7 @@ const post: BlogPost = {
   body: [
     {
       type: "p",
-      text: "Once your Envision demo account is created, joining the free demo class takes four moves: **log in**, **pick a demo time**, **wait for the academy to confirm a coach**, and **press Join Demo Class** when the room opens, 5 minutes before the start. Everything happens in the same student portal an enrolled student uses, and the demo class is a real live lesson with a real coach, not a recording. This guide shows each screen on a computer and on a phone.",
+      text: "Once your Envision demo account is created, joining the free demo class takes four moves: **log in**, **pick a demo time**, **wait for the academy to confirm a coach**, and **press Join Demo Class** when the room opens, 15 minutes before the start. Everything happens in the same student portal an enrolled student uses, and the demo class is a real live lesson with a real coach, not a recording. This guide shows each screen on a computer and on a phone.",
     },
     {
       type: "p",
@@ -127,13 +127,13 @@ const post: BlogPost = {
     },
     {
       type: "p",
-      text: "The dashboard band now says **Demo class confirmed**, with the coach's name, the date and the time. The class also appears under **Class Tools → Classrooms**, and the booking page shows **Demo Class Confirmed** with a **Go to my classroom** button. Until the room opens, the join button is greyed out and reads **Join opens 5 minutes before class**. If the time no longer suits you, press **Need a different time?** and send a new one; the academy confirms it again.",
+      text: "The dashboard band now says **Demo class confirmed**, with the coach's name, the date and the time. The class also appears under **Class Tools → Classrooms**, and the booking page shows **Demo Class Confirmed** with a **Go to my classroom** button. Until the room opens, the join button is greyed out and reads **Join opens 15 minutes before class**. If the time no longer suits you, press **Need a different time?** and send a new one; the academy confirms it again.",
     },
     {
       type: "screenshots",
       images: [
-        computer("dm-d-band-confirmed", "Confirmed: the coach, date and time, with Join greyed out until the room opens.", "Purple band saying Demo class confirmed, Demo assessment class with Coach Sanjib Das, the class date and time and a greyed-out Join opens 5 minutes before class button"),
-        phone("dm-m-band-confirmed", "The confirmed class on a phone.", "Phone band showing Demo class confirmed with Coach Sanjib Das, 15 Nov at 17:00 and Join opens 5 minutes before class"),
+        computer("dm-d-band-confirmed", "Confirmed: the coach, date and time, with Join greyed out until the room opens.", "Purple band saying Demo class confirmed, Demo assessment class with Coach Sanjib Das, the class date and time and a greyed-out Join opens 15 minutes before class button"),
+        phone("dm-m-band-confirmed", "The confirmed class on a phone.", "Phone band showing Demo class confirmed with Coach Sanjib Das, 15 Nov at 17:00 and Join opens 15 minutes before class"),
       ],
     },
     { type: "h3", id: "warm-up", text: "A short warm-up homework" },
@@ -150,7 +150,7 @@ const post: BlogPost = {
     { type: "h2", id: "join", text: "Step 7: Join the demo class when the room opens" },
     {
       type: "p",
-      text: "Reminders arrive on WhatsApp before the class: the day before, an hour before and 15 minutes before. **5 minutes before the start**, the button on the dashboard turns yellow and reads **Join Demo Class**, and the band says **Join available**. The same class on the **Classrooms** page now has an active **Join Classroom** button. Use either one.",
+      text: "Reminders arrive on WhatsApp before the class: the day before, an hour before and 15 minutes before. **15 minutes before the start**, the button on the dashboard turns yellow and reads **Join Demo Class**, and the band says **Join available**. The same class on the **Classrooms** page now has an active **Join Classroom** button. Use either one.",
     },
     {
       type: "p",
@@ -159,7 +159,7 @@ const post: BlogPost = {
     {
       type: "screenshots",
       images: [
-        computer("dm-d-band-open", "5 minutes before the start, Join Demo Class lights up.", "Demo class confirmed band with Join available and a yellow Join Demo Class button"),
+        computer("dm-d-band-open", "15 minutes before the start, Join Demo Class lights up.", "Demo class confirmed band with Join available and a yellow Join Demo Class button"),
         phone("dm-m-band-open", "Join Demo Class on a phone.", "Phone band with Join available and the yellow Join Demo Class button below the class date and time"),
         computer("dm-d-classrooms-open", "The same class in Classrooms, ready to join.", "My Classes page with one upcoming class, Aarav Sen - Demo Class, topic Demo assessment class, coach Sanjib Das, 30 minutes, Join available and an active Join Classroom button"),
       ],
@@ -210,7 +210,7 @@ const post: BlogPost = {
     },
   ],
   faqs: [
-    { q: "When can we join the demo class?", a: "The room opens 5 minutes before the start time. Until then the button reads Join opens 5 minutes before class. At the start, press Join Demo Class on the dashboard or Join Classroom on the Classrooms page." },
+    { q: "When can we join the demo class?", a: "The room opens 15 minutes before the start time. Until then the button reads Join opens 15 minutes before class. At the start, press Join Demo Class on the dashboard or Join Classroom on the Classrooms page." },
     { q: "How do we know the demo is confirmed?", a: "You get a WhatsApp message and an email with the date and time, and a notification in the portal. The dashboard band changes to Demo class confirmed and shows the coach's name." },
     { q: "Can we change the demo time?", a: "Yes. Before the class is confirmed, pick a new time on the Demo Booking page and press Change Requested Time. After it is confirmed, use Need a different time? on the dashboard and the academy confirms the new time." },
     { q: "Do we need Google Meet as well as the portal?", a: "Yes. Join opens the Google Meet video call in a new tab and the classroom board in the portal. Keep both open; if Meet does not open, press Open Google Meet at the top of the classroom." },

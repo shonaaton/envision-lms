@@ -539,7 +539,7 @@ function DemoBookingBand({
               availableClassName="btn-accent w-full justify-center sm:w-auto"
               unavailableClassName="btn-outline w-full justify-center border-white/20 bg-white/10 text-white hover:bg-white/15 sm:w-auto"
               label="Join Demo Class"
-              unavailableLabel="Join opens 5 minutes before class"
+              unavailableLabel="Join opens 15 minutes before class"
               disabled={!joinAllowed}
               icon={<PlayCircle size={16} />}
               scheduledFor={session.scheduledFor || classroom.classDate}
@@ -740,7 +740,7 @@ function DemoStudentDashboard({
                     availableClassName="btn-primary w-full justify-center"
                     unavailableClassName="btn-outline w-full justify-center"
                     label="Join Classroom"
-                    unavailableLabel="Join opens 5 minutes before class"
+                    unavailableLabel="Join opens 15 minutes before class"
                     disabled={!joinAllowed}
                     scheduledFor={nextSession.session.scheduledFor || nextSession.classroom.classDate}
                     startTime={nextSession.session.startTime || nextSession.classroom.startTime}

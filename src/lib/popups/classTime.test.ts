@@ -52,4 +52,10 @@ describe("achievement pop-ups", () => {
     );
     expect(chosen?.key).toBe("auto:achievement:a");
   });
+
+  it("stop after two showings", () => {
+    const candidate = { key: "auto:achievement:a", kind: "achievement" as const, title: "", body: "", maxViews: 2 };
+    expect(choosePopup([candidate], new Map([["auto:achievement:a", { seenCount: 1 }]]))?.key).toBe("auto:achievement:a");
+    expect(choosePopup([candidate], new Map([["auto:achievement:a", { seenCount: 2 }]]))).toBeNull();
+  });
 });

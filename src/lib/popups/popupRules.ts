@@ -23,6 +23,8 @@ export const FEEDBACK_FRESH_DAYS = 30;
 export const BADGE_FRESH_DAYS = 14;
 /** A new achievement is announced for 24 hours after it is added, and only the newest few at once (an import must not queue dozens). */
 export const ACHIEVEMENT_FRESH_HOURS = 24;
+/** And at most this many times to one person, fewer if they close it or press its button. */
+export const ACHIEVEMENT_MAX_VIEWS = 2;
 export const ACHIEVEMENT_POPUP_LIMIT = 3;
 
 export type PopupCandidate = {

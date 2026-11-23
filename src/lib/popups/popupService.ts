@@ -8,6 +8,7 @@ import { academyWeekday, engagementWeekKey, hasAnythingToReport, nextClassLabel 
 import { STUDENT_FIELDS, loadWeeklySnapshots } from "@/lib/engagement/weeklySnapshot";
 import {
   ACHIEVEMENT_FRESH_HOURS,
+  ACHIEVEMENT_MAX_VIEWS,
   ACHIEVEMENT_POPUP_LIMIT,
   ALL_ROLE_AUDIENCES,
   BADGE_FRESH_DAYS,
@@ -241,6 +242,7 @@ async function achievementCandidates(now: Date): Promise<PopupCandidate[]> {
       ctaLabel: "See all achievements",
       ctaHref: "/success-stories",
       createdAt: row.createdAt,
+      maxViews: ACHIEVEMENT_MAX_VIEWS,
     };
   });
 }

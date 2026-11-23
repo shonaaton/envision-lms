@@ -120,7 +120,7 @@ const post: BlogPost = {
     {
       type: "table",
       caption: "Game dates (all games 7:30 pm IST)",
-      head: ["Game", "Date", "Game", "Date"],
+      head: ["Games 1-7", "Date", "Games 8-14", "Played on"],
       rows: [
         ["Game 1", "Tue 24 Nov", "Game 8", "Thu 3 Dec"],
         ["Game 2", "Wed 25 Nov", "Game 9", "Fri 4 Dec"],

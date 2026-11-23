@@ -239,6 +239,11 @@ export async function notifyStudentNoShowCreditDeduction(studentId: string, coun
 
 type PlannedTopic = { topicName: string; topicOrder: number };
 
+/** Revision / practice / analysis classes: not a new chess topic, so never "skipped". */
+export function isReviewTopic(topicName: unknown) {
+  return /\b(revision|revise|practice|analysis)\b/i.test(String(topicName || ""));
+}
+
 /** A class whose topic a person chose, so the classes after it continue from there. */
 export function isTopicAnchor(session: any) {
   if (!session?.topicLocked) return false;
@@ -282,8 +287,12 @@ export function planFutureSessionTopics(sessions: any[], plan: PlannedTopic[]) {
     }
     const assignable = isFutureTopicAssignable(session) && (!session.isExtra || session.summary?.createdForTopicContinuation) && !session.topicLocked;
     if (!assignable) return;
-    const nextIndex = remaining.findIndex((topic) => topic.topicOrder > anchorOrder);
-    const index = nextIndex >= 0 ? nextIndex : 0;
+    // After the topics past the bookmark: review classes (Revision, Practice and
+    // Analysis) belong to wherever the student is, so they come next. Topics the
+    // bookmark skipped over only fill whatever classes are left after that.
+    const laterIndex = remaining.findIndex((topic) => topic.topicOrder > anchorOrder);
+    const reviewIndex = remaining.findIndex((topic) => isReviewTopic(topic.topicName));
+    const index = laterIndex >= 0 ? laterIndex : reviewIndex >= 0 ? reviewIndex : 0;
     const topic = remaining[index];
     if (!topic) return;
     remaining.splice(index, 1);

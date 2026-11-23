@@ -1,11 +1,11 @@
 import { Schema, model, models, type InferSchemaType } from "mongoose";
 
-export const POPUP_AUDIENCES = ["all_students", "batch", "course", "student", "demo_students", "branch_all", "branch_slot"] as const;
+export const POPUP_AUDIENCES = ["everyone", "all_staff", "all_students", "batch", "course", "student", "demo_students", "branch_all", "branch_slot"] as const;
 export type PopupAudience = (typeof POPUP_AUDIENCES)[number];
 
 /**
- * A pop-up an admin writes for students to see when they open the portal
- * (/admin/popups). Personal pop-ups (report ready, new badge...) are not stored
+ * A pop-up an admin writes for students - or, with `everyone` / `all_staff`,
+ * for every signed-in account - to see in the portal (/admin/popups). Personal pop-ups (report ready, new badge...) are not stored
  * here: they are worked out per visit in lib/popups/popupService.ts.
  */
 const PopupSchema = new Schema(

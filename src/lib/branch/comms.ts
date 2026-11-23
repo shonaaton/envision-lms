@@ -4,6 +4,7 @@ import { dbConnect } from "@/lib/db";
 import { recordActivity } from "@/lib/activity";
 import { sendAutomationEmail } from "@/lib/emailAutomation";
 import { validatePopupInput } from "@/lib/popups/popupAdmin";
+import { forgetCachedCampaigns } from "@/lib/popups/popupService";
 import { Notification } from "@/models/Fee";
 import { Popup } from "@/models/Popup";
 import { User } from "@/models/User";
@@ -307,8 +308,10 @@ export async function saveBranchPopup(branch: BranchKey, input: any, actor: Acto
     if (!isObjectId(popupId)) throw new BranchError("Not found.", 404);
     const result = await Popup.updateOne({ _id: popupId, branch }, { $set: checked.fields });
     if (!result.matchedCount) throw new BranchError("Not found.", 404);
+    forgetCachedCampaigns();
     return { id: popupId };
   }
   const doc: any = await Popup.create({ ...checked.fields, branch, createdBy: actor.id, createdByName: actor.name || "" });
+  forgetCachedCampaigns();
   return { id: id(doc) };
 }

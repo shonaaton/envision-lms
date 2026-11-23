@@ -69,7 +69,7 @@ export type CampaignShape = {
   endsAt?: Date | null;
 };
 
-export type StudentShape = { id: string; accountStatus?: string; batchIds: string[]; courseIds: string[]; branch?: string | null; slotIds?: string[] };
+export type StudentShape = { id: string; role?: string; accountStatus?: string; batchIds: string[]; courseIds: string[]; branch?: string | null; slotIds?: string[] };
 
 export function campaignIsLive(campaign: CampaignShape, now: Date) {
   if (campaign.status !== "active") return false;
@@ -78,8 +78,19 @@ export function campaignIsLive(campaign: CampaignShape, now: Date) {
   return true;
 }
 
-/** Demo accounts only see pop-ups written for demo students; enrolled students never see those. */
+/** Audiences that reach accounts other than students. */
+export const ALL_ROLE_AUDIENCES = ["everyone", "all_staff"];
+
+/**
+ * `everyone` is every signed-in account (students, demo families, coaches,
+ * admins, branch students too); `all_staff` is every non-student. All other
+ * audiences are for students only. Demo accounts only see student pop-ups
+ * written for demo students; enrolled students never see those.
+ */
 export function campaignMatches(campaign: CampaignShape, student: StudentShape) {
+  if (campaign.audience === "everyone") return !campaign.branch || campaign.branch === (student.branch || null);
+  if (campaign.audience === "all_staff") return !campaign.branch && Boolean(student.role) && student.role !== "student";
+  if (student.role && student.role !== "student") return false;
   const targets = new Set((campaign.targetIds || []).map((id) => String(id)));
   const isDemo = student.accountStatus === "demo";
   // An offline branch's pop-ups are for its own students only, and the online

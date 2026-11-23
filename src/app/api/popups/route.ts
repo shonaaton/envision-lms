@@ -1,16 +1,21 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
-import { isPopupKey, nextPopupFor, recordPopupAction } from "@/lib/popups/popupService";
+import { isPopupKey, nextLivePopupFor, nextPopupFor, recordPopupAction } from "@/lib/popups/popupService";
 
 export const dynamic = "force-dynamic";
 
-/** The pop-up the signed-in student should see now (counted as seen), or `popup: null`. */
-export async function GET() {
+/**
+ * The pop-up the signed-in account should see now (counted as seen), or
+ * `popup: null`. `?live=1` is the frame's check every few minutes while the
+ * portal is open: admin pop-ups only, cheap enough to ask often.
+ */
+export async function GET(req: Request) {
   const session = await auth();
   if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  if ((session.user as any).role !== "student") return NextResponse.json({ popup: null });
+  const user = session.user as any;
+  const live = new URL(req.url).searchParams.get("live") === "1";
   try {
-    const popup = await nextPopupFor((session.user as any).id);
+    const popup = live ? await nextLivePopupFor(user.id, user.role) : await nextPopupFor(user.id);
     return NextResponse.json({ popup });
   } catch (error) {
     // A pop-up is never worth a broken dashboard.

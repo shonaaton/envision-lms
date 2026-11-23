@@ -2,8 +2,10 @@ import { NextResponse } from "next/server";
 import { recordActivity } from "@/lib/activity";
 import { requireAdminApiAccess } from "@/lib/adminApiAccess";
 import { dbConnect } from "@/lib/db";
-import { engagementOverview, listPopups, popupTargets, validatePopupInput } from "@/lib/popups/popupAdmin";
+import { audienceQuery, engagementOverview, listPopups, popupTargets, validatePopupInput } from "@/lib/popups/popupAdmin";
+import { forgetCachedCampaigns } from "@/lib/popups/popupService";
 import { Popup } from "@/models/Popup";
+import { User } from "@/models/User";
 
 export const dynamic = "force-dynamic";
 
@@ -28,6 +30,7 @@ export async function POST(req: Request) {
   await dbConnect();
   const actor = session.user as any;
   const popup = await Popup.create({ ...checked.fields, createdBy: actor.id, createdByName: actor.name || "" });
+  forgetCachedCampaigns();
   await recordActivity({
     actor: actor.id,
     type: "popup.created",
@@ -35,5 +38,7 @@ export async function POST(req: Request) {
     entityType: "Popup",
     entityId: String(popup._id),
   });
-  return NextResponse.json({ ...popup.toObject(), stats: { seen: 0, clicked: 0, dismissed: 0 } }, { status: 201 });
+  const query = await audienceQuery(popup);
+  const audience = query ? await User.countDocuments(query) : 0;
+  return NextResponse.json({ ...popup.toObject(), stats: { audience, seen: 0, clicked: 0, dismissed: 0 } }, { status: 201 });
 }

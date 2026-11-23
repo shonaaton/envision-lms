@@ -7,6 +7,7 @@ import { dbConnect } from "@/lib/db";
 import { academyWeekday, engagementWeekKey, hasAnythingToReport, nextClassLabel } from "@/lib/engagement/engagementRules";
 import { STUDENT_FIELDS, loadWeeklySnapshots } from "@/lib/engagement/weeklySnapshot";
 import {
+  ALL_ROLE_AUDIENCES,
   BADGE_FRESH_DAYS,
   FEEDBACK_FRESH_DAYS,
   HOMEWORK_DUE_WINDOW_MS,
@@ -50,7 +51,9 @@ export type PopupPayload = Omit<PopupCandidate, "createdAt">;
 export async function nextPopupFor(userId: string, now = new Date()): Promise<PopupPayload | null> {
   await dbConnect();
   const user: any = await User.findById(userId).select(`${STUDENT_FIELDS} branch`).lean();
-  if (!user || user.role !== "student" || user.isActive === false) return null;
+  if (!user || user.isActive === false) return null;
+  // Coaches and admins only get the pop-ups written for everyone or for staff.
+  if (user.role !== "student") return nextLivePopupFor(userId, user.role, now, user);
   const views = await readViews(user._id);
   const isDemo = user.accountStatus === "demo";
 
@@ -125,16 +128,56 @@ async function readViews(userId: any) {
   return new Map<string, PopupViewState>(rows.map((row) => [row.key, row]));
 }
 
-async function campaignCandidates(user: any, now: Date): Promise<PopupCandidate[]> {
-  const campaigns: any[] = await Popup.find({ status: "active", startsAt: { $lte: now } }).sort({ createdAt: -1 }).limit(50).lean();
-  const live = campaigns.filter((campaign) => campaignIsLive(campaign, now));
+// Active admin pop-ups, shared by every request in this process for a minute.
+// The portal asks every few minutes whether a new pop-up has gone live; with
+// nothing live for the account that answer costs no database read at all.
+const CAMPAIGN_CACHE_MS = 60_000;
+let campaignCache: { at: number; rows: any[] } | null = null;
+
+async function activeCampaigns(now: Date) {
+  if (campaignCache && now.getTime() - campaignCache.at < CAMPAIGN_CACHE_MS) return campaignCache.rows;
+  const rows: any[] = await Popup.find({ status: "active", $or: [{ endsAt: null }, { endsAt: { $gt: now } }] }).sort({ createdAt: -1 }).limit(50).lean();
+  campaignCache = { at: now.getTime(), rows };
+  return rows;
+}
+
+/** An admin created, edited, paused or archived a pop-up: read them again next time. */
+export function forgetCachedCampaigns() {
+  campaignCache = null;
+}
+
+/**
+ * The admin pop-up an account already inside the portal should see now, or
+ * null - and it is counted as seen. Only admin pop-ups are checked here (the
+ * personal ones wait for the next visit to the dashboard), so the frame can ask
+ * every few minutes for the price of one cached read.
+ */
+export async function nextLivePopupFor(userId: string, role: string, now = new Date(), loadedUser?: any): Promise<PopupPayload | null> {
+  await dbConnect();
+  const live = (await activeCampaigns(now)).filter((campaign) => campaignIsLive(campaign, now));
+  const possible = role === "student" ? live : live.filter((campaign) => ALL_ROLE_AUDIENCES.includes(campaign.audience));
+  if (!possible.length) return null;
+  const user: any = loadedUser || (await User.findById(userId).select(`${STUDENT_FIELDS} branch`).lean());
+  if (!user || user.isActive === false) return null;
+  const candidates = await campaignCandidates(user, now, possible);
+  if (!candidates.length) return null;
+  const rows: any[] = await PopupView.find({ user: user._id, key: { $in: candidates.map((candidate) => candidate.key) } }).select("key seenCount dismissedAt clickedAt").lean();
+  const chosen = choosePopup(candidates, new Map<string, PopupViewState>(rows.map((row) => [row.key, row])));
+  if (!chosen) return null;
+  await markSeen(user._id, chosen, now);
+  const { createdAt: _createdAt, ...payload } = chosen;
+  return payload;
+}
+
+async function campaignCandidates(user: any, now: Date, preloaded?: any[]): Promise<PopupCandidate[]> {
+  const live = (preloaded || (await activeCampaigns(now))).filter((campaign) => campaignIsLive(campaign, now));
   if (!live.length) return [];
-  const needsMembership = live.some((campaign) => campaign.audience === "batch" || campaign.audience === "course");
+  const needsMembership = user.role === "student" && live.some((campaign) => campaign.audience === "batch" || campaign.audience === "course");
   const [batchIds, courseIds] = needsMembership ? await membershipOf(user) : [[], []];
   const slotIds = user.branch && live.some((campaign) => campaign.audience === "branch_slot")
     ? ((await BranchStudent.findOne({ user: user._id }).select("slots").lean()) as any)?.slots?.map((slot: unknown) => String(slot)) || []
     : [];
-  const student = { id: idOf(user), accountStatus: user.accountStatus, batchIds, courseIds, branch: user.branch || null, slotIds };
+  const student = { id: idOf(user), role: user.role || "student", accountStatus: user.accountStatus, batchIds, courseIds, branch: user.branch || null, slotIds };
   return live
     .filter((campaign) => campaignMatches(campaign, student))
     .map((campaign) => ({

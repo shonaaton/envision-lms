@@ -112,3 +112,29 @@ describe("branch pop-ups", () => {
     expect(campaignMatches({ audience: "branch_slot", branch: "bowbazar", targetIds: ["slotB"] }, branchStudent)).toBe(false);
   });
 });
+
+describe("everyone and staff pop-ups", () => {
+  const student = { id: "s1", role: "student", accountStatus: "enrolled", batchIds: ["b1"], courseIds: [] };
+  const demo = { id: "d1", role: "student", accountStatus: "demo", batchIds: [], courseIds: [] };
+  const branchStudent = { id: "s2", role: "student", batchIds: [], courseIds: [], branch: "bowbazar" };
+  const coach = { id: "c1", role: "instructor", batchIds: [], courseIds: [] };
+  const admin = { id: "a1", role: "admin", batchIds: [], courseIds: [] };
+
+  it("reaches every account, branch students and demo families included", () => {
+    for (const account of [student, demo, branchStudent, coach, admin]) {
+      expect(campaignMatches({ audience: "everyone" }, account)).toBe(true);
+    }
+  });
+
+  it("reaches staff only with all_staff", () => {
+    expect(campaignMatches({ audience: "all_staff" }, coach)).toBe(true);
+    expect(campaignMatches({ audience: "all_staff" }, admin)).toBe(true);
+    expect(campaignMatches({ audience: "all_staff" }, student)).toBe(false);
+  });
+
+  it("never shows a student pop-up to staff", () => {
+    expect(campaignMatches({ audience: "all_students" }, coach)).toBe(false);
+    expect(campaignMatches({ audience: "batch", targetIds: ["b1"] }, { ...coach, batchIds: ["b1"] })).toBe(false);
+    expect(campaignMatches({ audience: "student", targetIds: ["c1"] }, coach)).toBe(false);
+  });
+});

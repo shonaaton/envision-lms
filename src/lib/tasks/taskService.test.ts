@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => ({
   countDocuments: vi.fn(),
   create: vi.fn(),
   userFindById: vi.fn(),
+  userFind: vi.fn(),
   notifyTaskCreated: vi.fn(),
   notifyTaskCompleted: vi.fn(),
   notifyTaskReassigned: vi.fn(),
@@ -18,7 +19,7 @@ vi.mock("@/lib/db", () => ({ dbConnect: vi.fn() }));
 vi.mock("@/models/InternalTask", () => ({
   InternalTask: { findOneAndUpdate: mocks.findOneAndUpdate, findById: mocks.findById, create: mocks.create, find: mocks.find, countDocuments: mocks.countDocuments },
 }));
-vi.mock("@/models/User", () => ({ User: { findById: mocks.userFindById } }));
+vi.mock("@/models/User", () => ({ User: { findById: mocks.userFindById, find: mocks.userFind } }));
 vi.mock("@/lib/tasks/taskNotifications", () => ({
   notifyTaskCreated: mocks.notifyTaskCreated,
   notifyTaskCompleted: mocks.notifyTaskCompleted,
@@ -220,5 +221,46 @@ describe("manual tasks", () => {
     }
     await expect(applyTaskAction(TASK, { action: "complete" }, { id: ME, role: "sub-admin" })).rejects.toThrow(/already closed/);
     expect(mocks.notifyTaskCompleted).toHaveBeenCalledTimes(1);
+  });
+});
+
+
+describe("admin task overview", () => {
+  it("shows all owners for each status and scopes summary to all users", async () => {
+    const actor = { id: BOSS, role: "admin" };
+    for (const status of ["pending", "in_progress", "completed", "cancelled", "any", "overdue"] as const) {
+      await listTasks(actor, { scope: "all", status });
+      const query = mocks.find.mock.calls.at(-1)![0];
+      expect(query.$and[0]).toEqual({});
+      if (status === "any") expect(query.$and[1]).toEqual({});
+      else if (status === "overdue") expect(query.$and[1]).toMatchObject({ status: { $in: ["pending", "in_progress"] }, dueAt: { $ne: null, $lt: expect.any(Date) } });
+      else expect(query.$and[1]).toEqual({ status });
+    }
+    mocks.countDocuments.mockClear();
+    await taskSummary(actor, { scope: "all" });
+    expect(mocks.countDocuments.mock.calls[0][0].$and[0]).toEqual({});
+  });
+
+  it("filters an exact owner and includes that owner in summary counts", async () => {
+    const actor = { id: BOSS, role: "admin" };
+    await listTasks(actor, { scope: "all", owner: ME, status: "completed" });
+    expect(String(mocks.find.mock.calls[0][0].$and[2].assignedTo)).toBe(ME);
+    mocks.countDocuments.mockClear();
+    await taskSummary(actor, { scope: "all", owner: ME });
+    expect(String(mocks.countDocuments.mock.calls[0][0].$and[0].$and[1].assignedTo)).toBe(ME);
+  });
+
+  it("does not allow non-admins to view all tasks or filter other owners", async () => {
+    const actor = { id: ME, role: "sub-admin" };
+    await expect(listTasks(actor, { scope: "all" })).rejects.toMatchObject({ status: 403 });
+    await expect(listTasks(actor, { owner: BOSS })).rejects.toMatchObject({ status: 403 });
+    await expect(taskSummary(actor, { scope: "all" })).rejects.toMatchObject({ status: 403 });
+  });
+
+  it("searches owners by name or email alongside task text", async () => {
+    mocks.userFind.mockReturnValue(chain([{ _id: ME }]));
+    await listTasks({ id: BOSS, role: "admin" }, { scope: "all", q: "Coach" });
+    expect(mocks.userFind).toHaveBeenCalledWith({ $or: [{ name: /Coach/i }, { email: /Coach/i }] });
+    expect(mocks.find.mock.calls[0][0].$and.at(-1).$or).toContainEqual({ assignedTo: { $in: [ME] } });
   });
 });

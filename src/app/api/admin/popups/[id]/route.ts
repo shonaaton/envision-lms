@@ -3,10 +3,22 @@ import { NextResponse } from "next/server";
 import { recordActivity } from "@/lib/activity";
 import { requireAdminApiAccess } from "@/lib/adminApiAccess";
 import { dbConnect } from "@/lib/db";
-import { validatePopupInput } from "@/lib/popups/popupAdmin";
+import { popupReport, validatePopupInput } from "@/lib/popups/popupAdmin";
+import { forgetCachedCampaigns } from "@/lib/popups/popupService";
 import { Popup } from "@/models/Popup";
 
 export const dynamic = "force-dynamic";
+
+/** Who a pop-up was for, who opened it and what they did. */
+export async function GET(req: Request, { params }: { params: { id: string } }) {
+  if (!isValidObjectId(params.id)) return NextResponse.json({ error: "Invalid pop-up." }, { status: 400 });
+  const session = await requireAdminApiAccess(req, "view");
+  if (!session) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  await dbConnect();
+  const report = await popupReport(params.id);
+  if (!report) return NextResponse.json({ error: "Pop-up not found." }, { status: 404 });
+  return NextResponse.json(report);
+}
 
 /** Edit a pop-up, or pause/archive/re-activate it with `{ status }`. */
 export async function PATCH(req: Request, { params }: { params: { id: string } }) {
@@ -19,6 +31,7 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   await dbConnect();
   const popup: any = await Popup.findByIdAndUpdate(params.id, { $set: checked.fields }, { new: true, runValidators: true }).lean();
   if (!popup) return NextResponse.json({ error: "Pop-up not found." }, { status: 404 });
+  forgetCachedCampaigns();
   await recordActivity({
     actor: (session.user as any).id,
     type: "popup.updated",

@@ -4,6 +4,7 @@ import { Types } from "mongoose";
 import { engagementSendHour, engagementWeekKey, engagementWhatsAppEnabled } from "@/lib/engagement/engagementRules";
 import { safePopupHref } from "@/lib/popups/popupRules";
 import { Batch } from "@/models/Batch";
+import { Classroom } from "@/models/Classroom";
 import { Course } from "@/models/Course";
 import { EngagementMessage } from "@/models/EngagementMessage";
 import { POPUP_AUDIENCES, Popup, PopupView, type PopupAudience } from "@/models/Popup";
@@ -16,26 +17,126 @@ function idOf(value: any) {
   return value?._id?.toString?.() ?? value?.toString?.() ?? "";
 }
 
-/** Every pop-up, newest first, with how many students saw, opened and closed it. */
+/**
+ * Every pop-up, newest first, with who it is for (`audience`: accounts that
+ * match it now), how many of them have opened it, and how many pressed the
+ * button or closed it.
+ */
 export async function listPopups() {
   // A branch's pop-ups are managed from its own portal.
   const popups: any[] = await Popup.find({ branch: null }).sort({ createdAt: -1 }).limit(200).lean();
-  const stats: any[] = await PopupView.aggregate([
-    { $match: { popup: { $in: popups.map((popup) => popup._id) } } },
-    {
-      $group: {
-        _id: "$popup",
-        seen: { $sum: 1 },
-        clicked: { $sum: { $cond: [{ $ifNull: ["$clickedAt", false] }, 1, 0] } },
-        dismissed: { $sum: { $cond: [{ $ifNull: ["$dismissedAt", false] }, 1, 0] } },
+  const [stats, audiences] = await Promise.all([
+    PopupView.aggregate([
+      { $match: { popup: { $in: popups.map((popup) => popup._id) } } },
+      {
+        $group: {
+          _id: "$popup",
+          seen: { $sum: 1 },
+          clicked: { $sum: { $cond: [{ $ifNull: ["$clickedAt", false] }, 1, 0] } },
+          dismissed: { $sum: { $cond: [{ $ifNull: ["$dismissedAt", false] }, 1, 0] } },
+        },
       },
-    },
+    ]),
+    audienceSizes(popups),
   ]);
-  const byPopup = new Map(stats.map((row) => [idOf(row._id), row]));
+  const byPopup = new Map(stats.map((row: any) => [idOf(row._id), row]));
   return popups.map((popup) => {
     const row = byPopup.get(idOf(popup));
-    return { ...popup, stats: { seen: row?.seen || 0, clicked: row?.clicked || 0, dismissed: row?.dismissed || 0 } };
+    return { ...popup, stats: { audience: audiences.get(idOf(popup)) ?? 0, seen: row?.seen || 0, clicked: row?.clicked || 0, dismissed: row?.dismissed || 0 } };
   });
+}
+
+const ACTIVE = { isActive: { $ne: false } };
+const ONLINE = { branch: { $in: [null, ""] } };
+const STUDENT = { role: "student", ...ACTIVE, ...ONLINE };
+
+/**
+ * The accounts a pop-up is for, as a User query - the same rules as
+ * campaignMatches in popupRules.ts, so "sent to" and "opened" count the same people.
+ */
+export async function audienceQuery(popup: { audience: string; targetIds?: unknown[] }): Promise<Record<string, unknown> | null> {
+  const targets = (popup.targetIds || []).map((id) => new Types.ObjectId(String(id)));
+  switch (popup.audience) {
+    case "everyone":
+      return { ...ACTIVE };
+    case "all_staff":
+      return { ...ACTIVE, role: { $ne: "student" } };
+    case "all_students":
+      return { ...STUDENT, accountStatus: { $ne: "demo" } };
+    case "demo_students":
+      return { ...STUDENT, accountStatus: "demo" };
+    case "student":
+      return { ...STUDENT, _id: { $in: targets } };
+    case "batch": {
+      const inBatches = await Batch.find({ _id: { $in: targets } }).distinct("students");
+      return { ...STUDENT, accountStatus: { $ne: "demo" }, $or: [{ _id: { $in: inBatches } }, { batches: { $in: targets } }] };
+    }
+    case "course": {
+      const inCourses = await Classroom.find({ course: { $in: targets }, isActive: { $ne: false }, isSessionInstance: { $ne: true }, status: { $ne: "cancelled" } }).distinct("students");
+      return { ...STUDENT, accountStatus: { $ne: "demo" }, _id: { $in: inCourses } };
+    }
+    default:
+      return null;
+  }
+}
+
+async function audienceSizes(popups: any[]) {
+  // "Everyone", "all students"... are the same count for every pop-up.
+  const shared = new Map<string, Promise<number>>();
+  const entries = await Promise.all(
+    popups.map(async (popup) => {
+      const reuse = !["student", "batch", "course"].includes(popup.audience);
+      const key = reuse ? popup.audience : idOf(popup);
+      if (!shared.has(key)) {
+        shared.set(key, audienceQuery(popup).then((query) => (query ? User.countDocuments(query) : 0)));
+      }
+      return [idOf(popup), await shared.get(key)!] as const;
+    })
+  );
+  return new Map(entries);
+}
+
+const DETAIL_LIMIT = 500;
+
+/** One pop-up's report: who opened it and when, what they did, and who has not opened it yet. */
+export async function popupReport(popupId: string) {
+  const popup: any = await Popup.findOne({ _id: popupId, branch: null }).lean();
+  if (!popup) return null;
+  const query = await audienceQuery(popup);
+  const views: any[] = await PopupView.find({ popup: popup._id }).sort({ firstSeenAt: -1 }).limit(DETAIL_LIMIT).populate("user", "name username role accountStatus").lean();
+  const openedIds = await PopupView.find({ popup: popup._id }).distinct("user");
+  const [audience, notOpened, notOpenedCount] = query
+    ? await Promise.all([
+        User.countDocuments(query),
+        User.find({ ...query, _id: { $nin: openedIds } }).select("name username role accountStatus lastSeenAt").sort({ lastSeenAt: -1 }).limit(DETAIL_LIMIT).lean(),
+        User.countDocuments({ ...query, _id: { $nin: openedIds } }),
+      ])
+    : [0, [], 0];
+  const person = (user: any) => ({ _id: idOf(user), name: user?.name || user?.username || "Account", role: roleLabel(user) });
+  return {
+    _id: idOf(popup),
+    title: popup.title,
+    audience,
+    opened: openedIds.length,
+    clicked: views.filter((view) => view.clickedAt).length,
+    dismissed: views.filter((view) => view.dismissedAt).length,
+    openedBy: views.filter((view) => view.user).map((view) => ({
+      ...person(view.user),
+      firstSeenAt: view.firstSeenAt || view.createdAt,
+      seenCount: view.seenCount || 1,
+      action: view.clickedAt ? "clicked" : view.dismissedAt ? "closed" : "open",
+    })),
+    notOpened: (notOpened as any[]).map((user) => ({ ...person(user), lastSeenAt: user.lastSeenAt || null })),
+    notOpenedCount,
+  };
+}
+
+function roleLabel(user: any) {
+  if (!user) return "";
+  if (user.role === "student") return user.accountStatus === "demo" ? "Demo student" : "Student";
+  if (user.role === "instructor") return "Coach";
+  if (user.role === "sub-admin") return "Sub-admin";
+  return user.role === "admin" ? "Admin" : String(user.role || "");
 }
 
 export async function popupTargets() {

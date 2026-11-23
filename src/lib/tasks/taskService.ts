@@ -252,7 +252,7 @@ export async function createManualTask(input: TaskCreateInput, actor: TaskActor)
 }
 
 export type TaskScope = "mine" | "assigned_by_me" | "all";
-export type TaskListFilter = { scope?: TaskScope; status?: "open" | "completed" | "cancelled" | "any"; source?: "auto" | "manual"; priority?: TaskPriority; q?: string; page?: number; limit?: number };
+export type TaskListFilter = { scope?: TaskScope; status?: "open" | "pending" | "in_progress" | "overdue" | "completed" | "cancelled" | "any"; owner?: string; source?: "auto" | "manual"; priority?: TaskPriority; q?: string; page?: number; limit?: number };
 
 async function scopeQuery(actor: TaskActor, scope: TaskScope) {
   const me = new Types.ObjectId(actor.id);
@@ -270,6 +270,8 @@ async function scopeQuery(actor: TaskActor, scope: TaskScope) {
 }
 
 function statusQuery(status: TaskListFilter["status"]) {
+  if (status === "pending" || status === "in_progress") return { status };
+  if (status === "overdue") return { status: { $in: OPEN_TASK_STATUSES }, dueAt: { $ne: null, $lt: new Date() } };
   if (status === "completed") return { status: "completed" };
   if (status === "cancelled") return { status: "cancelled" };
   if (status === "any") return {};
@@ -312,19 +314,30 @@ function escapeRegex(value: string) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
+async function ownerQuery(actor: TaskActor, owner?: string) {
+  if (!owner) return {};
+  if (!isTaskAdmin(actor)) throw new TaskError("Only admins can filter other owners.", 403);
+  if (owner === "admins") return { $or: [{ pool: "admins" }, { assignedTo: null, pool: null }] };
+  if (owner === "sales") return { pool: "sales" };
+  const id = toObjectId(owner);
+  if (!id) throw new TaskError("Invalid task owner.");
+  return { assignedTo: id };
+}
+
 export async function listTasks(actor: TaskActor, filter: TaskListFilter = {}) {
   await dbConnect();
   const scope = filter.scope || "mine";
   const limit = Math.min(Math.max(filter.limit || 50, 1), 200);
   const page = Math.max(filter.page || 1, 1);
-  const query: any = { $and: [await scopeQuery(actor, scope), statusQuery(filter.status)] };
+  const query: any = { $and: [await scopeQuery(actor, scope), statusQuery(filter.status), await ownerQuery(actor, filter.owner)] };
   if (filter.source) query.$and.push({ source: filter.source });
   if (filter.priority) query.$and.push({ priority: filter.priority });
   if (filter.q?.trim()) {
     const rx = new RegExp(escapeRegex(filter.q.trim().slice(0, 100)), "i");
-    query.$and.push({ $or: [{ title: rx }, { details: rx }] });
+    const people = isTaskAdmin(actor) ? await User.find({ $or: [{ name: rx }, { email: rx }] }).select("_id").lean() : [];
+    query.$and.push({ $or: [{ title: rx }, { details: rx }, { completionNotes: rx }, { assignedTo: { $in: people.map((person: any) => person._id) } }] });
   }
-  const open = !filter.status || filter.status === "open";
+  const open = !filter.status || ["open", "pending", "in_progress", "overdue"].includes(filter.status);
   const sort: any = open ? { priority: 1, dueAt: 1, createdAt: -1 } : { completedAt: -1, cancelledAt: -1, updatedAt: -1 };
   const [rows, total] = await Promise.all([
     InternalTask.find(query)
@@ -344,9 +357,10 @@ export async function listTasks(actor: TaskActor, filter: TaskListFilter = {}) {
   return { tasks: (tasks as any[]).map(serializeTask), total, page, limit };
 }
 
-export async function taskSummary(actor: TaskActor) {
+export async function taskSummary(actor: TaskActor, filter: TaskListFilter = {}) {
   await dbConnect();
-  const scope = await scopeQuery(actor, "mine");
+  const baseScope = await scopeQuery(actor, filter.scope || "mine");
+  const scope = filter.owner ? { $and: [baseScope, await ownerQuery(actor, filter.owner)] } : baseScope;
   const open = { $and: [scope, { status: { $in: OPEN_TASK_STATUSES } }] };
   const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
   const [pendingCount, overdueCount, completedThisWeek, assignedByMeOpen] = await Promise.all([

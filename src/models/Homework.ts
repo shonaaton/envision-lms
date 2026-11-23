@@ -160,6 +160,8 @@ HomeworkSchema.index(
 );
 
 // One copy of a template per branch register: assigning it again only adds students.
+// Coach dashboard: "my homework", soonest due first.
+HomeworkSchema.index({ instructor: 1, dueAt: 1, createdAt: -1 });
 HomeworkSchema.index(
   { branchAttendance: 1, sourceTemplate: 1 },
   { unique: true, partialFilterExpression: { branchAttendance: { $exists: true }, sourceTemplate: { $exists: true } } }
@@ -207,6 +209,8 @@ const SubmissionSchema = new Schema(
   { timestamps: true }
 );
 SubmissionSchema.index({ homework: 1, student: 1 }, { unique: true });
+// Admin dashboard activity window filters submissions by date.
+SubmissionSchema.index({ submittedAt: -1 });
 
 const HomeworkEmailReminderSchema = new Schema(
   {

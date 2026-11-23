@@ -31,5 +31,8 @@ const PaymentSchema = new Schema(
   },
   { timestamps: true }
 );
+// Admin dashboard: paid payments by paidAt OR createdAt ($or needs both).
+PaymentSchema.index({ status: 1, paidAt: -1 });
+PaymentSchema.index({ status: 1, createdAt: -1 });
 
 export const Payment = models.Payment || model("Payment", PaymentSchema);

@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { Phone } from "lucide-react";
 import { toast } from "sonner";
+import LocalTime, { type LocalTimeInfo } from "@/components/LocalTime";
 import { Empty, formatDate } from "@/components/admin/retention/shared";
 
 type Leaver = {
@@ -11,6 +12,7 @@ type Leaver = {
   name: string;
   parentName: string;
   phone: string;
+  localTime: LocalTimeInfo;
   leftAt: string;
   daysSinceLeft: number;
   bucket: 0 | 30 | 60 | 90;
@@ -73,6 +75,7 @@ export default function WinBackList({ canManage }: { canManage: boolean }) {
             <span className="rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-bold text-slate-700">Left {row.daysSinceLeft}d ago</span>
             {row.due && <span className="rounded-full bg-brand/10 px-2.5 py-0.5 text-xs font-bold text-brand">Due a call</span>}
             <span className="ml-auto flex items-center gap-2">
+              <LocalTime info={row.localTime} edit={{ target: "user", id: row._id }} />
               {row.phone && <span className="text-xs text-slate-500">{row.phone}</span>}
               {canManage && (
                 <Link href={`/admin/retention/call/${row._id}?kind=win_back`} className="btn btn-primary !px-3 !py-1.5 text-xs">

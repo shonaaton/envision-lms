@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import { GraduationCap, Phone, Search, Users, UserRound } from "lucide-react";
 import type { DirectoryContact, DirectoryPayload } from "@/lib/salesDirectory";
+import LocalTime from "@/components/LocalTime";
 
 type TabId = "students" | "coaches" | "demos";
 
@@ -55,6 +56,9 @@ function ContactRow({ contact, showParent }: { contact: DirectoryContact; showPa
         ) : (
           <span className="text-slate-400">No phone</span>
         )}
+        <div className="mt-1">
+          <LocalTime info={contact.localTime} edit={{ target: "user", id: contact.id }} />
+        </div>
       </td>
       <td className="px-3 py-2.5 text-slate-700">
         {contact.batches.length ? contact.batches.join(", ") : <span className="text-slate-400">-</span>}

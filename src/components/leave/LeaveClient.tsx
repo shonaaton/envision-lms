@@ -354,6 +354,7 @@ function ApplyForm({ viewer, staff, rules, credits: ownCredits, today, busy, set
       )}
 
       <label className="block text-sm font-semibold">Reason<textarea className={field} required minLength={5} maxLength={1000} rows={3} value={reason} onChange={(e) => setReason(e.target.value)} placeholder={forOther ? `Why ${who} needs the leave` : "Why you need the leave"} /></label>
+      {reason.trim().length > 0 && reason.trim().length < 5 && <p className="-mt-2 text-xs text-amber-700">Please write a little more — the reason needs at least 5 characters ({5 - reason.trim().length} more).</p>}
 
       {(notice || creditProblem) && <p role="alert" className="rounded-lg bg-amber-50 p-3 text-sm text-amber-800">{notice || creditProblem}</p>}
       {error && <p role="alert" className="rounded-lg bg-rose-50 p-3 text-sm text-rose-700">{error}</p>}

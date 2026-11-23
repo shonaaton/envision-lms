@@ -6,6 +6,7 @@ import { AlarmClock, MessageCircle, Phone, PhoneMissed, PhoneOutgoing, Trash2, X
 import { DEFAULT_MISSED_CALL_REMINDER, MISSED_CALL_REMINDER_CHOICES } from "@/lib/demoLeadCalls";
 import type { LeadSourceSummary } from "@/lib/leadSource";
 import { LeadCopyButton } from "@/components/sales/LeadCopyButton";
+import LocalTime, { type LocalTimeInfo } from "@/components/LocalTime";
 
 /**
  * The Demo Leads CRM: a sheet (one lead per row) from tablet width up, and one
@@ -31,6 +32,8 @@ export type DemoLeadSheetRow = {
   source: LeadSourceSummary;
   received: string;
   phoneLabel: string;
+  /** The family's timezone: the demo form's browser zone, else the dialling code. */
+  localTime: LocalTimeInfo;
   telHref: string;
   whatsappHref: string;
   /** "manual": added by hand in the CRM, so there was never a code to check. */
@@ -778,15 +781,63 @@ function LeadDetails({ row, shared }: { row: DemoLeadSheetRow; shared: Shared })
   );
 }
 
-const detailsLabel = (row: DemoLeadSheetRow, expanded: boolean) => {
-  if (expanded) return "Hide";
+const detailsLabel = (row: DemoLeadSheetRow) => {
   const count = row.callCount + row.noteCount;
   // "Details" first: this panel is also where the lead's details are edited.
   return count ? `Details & calls (${count})` : "Details & calls";
 };
 
+/** "Details & calls" opens as a pop-up over the sheet (2026-11-23, user request) instead of an inline row. */
+function LeadDetailsModal({ row, shared, onClose }: { row: DemoLeadSheetRow; shared: Shared; onClose: () => void }) {
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onClose();
+    };
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    window.addEventListener("keydown", onKey);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [onClose]);
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-950/45 p-2 backdrop-blur-sm sm:p-4"
+      onMouseDown={(event) => event.target === event.currentTarget && onClose()}
+    >
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={`lead-details-${row.id}`}
+        className="my-4 w-full max-w-3xl rounded-2xl border border-brand/10 bg-slate-50 shadow-2xl sm:my-10"
+      >
+        <div className="sticky top-0 z-10 flex items-start justify-between gap-3 rounded-t-2xl border-b border-slate-200 bg-white px-4 py-3 sm:px-5">
+          <div className="min-w-0">
+            <h2 id={`lead-details-${row.id}`} className="break-words text-lg font-black text-slate-950">{row.name}</h2>
+            <p className="mt-0.5 flex flex-wrap items-center gap-x-2 text-xs text-slate-600">
+              <span className="font-bold text-slate-800">{row.phoneLabel}</span>
+              <span>{row.age} · {row.level}</span>
+            </p>
+            <div className="mt-1.5">
+              <CallSummary row={row} />
+            </div>
+          </div>
+          <button type="button" onClick={onClose} className="rounded-lg p-1.5 text-slate-500 hover:bg-slate-100" aria-label="Close">
+            <X size={18} />
+          </button>
+        </div>
+        <div className="p-4 sm:p-5">
+          <LeadDetails row={row} shared={shared} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /** Phones: one card per lead, the call buttons first, no sideways scrolling. */
-function LeadCard({ row, expanded, toggle, openDetails, shared }: { row: DemoLeadSheetRow; expanded: boolean; toggle: () => void; openDetails: () => void; shared: Shared }) {
+function LeadCard({ row, openDetails, shared }: { row: DemoLeadSheetRow; openDetails: () => void; shared: Shared }) {
   const { stages, owners, canManage, seesAll, canDelete, moveStage, convertLead, changeOwner, deleteLead } = shared;
   return (
     <li className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
@@ -808,6 +859,7 @@ function LeadCard({ row, expanded, toggle, openDetails, shared }: { row: DemoLea
         <span className="text-sm font-bold text-slate-900">{row.phoneLabel}</span>
         <LeadCopyButton text={row.phoneLabel} label={`Copy WhatsApp number for ${row.name}`} compact />
         <VerificationBadge row={row} />
+        <LocalTime info={row.localTime} edit={{ target: "lead", id: row.id }} />
       </div>
       <div className="mt-2 grid grid-cols-2 gap-2">
         {/* Opening the panel as the call starts means Picked up / Missed is waiting when they come back. */}
@@ -868,17 +920,12 @@ function LeadCard({ row, expanded, toggle, openDetails, shared }: { row: DemoLea
       </div>
       <button
         type="button"
-        aria-expanded={expanded}
-        onClick={toggle}
+        aria-haspopup="dialog"
+        onClick={openDetails}
         className="mt-3 h-9 w-full rounded-lg bg-slate-100 text-xs font-black text-brand"
       >
-        {detailsLabel(row, expanded)}
+        {detailsLabel(row)}
       </button>
-      {expanded ? (
-        <div className="mt-3 border-t border-slate-200 pt-3">
-          <LeadDetails row={row} shared={shared} />
-        </div>
-      ) : null}
     </li>
   );
 }
@@ -886,8 +933,8 @@ function LeadCard({ row, expanded, toggle, openDetails, shared }: { row: DemoLea
 export function DemoLeadsSheet({ rows, initialOpen = null, ...shared }: Props) {
   const { stages, owners, canManage, seesAll, canDelete, moveStage, convertLead, changeOwner, deleteLead } = shared;
   const [open, setOpen] = useState<string | null>(initialOpen);
-  const columns = 10 + (seesAll ? 1 : 0) + (canDelete ? 1 : 0);
-  const toggle = (id: string) => setOpen((current) => (current === id ? null : id));
+  const closeDetails = useCallback(() => setOpen(null), []);
+  const openRow = open ? rows.find((row) => row.id === open) ?? null : null;
 
   return (
     <>
@@ -897,7 +944,7 @@ export function DemoLeadsSheet({ rows, initialOpen = null, ...shared }: Props) {
       </div>
       <ul className="space-y-3 md:hidden">
         {rows.map((row) => (
-          <LeadCard key={row.id} row={row} expanded={open === row.id} toggle={() => toggle(row.id)} openDetails={() => setOpen(row.id)} shared={shared} />
+          <LeadCard key={row.id} row={row} openDetails={() => setOpen(row.id)} shared={shared} />
         ))}
       </ul>
 
@@ -936,7 +983,6 @@ export function DemoLeadsSheet({ rows, initialOpen = null, ...shared }: Props) {
           </thead>
           <tbody>
             {rows.map((row, index) => {
-              const expanded = open === row.id;
               return (
                 <Fragment key={row.id}>
                   <tr className={index % 2 ? "bg-slate-50/60" : "bg-white"}>
@@ -967,8 +1013,9 @@ export function DemoLeadsSheet({ rows, initialOpen = null, ...shared }: Props) {
                           <MessageCircle size={15} />
                         </a>
                       ) : null}
-                      <span className="mt-1 block">
+                      <span className="mt-1 flex flex-wrap items-center gap-1.5">
                         <VerificationBadge row={row} />
+                        <LocalTime info={row.localTime} edit={{ target: "lead", id: row.id }} />
                       </span>
                     </td>
                     <td className={TD}>{row.age}</td>
@@ -990,11 +1037,11 @@ export function DemoLeadsSheet({ rows, initialOpen = null, ...shared }: Props) {
                       <CallSummary row={row} />
                       <button
                         type="button"
-                        aria-expanded={expanded}
-                        onClick={() => toggle(row.id)}
+                        aria-haspopup="dialog"
+                        onClick={() => setOpen(row.id)}
                         className="mt-1 text-xs font-black text-brand hover:underline"
                       >
-                        {detailsLabel(row, expanded)}
+                        {detailsLabel(row)}
                       </button>
                       <div className="mt-2">
                         <LeadCopyButton text={leadCopyText(row, stages, seesAll)} label={`Copy full lead for ${row.name}`} caption="Copy full lead" />
@@ -1006,20 +1053,13 @@ export function DemoLeadsSheet({ rows, initialOpen = null, ...shared }: Props) {
                       </td>
                     ) : null}
                   </tr>
-
-                  {expanded ? (
-                    <tr className="bg-slate-50">
-                      <td colSpan={columns} className="whitespace-normal border-b border-slate-200 px-4 py-3">
-                        <LeadDetails row={row} shared={shared} />
-                      </td>
-                    </tr>
-                  ) : null}
                 </Fragment>
               );
             })}
           </tbody>
         </table>
       </div>
+      {openRow ? <LeadDetailsModal row={openRow} shared={shared} onClose={closeDetails} /> : null}
     </>
   );
 }

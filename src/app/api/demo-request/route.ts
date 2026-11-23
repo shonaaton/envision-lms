@@ -1,3 +1,4 @@
+import { isValidTimeZone } from "@/lib/localTime/studentTimeZone";
 import { NextResponse } from "next/server";
 import { ZodError } from "zod";
 import { dbConnect } from "@/lib/db";
@@ -51,6 +52,7 @@ export async function POST(req: Request) {
       interest: data.interest,
       preferredTime: data.preferredTime,
       sourcePath: data.sourcePath,
+      ...(isValidTimeZone(data.timeZone) ? { timeZone: data.timeZone } : {}),
       leadSource: source,
       leadChannel: leadChannel(source),
     };

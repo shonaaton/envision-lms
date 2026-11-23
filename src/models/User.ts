@@ -120,6 +120,15 @@ const UserSchema = new Schema(
     state: { type: String },
     country: { type: String },
     countryCode: { type: String },
+    // IANA timezone the student's own browser reported when they last opened the
+    // portal (lib/localTime). Staff see the family's clock before calling.
+    timeZone: { type: String },
+    timeZoneSeenAt: { type: Date },
+    // Set by staff from the local-time badge after asking the family (lib/localTime).
+    // The newer of this and the device zone wins.
+    staffTimeZone: { type: String },
+    staffTimeZoneAt: { type: Date },
+    staffTimeZoneByName: { type: String },
     studentLevel: { type: String, enum: ["absolute_beginner", "beginner", "intermediate", "advanced", "federated", "not_set"], default: "not_set", index: true },
     acceptedPrivacyAt: Date,
     acceptedTermsAt: Date,

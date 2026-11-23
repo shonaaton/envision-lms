@@ -1,3 +1,4 @@
+import { resolveFamilyTimeZone, resolveStudentTimeZone } from "@/lib/localTime/studentTimeZone";
 import "server-only";
 
 import { Types } from "mongoose";
@@ -218,6 +219,7 @@ export async function familyView(studentId: string, now = new Date()) {
     parentName: firstParentName(members),
     parentEmail: String(primary.parentEmail || primary.email || ""),
     phone: phoneLabel(primary),
+    localTime: resolveFamilyTimeZone(members),
     telHref: digits ? `tel:+${digits}` : "",
     whatsappHref: digits ? `https://wa.me/${digits}` : "",
     childrenLabel: childNames(members.map(nameOf)),
@@ -443,6 +445,7 @@ export async function monthlyQueue(now = new Date()) {
       students: students.map((student) => ({ _id: idOf(student), name: nameOf(student), paused: activePauseByStudent.has(idOf(student)) })),
       parentName: firstParentName(students),
       phone: phoneLabel(students[0]),
+      localTime: resolveFamilyTimeZone(students),
       coaches: Array.from(coachNames),
       flagLevel: level,
       renewal,
@@ -540,7 +543,7 @@ export async function winBackList(now = new Date()) {
     accountStatus: { $ne: "demo" },
     deactivatedAt: { $gte: new Date(now.getTime() - 120 * DAY), $lte: now },
   })
-    .select("name username parentName phone countryCode phoneCanonical deactivatedAt exitReason")
+    .select("name username parentName phone countryCode phoneCanonical deactivatedAt exitReason city state country timeZone timeZoneSeenAt staffTimeZone staffTimeZoneAt staffTimeZoneByName")
     .sort({ deactivatedAt: -1 })
     .lean();
   const ids = leavers.map((row) => row._id);
@@ -555,6 +558,7 @@ export async function winBackList(now = new Date()) {
       name: nameOf(student),
       parentName: String(student.parentName || ""),
       phone: phoneLabel(student),
+      localTime: resolveStudentTimeZone(student),
       leftAt: student.deactivatedAt,
       daysSinceLeft,
       bucket: daysSinceLeft >= 90 ? 90 : daysSinceLeft >= 60 ? 60 : daysSinceLeft >= 30 ? 30 : 0,

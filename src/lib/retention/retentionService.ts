@@ -1,3 +1,4 @@
+import { resolveStudentTimeZone } from "@/lib/localTime/studentTimeZone";
 import "server-only";
 
 import { Types } from "mongoose";
@@ -79,7 +80,7 @@ export async function retentionOverview(now = new Date()) {
 
   const studentIds = Array.from(new Set([...open, ...resolved].map((flag) => idOf(flag.student))));
   const [students, classrooms]: any[][] = await Promise.all([
-    User.find({ _id: { $in: studentIds } }).select("name username parentName phone countryCode isActive").lean(),
+    User.find({ _id: { $in: studentIds } }).select("name username parentName phone countryCode isActive city state country timeZone timeZoneSeenAt staffTimeZone staffTimeZoneAt staffTimeZoneByName").lean(),
     Classroom.find({ students: { $in: studentIds }, isActive: { $ne: false }, classroomType: { $ne: "demo" }, isTestClassroom: { $ne: true }, isSessionInstance: { $ne: true } })
       .select("title students coach instructor")
       .populate("coach", "name")
@@ -117,6 +118,7 @@ export async function retentionOverview(now = new Date()) {
         name: student?.name || student?.username || "Removed student",
         parentName: student?.parentName || "",
         phone: student?.phone ? `${student.countryCode || ""} ${student.phone}`.trim() : "",
+        localTime: resolveStudentTimeZone(student),
         isActive: student?.isActive !== false,
       },
       coaches: Array.from(coachesByStudent.get(idOf(flag.student)) || []),

@@ -327,6 +327,8 @@ export const demoRequestSchema = z.object({
   }),
   preferredTime: z.string().trim().min(2, "Please tell us a convenient time to connect.").max(80),
   sourcePath: optionalText(200),
+  /** The browser's IANA timezone, so sales see the family's clock. Checked before it is saved. */
+  timeZone: optionalText(64),
   /** Ad tags from the landing link. Cleaned by sanitizeLeadSource, never trusted as-is. */
   source: z.unknown().optional(),
   website: optionalText(200),

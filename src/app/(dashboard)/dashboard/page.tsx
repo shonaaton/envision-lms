@@ -1205,8 +1205,14 @@ async function StudentDashboard({ userId, joinAllowed }: { userId: string; joinA
       .populate("generatedSessions.substituteCoach generatedSessions.assignedCoach", "name username")
       .populate("batches", "name")
       .lean(),
-    Homework.find({ isPublished: true, ...homeworkFilter }).sort({ dueAt: 1, createdAt: -1 }).lean(),
-    Submission.find({ student: userId }).lean(),
+    // Only what the cards read: the puzzle/activity bodies and the submitted
+    // answers are by far the biggest part of these documents. `puzzles._id` /
+    // `activities._id` keep the arrays' length for the "N tasks" count.
+    Homework.find({ isPublished: true, ...homeworkFilter })
+      .select("_id title classroom dueAt createdAt puzzles._id activities._id")
+      .sort({ dueAt: 1, createdAt: -1 })
+      .lean(),
+    Submission.find({ student: userId }).select("homework totalScore accuracy submittedAt").lean(),
     Tournament.find({
       status: { $in: ["upcoming", "live"] },
       $or: [

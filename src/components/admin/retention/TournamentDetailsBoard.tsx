@@ -18,6 +18,7 @@ import {
   X,
 } from "lucide-react";
 import { toast } from "sonner";
+import LocalTime, { type LocalTimeInfo } from "@/components/LocalTime";
 import { Empty, Stat, formatDate, formatDateTime, monthLabel } from "@/components/admin/retention/shared";
 import { INDIAN_STATES, placeIncomplete, placeLabel, suggestState } from "@/lib/retention/tournamentDetailsRules";
 
@@ -28,6 +29,7 @@ type Row = {
   parentName: string;
   parentEmail: string;
   phone: string;
+  localTime: LocalTimeInfo;
   dial: string;
   city: string;
   state: string;
@@ -437,6 +439,7 @@ export default function TournamentDetailsBoard({ canManage }: { canManage: boole
                             ) : (
                               <span className="text-amber-700">No phone</span>
                             )}
+                            <LocalTime info={row.localTime} edit={{ target: "user", id: row._id }} />
                           </div>
                           <div className="flex min-w-[130px] items-center justify-end gap-2">
                             {sent ? (
@@ -621,6 +624,7 @@ function StudentPopup({
                     {row.dial && <a className="rounded-lg border border-emerald-200 p-1 text-emerald-600 hover:bg-emerald-50" href={`https://wa.me/${row.dial}`} target="_blank" rel="noreferrer" title="WhatsApp"><MessageCircle size={13} /></a>}
                   </span>
                 )}
+                <LocalTime info={row.localTime} edit={{ target: "user", id: row._id }} />
               </dd>
             </div>
             {row.parentEmail && (

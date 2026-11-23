@@ -19,6 +19,13 @@ const ContactMessageSchema = new Schema(
     email: { type: String, lowercase: true, trim: true, index: true },
     address: { type: String, trim: true },
     countryCode: { type: String, trim: true },
+    /** Demo form: the browser's IANA timezone (lib/localTime), for the family's clock in the CRM. */
+    timeZone: { type: String, trim: true },
+    // Set by staff from the local-time badge after asking the family (lib/localTime).
+    // The newer of this and the device zone wins.
+    staffTimeZone: { type: String },
+    staffTimeZoneAt: { type: Date },
+    staffTimeZoneByName: { type: String },
     phone: { type: String, required: true, trim: true, index: true },
     interest: { type: String, required: true, index: true },
     message: { type: String, trim: true },

@@ -172,6 +172,11 @@ export type DemoLeadRow = {
   source: LeadSourceSummary;
   email: string;
   countryCode: string;
+  /** The browser timezone the demo form sent; "" for manual and older leads. */
+  timeZone: string;
+  staffTimeZone: string;
+  staffTimeZoneAt: string;
+  staffTimeZoneByName: string;
   phone: string;
   ageGroup: string;
   childLevel: string;
@@ -298,6 +303,10 @@ export async function getDemoLeads(viewer: DemoLeadViewer, filters: DemoLeadFilt
     manual: doc.leadEntry === "manual",
     email: String(doc.email || ""),
     countryCode: String(doc.countryCode || ""),
+    timeZone: String(doc.timeZone || ""),
+    staffTimeZone: String(doc.staffTimeZone || ""),
+    staffTimeZoneAt: doc.staffTimeZoneAt ? new Date(doc.staffTimeZoneAt).toISOString() : "",
+    staffTimeZoneByName: String(doc.staffTimeZoneByName || ""),
     phone: String(doc.phone || ""),
     ageGroup: String(doc.ageGroup || ""),
     childLevel: String(doc.childLevel || ""),

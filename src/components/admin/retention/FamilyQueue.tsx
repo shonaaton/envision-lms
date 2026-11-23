@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import { CalendarClock, Phone, Search } from "lucide-react";
+import LocalTime from "@/components/LocalTime";
 import { Empty, LevelBadge, StateBadge, Stars, daysAgo, formatDate, formatDateTime, type Queue, type QueueRow } from "@/components/admin/retention/shared";
 
 type Mode = "today" | "monthly" | "renewals";
@@ -16,12 +17,11 @@ function callKind(row: QueueRow) {
 }
 
 const STATE_FILTERS = [
-  { key: "", label: "All" },
+  { key: "", label: "All left to call" },
   { key: "not_called", label: "Not called" },
   { key: "missed", label: "Missed" },
   { key: "callback", label: "Callback" },
   { key: "unreachable", label: "Unreachable" },
-  { key: "done", label: "Called" },
 ];
 
 export default function FamilyQueue({ queue, mode, canManage }: { queue: Queue | null; mode: Mode; canManage: boolean }) {
@@ -42,6 +42,9 @@ export default function FamilyQueue({ queue, mode, canManage }: { queue: Queue |
     if (term) list = list.filter((row) => [row.parentName, row.phone, ...row.students.map((student) => student.name)].join(" ").toLowerCase().includes(term));
     return list;
   }, [queue, mode, state, coach, search]);
+
+  const left = useMemo(() => rows.filter((row) => row.state !== "done"), [rows]);
+  const called = useMemo(() => rows.filter((row) => row.state === "done"), [rows]);
 
   if (!queue) return <Empty title="Loading…" />;
 
@@ -77,47 +80,79 @@ export default function FamilyQueue({ queue, mode, canManage }: { queue: Queue |
         </select>
       </div>
 
-      {!rows.length && (
-        <Empty
-          title={mode === "today" ? "Nobody left to call today" : mode === "renewals" ? "No renewals in the next two weeks" : "No families match"}
-          hint={mode === "today" ? "Missed families come back tomorrow. Check the Monthly calls tab for the rest of the month." : undefined}
-        />
+      {mode === "monthly" ? (
+        <>
+          <Section title="Left to call" count={left.length} hint="Not spoken to yet this month: never called, missed, callbacks and unreachable." />
+          {left.map((row) => <FamilyRow key={row.familyKey} row={row} canManage={canManage} />)}
+          {!left.length && <Empty title={state || search || coach ? "No families match" : "Every family has been called this month"} />}
+          {!state && (
+            <>
+              <Section title="Called this month" count={called.length} hint="Spoken to this month. They come back next month." />
+              {called.map((row) => <FamilyRow key={row.familyKey} row={row} canManage={canManage} />)}
+              {!called.length && <Empty title={search || coach ? "No families match" : "Nobody called yet this month"} />}
+            </>
+          )}
+        </>
+      ) : (
+        <>
+          {!rows.length && (
+            <Empty
+              title={mode === "today" ? "Nobody left to call today" : mode === "renewals" ? "No renewals in the next two weeks" : "No families match"}
+              hint={mode === "today" ? "Missed families come back tomorrow. Check the Monthly calls tab for the rest of the month." : undefined}
+            />
+          )}
+          {rows.map((row) => <FamilyRow key={row.familyKey} row={row} canManage={canManage} />)}
+        </>
       )}
+    </div>
+  );
+}
 
-      {rows.map((row) => (
-        <div key={row.familyKey} className="rounded-2xl border border-brand/10 bg-white p-4 shadow-sm">
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="font-black text-slate-950">{row.students.map((student) => student.name).join(", ")}</span>
-            <StateBadge row={row} />
-            <LevelBadge level={row.flagLevel} />
-            {row.students.some((student) => student.paused) && <span className="rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-bold text-slate-700">Paused</span>}
-            <Stars value={row.lastSatisfaction} />
-            <span className="ml-auto flex items-center gap-2">
-              {row.phone && <span className="text-xs text-slate-500">{row.phone}</span>}
-              {canManage && (
-                <Link href={`/admin/retention/call/${row.primaryStudentId}?kind=${callKind(row)}`} className="btn btn-primary !px-3 !py-1.5 text-xs">
-                  <Phone size={14} /> Call
-                </Link>
-              )}
-            </span>
-          </div>
-          <div className="mt-2 flex flex-wrap gap-1.5">
-            {row.why.map((reason) => (
-              <span key={reason} className={`rounded-lg px-2 py-1 text-xs font-semibold ${reason === "High risk" ? "bg-rose-50 text-rose-800" : reason === "Callback due" ? "bg-brand/10 text-brand" : "bg-slate-50 text-slate-700"}`}>{reason}</span>
-            ))}
-            {row.renewal && <span className={`rounded-lg px-2 py-1 text-xs font-semibold ${row.renewal.within7 ? "bg-amber-50 text-amber-800" : "bg-slate-50 text-slate-700"}`}>{row.renewal.label}</span>}
-          </div>
-          <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-500">
-            {row.parentName && <span>Parent: {row.parentName}</span>}
-            {row.coaches.length > 0 && <span>Coach: {row.coaches.join(", ")}</span>}
-            <span>{row.lastConnectedAt ? `Last spoke ${formatDate(row.lastConnectedAt)} (${daysAgo(row.lastConnectedAt)}d ago)` : "Never spoken to"}</span>
-            {row.lastAttemptAt && row.state !== "done" && <span>Last tried {formatDateTime(row.lastAttemptAt)}</span>}
-            {row.pendingCallbackAt && (
-              <span className="inline-flex items-center gap-1 font-semibold text-brand"><CalendarClock size={12} /> Call back {formatDateTime(row.pendingCallbackAt)}</span>
-            )}
-          </div>
-        </div>
-      ))}
+
+function Section({ title, count, hint }: { title: string; count: number; hint: string }) {
+  return (
+    <div className="flex flex-wrap items-baseline gap-x-2 pt-2">
+      <h2 className="text-base font-black text-brand">{title}</h2>
+      <span className="rounded-full bg-brand/10 px-2 py-0.5 text-xs font-bold text-brand">{count}</span>
+      <span className="text-xs text-slate-500">{hint}</span>
+    </div>
+  );
+}
+
+function FamilyRow({ row, canManage }: { row: QueueRow; canManage: boolean }) {
+  return (
+    <div className="rounded-2xl border border-brand/10 bg-white p-4 shadow-sm">
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="font-black text-slate-950">{row.students.map((student) => student.name).join(", ")}</span>
+        <StateBadge row={row} />
+        <LevelBadge level={row.flagLevel} />
+        {row.students.some((student) => student.paused) && <span className="rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-bold text-slate-700">Paused</span>}
+        <Stars value={row.lastSatisfaction} />
+        <span className="ml-auto flex items-center gap-2">
+          <LocalTime info={row.localTime} edit={{ target: "user", id: row.primaryStudentId }} />
+          {row.phone && <span className="text-xs text-slate-500">{row.phone}</span>}
+          {canManage && (
+            <Link href={`/admin/retention/call/${row.primaryStudentId}?kind=${callKind(row)}`} className="btn btn-primary !px-3 !py-1.5 text-xs">
+              <Phone size={14} /> Call
+            </Link>
+          )}
+        </span>
+      </div>
+      <div className="mt-2 flex flex-wrap gap-1.5">
+        {row.why.map((reason) => (
+          <span key={reason} className={`rounded-lg px-2 py-1 text-xs font-semibold ${reason === "High risk" ? "bg-rose-50 text-rose-800" : reason === "Callback due" ? "bg-brand/10 text-brand" : "bg-slate-50 text-slate-700"}`}>{reason}</span>
+        ))}
+        {row.renewal && <span className={`rounded-lg px-2 py-1 text-xs font-semibold ${row.renewal.within7 ? "bg-amber-50 text-amber-800" : "bg-slate-50 text-slate-700"}`}>{row.renewal.label}</span>}
+      </div>
+      <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-500">
+        {row.parentName && <span>Parent: {row.parentName}</span>}
+        {row.coaches.length > 0 && <span>Coach: {row.coaches.join(", ")}</span>}
+        <span>{row.lastConnectedAt ? `Last spoke ${formatDate(row.lastConnectedAt)} (${daysAgo(row.lastConnectedAt)}d ago)` : "Never spoken to"}</span>
+        {row.lastAttemptAt && row.state !== "done" && <span>Last tried {formatDateTime(row.lastAttemptAt)}</span>}
+        {row.pendingCallbackAt && (
+          <span className="inline-flex items-center gap-1 font-semibold text-brand"><CalendarClock size={12} /> Call back {formatDateTime(row.pendingCallbackAt)}</span>
+        )}
+      </div>
     </div>
   );
 }

@@ -58,6 +58,8 @@ const AskCoachMessageSchema = new Schema(
 );
 
 AskCoachMessageSchema.index({ body: "text" });
+// Student dashboard: latest messages to me.
+AskCoachMessageSchema.index({ receiver: 1, createdAt: -1 });
 
 const AskCoachEmailReminderSchema = new Schema(
   {

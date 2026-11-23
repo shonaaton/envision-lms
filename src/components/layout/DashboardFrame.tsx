@@ -2,6 +2,7 @@
 
 import type { ComponentProps, ReactNode } from "react";
 import StudentDetailsPopup from "@/components/layout/StudentDetailsPopup";
+import TimeZoneCookie from "@/components/layout/TimeZoneCookie";
 import { Suspense, useEffect, useState } from "react";
 import { Menu } from "lucide-react";
 import { usePathname } from "next/navigation";
@@ -110,6 +111,7 @@ export default function DashboardFrame({
       <LiveDataRefresher />
       {/* One pop-up at a time: a student's details form first, the usual pop-up once details are in. Every role gets pop-ups written for everyone or for staff. */}
       {role === "student" && studentDetails ? <StudentDetailsPopup {...studentDetails} /> : <LoginPopup />}
+      {role === "student" && <TimeZoneCookie />}
     </div>
   );
 }

@@ -199,6 +199,12 @@ const ClassroomSchema = new Schema(
   },
   { timestamps: true }
 );
+// coachClassroomQuery() matches a coach on coach, instructor, OR a session they
+// covered/used to hold. An $or uses indexes only if every branch has one, so
+// without these two every coach dashboard (and every coach classroom list)
+// read the whole Classroom collection. Lookup only: no query result changes.
+ClassroomSchema.index({ "generatedSessions.substituteCoach": 1 });
+ClassroomSchema.index({ "generatedSessions.assignedCoach": 1 });
 
 export type ClassroomDoc = InferSchemaType<typeof ClassroomSchema> & { _id: any };
 export const Classroom = models.Classroom || model("Classroom", ClassroomSchema);

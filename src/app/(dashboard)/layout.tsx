@@ -3,13 +3,14 @@ import { redirect } from "next/navigation";
 import DashboardFrame from "@/components/layout/DashboardFrame";
 import { getNavigationFeatureState, isSuperAdminSession } from "@/lib/featureAccess";
 import { findFeatureByPath } from "@/lib/featureRegistry";
-import { headers } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { isInactiveRestrictedPath } from "@/lib/inactiveAccess";
 import { dbConnect } from "@/lib/db";
 import { FeeAssignment } from "@/models/Fee";
 import { Classroom } from "@/models/Classroom";
 import { canStudentUseLearnChess } from "@/lib/learning/studentAccess";
 import { touchLastSeen } from "@/lib/engagement/lastSeen";
+import { TIME_ZONE_COOKIE, stampTimeZone } from "@/lib/localTime/stampTimeZone";
 import { branchHomePath, isBranchAllowedPath } from "@/lib/branch/paths";
 import { resolveBranchAccess } from "@/lib/branch/access";
 import { isClassMonitorAudience } from "@/lib/classMonitor/classMonitorAccess";
@@ -46,6 +47,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
     try {
       await dbConnect();
       await touchLastSeen((session.user as any).id);
+      await stampTimeZone((session.user as any).id, cookies().get(TIME_ZONE_COOKIE)?.value);
       hasCreditPlan = Boolean(await FeeAssignment.exists({ student: (session.user as any).id, type: "credits" }));
     } catch (error) {
       console.error("Dashboard credit-plan lookup failed; continuing without blocking the page.", error);

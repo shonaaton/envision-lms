@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ArrowLeft, CalendarClock, CheckCircle2, Mail, MessageCircle, Phone, Plus, Star, Trash2 } from "lucide-react";
 import { toast } from "sonner";
+import LocalTime, { type LocalTimeInfo } from "@/components/LocalTime";
 import { CallCard, Empty, LevelBadge, daysAgo, formatDate, formatDateTime, type CallRow, type RiskLevel } from "@/components/admin/retention/shared";
 import type { Question } from "@/components/admin/retention/QuestionsManager";
 import { parseAcademyDateTimeLocal } from "@/lib/academyTime";
@@ -41,6 +42,7 @@ type Family = {
   parentName: string;
   parentEmail: string;
   phone: string;
+  localTime: LocalTimeInfo;
   telHref: string;
   whatsappHref: string;
   childrenLabel: string;
@@ -94,7 +96,10 @@ export default function FamilyCallClient({ studentId, initialKind, canManage, ca
       <div className="mb-4 rounded-2xl border border-brand/10 bg-white p-4 shadow-sm">
         <div className="flex flex-wrap items-start gap-3">
           <div className="min-w-0 flex-1">
-            <h1 className="text-2xl font-black text-brand">{family.children.map((child) => child.name).join(", ")}</h1>
+            <div className="flex flex-wrap items-center gap-2">
+              <h1 className="text-2xl font-black text-brand">{family.children.map((child) => child.name).join(", ")}</h1>
+              <LocalTime info={family.localTime} size="md" edit={{ target: "user", id: family.primaryStudentId }} />
+            </div>
             <p className="mt-1 text-sm text-slate-600">
               {[family.parentName && `Parent: ${family.parentName}`, family.phone, family.parentEmail].filter(Boolean).join(" · ") || "No contact details on file"}
             </p>

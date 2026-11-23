@@ -34,6 +34,8 @@ const quietMutationPatterns = [
   // The Retention Center reloads its own lists; a refresh would wipe the call
   // form's "saved" view and close the question editor and the flag drawer.
   /^\/api\/admin\/retention(\/|$)/,
+  // The local-time badge updates itself after staff set a family's zone.
+  /^\/api\/local-time$/,
   // The finance dashboard reloads its own figures after fetching Razorpay fees;
   // a refresh would drop the chosen date range.
   /^\/api\/fees\/razorpay-fees\//,

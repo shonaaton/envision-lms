@@ -1,3 +1,4 @@
+import { resolveStudentTimeZone, type StudentTimeZone } from "@/lib/localTime/studentTimeZone";
 import "server-only";
 
 import { dbConnect } from "@/lib/db";
@@ -20,7 +21,7 @@ import { courseLabel, indexStudentCourseProgress } from "@/lib/salesCourseProgre
  */
 
 const CONTACT_FIELDS =
-  "_id name email phone countryCode parentName parentEmail city country studentLevel accountStatus isActive isPaused pausedUntil batches createdAt";
+  "_id name email phone countryCode parentName parentEmail city state country timeZone timeZoneSeenAt staffTimeZone staffTimeZoneAt staffTimeZoneByName studentLevel accountStatus isActive isPaused pausedUntil batches createdAt";
 
 export type DirectoryContact = {
   id: string;
@@ -29,6 +30,8 @@ export type DirectoryContact = {
   phone: string;
   email: string;
   city: string;
+  /** The contact's timezone (lib/localTime), so staff see their clock before calling. */
+  localTime: StudentTimeZone | null;
   /**
    * The player assessment - absolute beginner through federated. This is what
    * someone *is*, and for a demo lead it is the only level that exists yet.
@@ -186,6 +189,7 @@ export async function getSalesDirectory(): Promise<DirectoryPayload> {
       phone: contactNumber(user),
       email: String(user.email || ""),
       city: String(user.city || ""),
+      localTime: resolveStudentTimeZone(user),
       level: LEVEL_LABELS[String(user.studentLevel || "not_set")] || "Not set",
       courseTier: courseTierLabel(
         running?.level || (user.batches || []).map((batch: any) => batchLevelById.get(id(batch))).find(Boolean) || "",
@@ -209,6 +213,7 @@ export async function getSalesDirectory(): Promise<DirectoryPayload> {
       phone: contactNumber(user),
       email: String(user.email || ""),
       city: String(user.city || ""),
+      localTime: resolveStudentTimeZone(user),
       level: "",
       courseTier: "",
       course: "",
@@ -236,6 +241,7 @@ export async function getSalesDirectory(): Promise<DirectoryPayload> {
       phone: contactNumber(user),
       email: String(user.email || ""),
       city: String(user.city || ""),
+      localTime: resolveStudentTimeZone(user),
       level: LEVEL_LABELS[String(user.studentLevel || "not_set")] || "Not set",
       // A lead has not been placed on the course ladder yet - that happens at
       // conversion, when they are put in a batch and given a classroom.

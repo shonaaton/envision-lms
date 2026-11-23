@@ -1,6 +1,7 @@
 "use client";
 
 import { MessageCircle, PhoneCall, PhoneMissed, Star } from "lucide-react";
+import type { LocalTimeInfo } from "@/components/LocalTime";
 
 export type RiskLevel = "none" | "watch" | "at_risk" | "high";
 
@@ -10,6 +11,7 @@ export type QueueRow = {
   students: Array<{ _id: string; name: string; paused: boolean }>;
   parentName: string;
   phone: string;
+  localTime: LocalTimeInfo;
   coaches: string[];
   flagLevel: RiskLevel;
   renewal: { label: string; dueAt: string | null; within7: boolean; sortKey: number } | null;

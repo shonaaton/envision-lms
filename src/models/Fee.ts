@@ -187,6 +187,9 @@ const InvoiceSchema = new Schema(
   },
   { timestamps: true }
 );
+// Admin dashboard fee cards: invoices raised in the year, and paid in the year.
+InvoiceSchema.index({ createdAt: -1 });
+InvoiceSchema.index({ status: 1, paidAt: -1 });
 
 const DeletedInvoiceSchema = new Schema(
   {

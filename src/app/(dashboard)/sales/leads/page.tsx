@@ -7,6 +7,7 @@ import { DemoLeadsSheet, type DemoLeadSheetRow, type ReminderFormState } from "@
 import { academyDateKey, academyDateTime, academyDateTimeLocalInput, parseAcademyDateTimeLocal } from "@/lib/academyTime";
 import { contactDisplayPhone, contactInterestLabel, contactInterests, whatsappDigits } from "@/lib/contactEnquiries";
 import { DIAL_CODES } from "@/lib/phoneCountryCodes";
+import { resolveStudentTimeZone } from "@/lib/localTime/studentTimeZone";
 import { demoLeadCallOutcomeLabel, reminderPresets } from "@/lib/demoLeadCalls";
 import {
   addDemoLeadNote,
@@ -260,6 +261,7 @@ export default async function DemoLeadsPage({ searchParams }: { searchParams: Re
       source: row.source,
       received: when(row.createdAt),
       phoneLabel: contactDisplayPhone(row.countryCode, row.phone),
+      localTime: resolveStudentTimeZone({ timeZone: row.timeZone, timeZoneSeenAt: row.createdAt, staffTimeZone: row.staffTimeZone, staffTimeZoneAt: row.staffTimeZoneAt, staffTimeZoneByName: row.staffTimeZoneByName, countryCode: row.countryCode, phone: row.phone }),
       telHref: `tel:${wa ? `+${wa}` : row.phone}`,
       whatsappHref: wa ? `https://wa.me/${wa}` : "",
       verification: row.manual ? "manual" : row.whatsappVerified ? "verified" : row.otpFailed ? "failed" : "unverified",

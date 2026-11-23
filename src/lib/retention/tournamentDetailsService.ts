@@ -1,3 +1,4 @@
+import { resolveStudentTimeZone } from "@/lib/localTime/studentTimeZone";
 import "server-only";
 
 import { Types } from "mongoose";
@@ -36,7 +37,7 @@ import { User } from "@/models/User";
 
 type Actor = { id: string; name?: string };
 
-const LOCATION_FIELDS = "name username phone countryCode parentName parentEmail email city state country age studentLevel";
+const LOCATION_FIELDS = "name username phone countryCode parentName parentEmail email city state country timeZone timeZoneSeenAt staffTimeZone staffTimeZoneAt staffTimeZoneByName age studentLevel";
 
 function nameOf(user: any) {
   return String(user?.name || user?.username || "Student");
@@ -67,6 +68,7 @@ async function loadStudents(now: Date) {
       parentName: String(student.parentName || "").trim(),
       parentEmail: String(student.parentEmail || student.email || "").trim(),
       phone: student.phone ? `${student.countryCode || ""} ${student.phone}`.trim() : "",
+      localTime: resolveStudentTimeZone(student),
       dial: `${String(student.countryCode || "").replace(/\D/g, "")}${String(student.phone || "").replace(/\D/g, "")}`,
       city,
       state: tidyPlace(student.state),

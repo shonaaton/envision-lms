@@ -113,7 +113,7 @@ export default function DemoRequestForm({ embedded = false, titleId }: { embedde
     setBusy(true);
     setError("");
     try {
-      const { ok, payload } = await post("/api/demo-request", { ...form, sourcePath: window.location.pathname, source: readLeadSource() });
+      const { ok, payload } = await post("/api/demo-request", { ...form, sourcePath: window.location.pathname, source: readLeadSource(), timeZone: browserTimeZone() });
       if (!ok) {
         setError(payload?.error || "Could not save your details. Please try again.");
         return;
@@ -420,4 +420,12 @@ export default function DemoRequestForm({ embedded = false, titleId }: { embedde
       </form>
     </section>
   );
+}
+
+function browserTimeZone() {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || "";
+  } catch {
+    return "";
+  }
 }

@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { AlertTriangle, CheckCircle2, HeartHandshake, Phone, PhoneCall, RefreshCw, UserMinus, X } from "lucide-react";
 import { toast } from "sonner";
+import LocalTime, { type LocalTimeInfo } from "@/components/LocalTime";
 
 type Reason = { code: string; severity: "moderate" | "strong" | "window"; label: string; detail: string };
 type Flag = {
@@ -19,7 +20,7 @@ type Flag = {
   resolution: { outcome: string; note?: string; byName?: string; at: string; auto: boolean } | null;
   /** The risk call task is held back until this date: someone spoke to the family recently. */
   taskHeldBackUntil: string | null;
-  student: { _id: string; name: string; parentName: string; phone: string; isActive: boolean };
+  student: { _id: string; name: string; parentName: string; phone: string; localTime: LocalTimeInfo; isActive: boolean };
   coaches: string[];
 };
 type Overview = {
@@ -187,6 +188,7 @@ function FlagCard({ flag, onOpen }: { flag: Flag; onOpen: () => void }) {
     <button type="button" onClick={onOpen} className="block w-full rounded-2xl border border-brand/10 bg-white p-4 text-left shadow-sm transition hover:border-brand/30 hover:shadow-md">
       <div className="flex flex-wrap items-center gap-2">
         <span className="font-black text-slate-950">{flag.student.name}</span>
+        <LocalTime info={flag.student.localTime} />
         {flag.status === "open" ? <LevelBadge level={flag.level} /> : (
           <span className="rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-bold text-slate-700">{OUTCOME_LABEL[flag.resolution?.outcome || ""] || "Settled"}</span>
         )}
@@ -244,7 +246,7 @@ function FlagDrawer({ flag, canManage, onClose, onChanged }: { flag: Flag; canMa
       <div className="h-full w-full max-w-lg overflow-y-auto bg-white p-5 shadow-2xl" onClick={(event) => event.stopPropagation()}>
         <div className="mb-4 flex items-start justify-between gap-3">
           <div>
-            <h2 className="text-lg font-black text-slate-950">{flag.student.name}</h2>
+            <h2 className="flex flex-wrap items-center gap-2 text-lg font-black text-slate-950">{flag.student.name} <LocalTime info={flag.student.localTime} edit={{ target: "user", id: flag.student._id }} /></h2>
             <p className="mt-1 text-xs leading-5 text-slate-600">
               {[flag.student.parentName && `Parent: ${flag.student.parentName}`, flag.student.phone].filter(Boolean).join(" · ") || "No contact details on file"}
             </p>

@@ -30,7 +30,7 @@ export const CALL_SIGNAL_DAYS = 45;
 const SKIPPED_COACH_STATUSES = ["cancelled", "rescheduled", "coach_no_show"];
 const MISSED_CALL_OUTCOMES = ["no_answer", "busy", "switched_off"];
 
-export const STUDENT_FIELDS = "name username createdAt conversionSetup batches isActive phone countryCode phoneCanonical parentName parentEmail email";
+export const STUDENT_FIELDS = "name username createdAt conversionSetup batches isActive phone countryCode phoneCanonical parentName parentEmail email city state country timeZone timeZoneSeenAt staffTimeZone staffTimeZoneAt staffTimeZoneByName";
 
 export type StudentContext = {
   student: any;

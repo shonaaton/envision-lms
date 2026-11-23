@@ -2,9 +2,9 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
-import { Award, BookOpenCheck, CalendarCheck, FileText, Megaphone, Trophy, X } from "lucide-react";
+import { Award, BookOpenCheck, CalendarCheck, FileText, Medal, Megaphone, Trophy, X } from "lucide-react";
 
-export type PopupKind = "tournament" | "campaign_high" | "feedback" | "badge" | "homework" | "recap" | "campaign";
+export type PopupKind = "tournament" | "campaign_high" | "feedback" | "achievement" | "badge" | "homework" | "recap" | "campaign";
 export type PopupPayload = { key: string; kind: PopupKind; title: string; body: string; imageUrl?: string; ctaLabel?: string; ctaHref?: string };
 
 // The full check (personal pop-ups too) runs once per browser session.
@@ -21,14 +21,18 @@ const ICONS: Record<PopupKind, typeof Megaphone> = {
   campaign_high: Megaphone,
   campaign: Megaphone,
   feedback: FileText,
+  achievement: Medal,
   badge: Award,
   homework: BookOpenCheck,
   recap: CalendarCheck,
 };
 
-/** Never put a pop-up over a live class, a game, an exam or a quiz. */
+/**
+ * Never put a pop-up over a classroom page, a game, an exam or a quiz. (While
+ * the account's own class is on, the server sends none anywhere.)
+ */
 export function popupCanInterrupt(pathname: string) {
-  if (/^\/classrooms\/[^/]+\/live(\/|$)/.test(pathname)) return false;
+  if (pathname === "/classrooms" || pathname.startsWith("/classrooms/")) return false;
   if (/^\/(tournaments|exams|quizzes)\/[^/]+/.test(pathname) && !/^\/tournaments\/new(\/|$)/.test(pathname)) return false;
   return !["/play", "/king-hunt", "/square-trainer", "/tactics-trainer", "/analysis"].some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`));
 }
@@ -181,8 +185,10 @@ function kindLabel(kind: PopupKind) {
       return "Tournament";
     case "feedback":
       return "Progress report";
+    case "achievement":
+      return "Academy achievement";
     case "badge":
-      return "Achievement";
+      return "New badge";
     case "homework":
       return "Homework";
     case "recap":

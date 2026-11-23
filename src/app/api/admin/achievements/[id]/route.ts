@@ -4,6 +4,7 @@ import { recordActivity } from "@/lib/activity";
 import { requireAdminApiAccess } from "@/lib/adminApiAccess";
 import { normalizeAchievement, serializeAchievement } from "@/lib/achievements";
 import { Achievement } from "@/models/Achievement";
+import { forgetCachedAchievements } from "@/lib/popups/popupService";
 
 export const dynamic = "force-dynamic";
 
@@ -28,6 +29,7 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     metadata: { tournamentName: achievement.tournamentName, isPublished: achievement.isPublished, isFeatured: achievement.isFeatured },
   });
 
+  forgetCachedAchievements();
   return NextResponse.json(serializeAchievement(achievement));
 }
 
@@ -49,5 +51,6 @@ export async function DELETE(req: Request, { params }: { params: { id: string } 
     metadata: { tournamentName: achievement.tournamentName },
   });
 
+  forgetCachedAchievements();
   return NextResponse.json({ ok: true });
 }

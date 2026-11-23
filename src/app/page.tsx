@@ -249,6 +249,20 @@ const homeFaqs = [
  * time the page regenerates - but it is deterministic within a render, so the
  * page can be cached and the server and client cannot disagree about the order.
  */
+/** The faces on the hero's proof link: the strip below opens with the same students. */
+const heroProofFaces = studentRatings.filter((student) => student.photo).slice(0, 5);
+
+/** A small pawn: the scroll cue hops it down the page instead of using an arrow. */
+function PawnIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor" aria-hidden>
+      <circle cx="12" cy="5.5" r="3.5" />
+      <path d="M8.6 10.2h6.8c-.4 2.6.2 5.2 1.9 7.6H6.7c1.7-2.4 2.3-5 1.9-7.6Z" />
+      <rect x="5" y="18.6" width="14" height="3" rx="1.2" />
+    </svg>
+  );
+}
+
 function rotateForWindow<T>(items: T[]) {
   if (items.length < 2) return items;
   const windowsElapsed = Math.floor(Date.now() / (revalidate * 1000));
@@ -318,76 +332,81 @@ export default async function Home() {
         <div className="absolute inset-0 opacity-[0.6] [background-image:linear-gradient(rgba(90,19,114,0.05)_1px,transparent_1px),linear-gradient(90deg,rgba(90,19,114,0.05)_1px,transparent_1px)] [background-size:64px_64px]" />
         <div className="absolute inset-x-0 bottom-0 h-28 bg-gradient-to-t from-[#f5edf8] to-transparent" />
         <div className="relative mx-auto grid min-h-[calc(100dvh-82px)] max-w-7xl items-center gap-8 px-4 py-8 sm:px-6 lg:grid-cols-[0.86fr_1.14fr] lg:px-8">
-          <div className="motion-rise max-w-xl">
-            <p className="inline-flex items-center gap-2 rounded-full bg-brand px-3.5 py-1.5 text-[10px] font-extrabold uppercase tracking-[0.12em] text-white shadow-sm shadow-brand-900/20">
-              <ShieldCheck size={15} /> Online &amp; Offline Chess Classes Across India
+          <div className="hero-copy motion-rise max-w-xl">
+            <p className="hero-eyebrow">
+              <span className="hero-eyebrow__dot" aria-hidden /> Free demo class for every new student
             </p>
             {/*
-              The page's one H1 leads with the phrase parents actually search
-              for, and keeps the old promise as the second line so the hero
-              still reads like a sentence rather than a keyword.
+              The page's one H1 is still the exact phrase parents search for -
+              it is the page's ranking target - but it is set as a headline, with
+              the "in India" half marked, rather than a plain sentence.
             */}
-            <h1 className="mt-4 max-w-xl text-[1.85rem] font-bold leading-[1.08] text-brand-900 sm:text-[2.25rem] lg:text-[2.7rem]">
-              Best Chess Coaching in India
+            <h1 className="hero-title">
+              Best Chess Coaching <span className="hero-title__mark">in India</span>
             </h1>
             {/*
-              The promise is a sibling heading rather than a span inside the H1.
-              Nested, the two ran together with no whitespace between them, so
-              anything reading the H1 as text saw "IndiaCoaching" - one token,
-              and no exact match on the phrase the page targets. The course and
-              centre pages already split them this way.
+              The promise is a sibling heading rather than a span inside the H1:
+              nested, the two ran together as one token ("IndiaSharper") for
+              anything reading the H1 as text. It now speaks to what a parent
+              wants for the child, not how the academy is organised.
             */}
-            <h2 className="mt-2 max-w-xl text-[1.1rem] font-bold leading-snug text-brand sm:text-[1.3rem] lg:text-[1.55rem]">
-              Coaching that feels organised from day one.
+            <h2 className="hero-promise">
+              Sharper focus. Bigger confidence. <span>Real trophies.</span>
             </h2>
-            <p className="mt-4 max-w-lg text-sm leading-6 text-brand-900/70 sm:text-[0.95rem]">
-              Envision Chess Academy runs live online chess classes for students anywhere in India, and offline coaching at four Kolkata centres. Classes, homework, tournaments, coach feedback, payments and progress tracking all sit in one academy portal.
+            <p className="hero-sub">
+              Live classes with expert coaches, online from anywhere in India or at our 4 Kolkata centres.
             </p>
-            <div className="mt-6 flex flex-col gap-3 sm:flex-row">
-              <Link href={demoHref} className="btn-accent min-h-11 px-5 shadow-lg shadow-accent/10">
-                Book Free Demo Class <ArrowRight size={18} />
+            <div className="hero-actions">
+              <Link href={demoHref} className="btn-accent hero-cta">
+                Book Free Demo Class
               </Link>
-              <Link href="#platform" className="btn min-h-11 border border-brand/25 bg-white px-5 text-brand shadow-sm shadow-brand-900/5 hover:border-brand/50 hover:bg-brand-50">
-                See Portal
-              </Link>
+              <p className="hero-cta-note">Free &middot; No obligation &middot; Level report for your child</p>
             </div>
+
             {/*
-              The hero used to show three invented portal numbers here. Parents
-              deciding on an academy want proof it answers to someone, so the
-              space now carries the two bodies that accredit us, with the logos
-              a Bengal chess parent recognises without reading the caption.
+              The reason to keep scrolling. Real students, real numbers, and a
+              link straight to the results and ratings strip below the hero.
             */}
-            <div className="mt-6 max-w-lg rounded-2xl border border-brand/10 bg-white/85 p-3.5 shadow-sm shadow-brand-900/5 backdrop-blur-sm">
-              <p className="text-[10px] font-extrabold uppercase tracking-[0.14em] text-brand-900/45">
-                Affiliated &amp; Recognised
-              </p>
-              <ul className="mt-2.5 grid gap-2.5 sm:grid-cols-2">
-                {ACADEMY_ACCREDITATIONS.map((body) => (
-                  <li key={body.name} className="flex items-center gap-2.5">
-                    <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-brand/10 bg-white p-1 shadow-sm shadow-brand-900/5">
-                      <Image
-                        src={body.logo}
-                        alt={`${body.name} logo`}
-                        width={44}
-                        height={44}
-                        className="h-full w-full object-contain"
-                      />
-                    </span>
-                    <span className="min-w-0">
-                      <span className="block text-[10px] font-semibold uppercase tracking-[0.08em] text-brand-900/45">
-                        {body.relation}
-                      </span>
-                      <span className="block text-[11.5px] font-bold leading-tight text-brand-900">{body.name}</span>
-                    </span>
-                  </li>
+            <a href="#results" className="hero-proof">
+              <span className="hero-proof__faces" aria-hidden>
+                {heroProofFaces.map((student) => (
+                  <Image key={student.name} src={student.photo!} alt="" width={44} height={44} />
                 ))}
-              </ul>
-            </div>
+              </span>
+              <span className="hero-proof__text">
+                <strong>100+ of our kids are now rated players</strong>
+                <span>One became England&apos;s No. 1 Under-7. Meet them</span>
+              </span>
+              <span className="hero-proof__pawn" aria-hidden>
+                <PawnIcon />
+              </span>
+            </a>
+
+            {/*
+              The two bodies that accredit the academy, as a quiet trust line
+              rather than a box competing with the call to action.
+            */}
+            <ul className="hero-accreditations" aria-label="Affiliations">
+              {ACADEMY_ACCREDITATIONS.map((body) => (
+                <li key={body.name}>
+                  <Image src={body.logo} alt={`${body.name} logo`} width={32} height={32} />
+                  <span>
+                    <small>{body.relation}</small>
+                    {body.name}
+                  </span>
+                </li>
+              ))}
+            </ul>
           </div>
           <HeroStudentCluster />
         </div>
+        <a href="#results" className="hero-scroll-cue">
+          <PawnIcon />
+          <span>See what our students achieved</span>
+        </a>
       </section>
 
+      <div id="results" />
       <AnimatedImpactCounters
         counters={impactCounters}
         heading="Chess coaching results from across India and beyond."

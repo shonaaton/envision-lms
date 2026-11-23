@@ -6,18 +6,24 @@
  *      they register or it can no longer be joined)
  *   1. a high-priority admin pop-up
  *   2. the monthly report is ready
- *   3. a new badge
- *   4. homework due within 48 hours
- *   5. last week's recap (Monday to Wednesday)
- *   6. any other admin pop-up
+ *   3. a new academy achievement (every account, staff too)
+ *   4. a new badge
+ *   5. homework due within 48 hours
+ *   6. last week's recap (Monday to Wednesday)
+ *   7. any other admin pop-up
+ *
+ * None of them while the account's own class is on (classTime.ts).
  */
 
-export const POPUP_KINDS = ["tournament", "campaign_high", "feedback", "badge", "homework", "recap", "campaign"] as const;
+export const POPUP_KINDS = ["tournament", "campaign_high", "feedback", "achievement", "badge", "homework", "recap", "campaign"] as const;
 export type PopupKind = (typeof POPUP_KINDS)[number];
 
 export const HOMEWORK_DUE_WINDOW_MS = 48 * 60 * 60_000;
 export const FEEDBACK_FRESH_DAYS = 30;
 export const BADGE_FRESH_DAYS = 14;
+/** A new achievement is announced for 24 hours after it is added, and only the newest few at once (an import must not queue dozens). */
+export const ACHIEVEMENT_FRESH_HOURS = 24;
+export const ACHIEVEMENT_POPUP_LIMIT = 3;
 
 export type PopupCandidate = {
   key: string;

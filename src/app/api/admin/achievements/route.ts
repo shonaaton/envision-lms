@@ -4,6 +4,7 @@ import { recordActivity } from "@/lib/activity";
 import { requireAdminApiAccess } from "@/lib/adminApiAccess";
 import { normalizeAchievement, seedVerifiedAchievements, serializeAchievement } from "@/lib/achievements";
 import { Achievement } from "@/models/Achievement";
+import { forgetCachedAchievements } from "@/lib/popups/popupService";
 import { sendAchievementEarnedEmail } from "@/lib/studentCommunicationEmails";
 
 export const dynamic = "force-dynamic";
@@ -57,7 +58,8 @@ export async function POST(req: Request) {
       entityType: "Achievement",
       metadata: { count: achievements.length },
     });
-    return NextResponse.json(achievements);
+    forgetCachedAchievements();
+  return NextResponse.json(achievements);
   }
 
   const body = normalizeAchievement(input, actorId);
@@ -76,5 +78,6 @@ export async function POST(req: Request) {
     metadata: { tournamentName: created.tournamentName, result: created.result },
   });
   await sendAchievementEarnedEmail(created, req).catch((error) => console.error("Achievement email failed", error));
+  forgetCachedAchievements();
   return NextResponse.json(serializeAchievement(created));
 }

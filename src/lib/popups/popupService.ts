@@ -7,6 +7,8 @@ import { dbConnect } from "@/lib/db";
 import { academyWeekday, engagementWeekKey, hasAnythingToReport, nextClassLabel } from "@/lib/engagement/engagementRules";
 import { STUDENT_FIELDS, loadWeeklySnapshots } from "@/lib/engagement/weeklySnapshot";
 import {
+  ACHIEVEMENT_FRESH_HOURS,
+  ACHIEVEMENT_POPUP_LIMIT,
   ALL_ROLE_AUDIENCES,
   BADGE_FRESH_DAYS,
   FEEDBACK_FRESH_DAYS,
@@ -21,6 +23,10 @@ import {
   type PopupCandidate,
   type PopupViewState,
 } from "@/lib/popups/popupRules";
+import { sessionHoldsPopups } from "@/lib/popups/classTime";
+import { rosterForSession } from "@/lib/classroomStudentExits";
+import { parseUploadUrl } from "@/lib/uploadUrls";
+import { Achievement } from "@/models/Achievement";
 import { Batch } from "@/models/Batch";
 import { Classroom } from "@/models/Classroom";
 import { StudentReward } from "@/models/ClassroomLive";
@@ -58,7 +64,11 @@ export async function nextPopupFor(userId: string, now = new Date()): Promise<Po
   const views = await readViews(user._id);
   const isDemo = user.accountStatus === "demo";
 
-  const candidates: PopupCandidate[] = [...(await tournamentCandidates(user, now)), ...(await campaignCandidates(user, now))];
+  const candidates: PopupCandidate[] = [
+    ...(await tournamentCandidates(user, now)),
+    ...(await campaignCandidates(user, now)),
+    ...(await achievementCandidates(now)),
+  ];
   if (!isDemo) {
     candidates.push(...(await feedbackCandidate(user._id, now)), ...(await badgeCandidate(user._id, now)));
   }
@@ -68,6 +78,7 @@ export async function nextPopupFor(userId: string, now = new Date()): Promise<Po
     chosen = choosePopup(candidates, views);
   }
   if (!chosen) return null;
+  if (await inOwnClassNow(user, now)) return null;
   await markSeen(user._id, chosen, now);
   const { createdAt: _createdAt, maxViews: _maxViews, ...payload } = chosen;
   return payload;
@@ -157,14 +168,16 @@ export async function nextLivePopupFor(userId: string, role: string, now = new D
   await dbConnect();
   const live = (await activeCampaigns(now)).filter((campaign) => campaignIsLive(campaign, now));
   const possible = role === "student" ? live : live.filter((campaign) => ALL_ROLE_AUDIENCES.includes(campaign.audience));
-  if (!possible.length) return null;
+  const achievements = await achievementCandidates(now);
+  if (!possible.length && !achievements.length) return null;
   const user: any = loadedUser || (await User.findById(userId).select(`${STUDENT_FIELDS} branch`).lean());
   if (!user || user.isActive === false) return null;
-  const candidates = await campaignCandidates(user, now, possible);
+  const candidates = [...(possible.length ? await campaignCandidates(user, now, possible) : []), ...achievements];
   if (!candidates.length) return null;
   const rows: any[] = await PopupView.find({ user: user._id, key: { $in: candidates.map((candidate) => candidate.key) } }).select("key seenCount dismissedAt clickedAt").lean();
   const chosen = choosePopup(candidates, new Map<string, PopupViewState>(rows.map((row) => [row.key, row])));
   if (!chosen) return null;
+  if (await inOwnClassNow(user, now)) return null;
   await markSeen(user._id, chosen, now);
   const { createdAt: _createdAt, maxViews: _maxViews, ...payload } = chosen;
   return payload;
@@ -192,6 +205,78 @@ async function campaignCandidates(user: any, now: Date, preloaded?: any[]): Prom
       createdAt: campaign.createdAt,
       maxViews: campaign.maxViews || null,
     }));
+}
+
+// Newest published achievements, shared by every request in this process for a
+// minute, like the admin pop-ups: the frame's check every few minutes costs no
+// database read while nothing new has been added.
+let achievementCache: { at: number; rows: any[] } | null = null;
+
+/** An admin added, edited or deleted an achievement: read them again next time. */
+export function forgetCachedAchievements() {
+  achievementCache = null;
+}
+
+/** Every account (students, demo families, coaches, admins) hears about a new achievement once. */
+async function achievementCandidates(now: Date): Promise<PopupCandidate[]> {
+  if (!achievementCache || now.getTime() - achievementCache.at >= CAMPAIGN_CACHE_MS) {
+    const rows: any[] = await Achievement.find({ isPublished: { $ne: false }, createdAt: { $gte: new Date(now.getTime() - ACHIEVEMENT_FRESH_HOURS * 60 * 60_000) } })
+      .sort({ createdAt: -1 })
+      .limit(ACHIEVEMENT_POPUP_LIMIT)
+      .select("studentName tournamentName result tournamentLocation shortDescription achievementImageUrl createdAt")
+      .lean();
+    achievementCache = { at: now.getTime(), rows };
+  }
+  return achievementCache.rows.map((row) => {
+    const where = row.tournamentLocation && row.tournamentLocation !== "Not specified" ? ` (${row.tournamentLocation})` : "";
+    // The default description only repeats the first line, so it is left out.
+    const description = String(row.shortDescription || "").trim();
+    const extra = description && !description.startsWith(`${row.studentName} achieved`) ? `\n\n${description}` : "";
+    return {
+      key: `auto:achievement:${idOf(row)}`,
+      kind: "achievement" as const,
+      title: `Congratulations, ${row.studentName}!`,
+      body: `${row.result} at ${row.tournamentName}${where}.${extra}\n\nA proud moment for the whole Envision family.`,
+      imageUrl: achievementImageSrc(row.achievementImageUrl),
+      ctaLabel: "See all achievements",
+      ctaHref: "/success-stories",
+      createdAt: row.createdAt,
+    };
+  });
+}
+
+/** An uploaded achievement picture or one of the site's own; otherwise the pop-up rules for links apply. */
+function achievementImageSrc(value?: string | null) {
+  const raw = String(value || "").trim();
+  if (parseUploadUrl(raw)?.area === "achievements") return raw;
+  if (/^\/images\/achievements\/[\w./-]+$/.test(raw) && !raw.includes("..")) return raw;
+  return popupImageSrc(raw);
+}
+
+/**
+ * Whether one of this account's own classes is on right now (it teaches it,
+ * covers it or is on its roster). Only asked once a pop-up is about to be
+ * shown, so a check with nothing to show costs nothing.
+ */
+async function inOwnClassNow(user: any, now: Date) {
+  const id = user._id;
+  const classrooms: any[] = await Classroom.find({
+    isActive: { $ne: false },
+    status: { $ne: "cancelled" },
+    isTestClassroom: { $ne: true },
+    $or: [{ coach: id }, { instructor: id }, { students: id }, { "generatedSessions.students": id }, { "generatedSessions.substituteCoach": id }],
+    "generatedSessions.scheduledFor": { $gte: new Date(now.getTime() - 2 * DAY), $lte: new Date(now.getTime() + DAY) },
+  })
+    .select("coach instructor students studentExits classDate startDate generatedSessions._id generatedSessions.scheduledFor generatedSessions.startTime generatedSessions.durationMinutes generatedSessions.status generatedSessions.actualStartedAt generatedSessions.actualEndedAt generatedSessions.students generatedSessions.substituteCoach")
+    .lean();
+  const me = idOf(user);
+  return classrooms.some((classroom) =>
+    (classroom.generatedSessions || []).some((session: any) => {
+      if (!sessionHoldsPopups(session, now)) return false;
+      const teaches = [classroom.coach, classroom.instructor, session.substituteCoach].some((person) => person && idOf(person) === me);
+      return teaches || rosterForSession(classroom, session).some((student) => idOf(student) === me);
+    })
+  );
 }
 
 async function membershipOf(user: any): Promise<[string[], string[]]> {

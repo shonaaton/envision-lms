@@ -30,6 +30,7 @@ export async function api<T = any>(url: string, init?: RequestInit & { json?: un
 const TABS = [
   { href: "/bowbazar", label: "Overview", need: "view" },
   { href: "/bowbazar/attendance", label: "Attendance", need: "attendance" },
+  { href: "/bowbazar/online", label: "Online classes", need: "attendance" },
   { href: "/bowbazar/slots", label: "Slots", need: "view" },
   { href: "/bowbazar/students", label: "Students", need: "view" },
   { href: "/bowbazar/admissions", label: "Admissions", need: "students" },

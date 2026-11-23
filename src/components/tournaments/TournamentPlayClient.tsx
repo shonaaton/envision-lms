@@ -17,6 +17,7 @@ import { legalTargetsFromGame } from "@/lib/chessboardUi";
 import { GameDialog } from "./game/GameDialog";
 import { GameStatus, type GameStatusKind } from "./game/GameStatus";
 import { PlayerBar } from "./game/PlayerBar";
+import { isRoomOpenStatus, useOnlinePlayers } from "@/lib/tournament/useOnlinePlayers";
 import { SidePanel } from "./game/SidePanel";
 import { useBoardSizing } from "./game/useBoardSizing";
 
@@ -36,6 +37,7 @@ type PlayState = {
   arenaEndsAt?: string | null;
   /** Arena: other players in the room and not paused, who could be paired now. */
   otherPlayersInRoom?: number | null;
+  onlinePlayerKeys?: string[];
   berserkAvailable?: boolean;
   tieBreak?: { key: string; label: string } | null;
   maxRounds?: number | null;
@@ -124,6 +126,7 @@ export function TournamentPlayClient({
   const [hasBoardControl, setHasBoardControl] = useState(true);
   const [dismissedResultFor, setDismissedResultFor] = useState("");
   const [offlineSince, setOfflineSince] = useState<number | null>(null);
+  const { online, onPresence } = useOnlinePlayers(state?.onlinePlayerKeys);
 
   const { columnRef, areaRef, footerRef, size: boardWidth, boardColumnStyle } = useBoardSizing();
 
@@ -347,9 +350,10 @@ export function TournamentPlayClient({
             : current
         );
       },
+      onPresence,
       onResync: () => void refresh(),
     }),
-    [refresh, scheduleRefresh]
+    [refresh, scheduleRefresh, onPresence]
   );
 
   const { connected } = useTournamentSocket({ tournamentId, gameId, handlers });
@@ -770,6 +774,7 @@ export function TournamentPlayClient({
     tieBreak,
     liveGames: state?.liveGames || [],
     tournamentId,
+    online: isRoomOpenStatus(tournamentStatus) ? online : undefined,
   };
 
   return (
@@ -837,6 +842,7 @@ export function TournamentPlayClient({
                 points={standingFor(opponentKey)?.points}
                 onStreak={standingFor(opponentKey)?.onStreak}
                 berserk={opponentIsWhite ? game.berserkWhite : game.berserkBlack}
+                online={gameIsActive && opponentKey ? online.has(String(opponentKey)) : undefined}
               />
 
               {/* Square, absolutely-filled area: measuring it can never feed back

@@ -27,7 +27,7 @@ type Bill = {
   waivedReason: string;
   note: string;
   payments: Payment[];
-  student: { id: string; name: string; phone: string; parentName: string; status: string; slots: { id: string; label: string }[] } | null;
+  student: { id: string; name: string; phone: string; parentName: string; status: string; payUrl?: string; slots: { id: string; label: string }[] } | null;
 };
 type Report = {
   month: string;
@@ -276,6 +276,7 @@ export default function FeesClient({ can }: { can: string[] }) {
                             balance: group.balance,
                             months: group.bills.map((bill) => bill.month),
                             branchLabel: "Bowbazar",
+                            payUrl: group.student.payUrl,
                           })}\n- Envision Chess Academy`
                         )}
                       >

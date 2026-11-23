@@ -12,6 +12,7 @@ import { BOARD_DARK_SQUARE, BOARD_LIGHT_SQUARE, buildBoardSquareStyles, findKing
 import { MoveList } from "./game/MoveList";
 import { PlayerBar } from "./game/PlayerBar";
 import { useBoardSizing } from "./game/useBoardSizing";
+import { useOnlinePlayers } from "@/lib/tournament/useOnlinePlayers";
 
 const Chessboard = dynamic(() => import("react-chessboard").then((m) => m.Chessboard), { ssr: false });
 
@@ -49,6 +50,8 @@ export function TournamentSpectatorBoard({
   const [orientation, setOrientation] = useState<"white" | "black">("white");
   const [clockBaseline, setClockBaseline] = useState<ClockBaseline | null>(() => clockBaselineFromGame(initialGame));
   const [error, setError] = useState("");
+  const [serverOnline, setServerOnline] = useState<string[] | null>(null);
+  const { online, onPresence } = useOnlinePlayers(serverOnline);
 
   const { columnRef, areaRef, size: boardWidth, boardColumnStyle } = useBoardSizing();
   const gameIsActive = game?.status === "active";
@@ -65,6 +68,7 @@ export function TournamentSpectatorBoard({
     const payload = await response.json();
     setGame(payload.game);
     setTournament(payload.tournament);
+    if (Array.isArray(payload.onlinePlayerKeys)) setServerOnline(payload.onlinePlayerKeys);
     setClockBaseline(clockBaselineFromGame({ ...payload.game, serverNow: payload.serverNow }));
     setError("");
   }, [gameId]);
@@ -98,9 +102,10 @@ export function TournamentSpectatorBoard({
         });
       },
       onGameEnded: () => void refresh(),
+      onPresence,
       onResync: () => void refresh(),
     }),
-    [gameId, refresh]
+    [gameId, refresh, onPresence]
   );
 
   const { connected } = useTournamentSocket({ tournamentId, gameId, handlers });
@@ -175,6 +180,7 @@ export function TournamentSpectatorBoard({
               active={gameIsActive && game?.turn === (topIsWhite ? "w" : "b")}
               running={gameIsActive}
               berserk={topIsWhite ? game?.berserkWhite : game?.berserkBlack}
+              online={gameIsActive ? online.has(String(topIsWhite ? game?.whiteKey : game?.blackKey)) : undefined}
             />
 
             <div ref={areaRef} className="relative aspect-square">
@@ -200,6 +206,7 @@ export function TournamentSpectatorBoard({
               active={gameIsActive && game?.turn === (topIsWhite ? "b" : "w")}
               running={gameIsActive}
               berserk={topIsWhite ? game?.berserkBlack : game?.berserkWhite}
+              online={gameIsActive ? online.has(String(topIsWhite ? game?.blackKey : game?.whiteKey)) : undefined}
             />
 
             {!gameIsActive ? (

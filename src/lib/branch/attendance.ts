@@ -6,6 +6,7 @@ import { recordActivity } from "@/lib/activity";
 import { notifyHomeworkAssigned } from "@/lib/homeworkEmail";
 import { cancelHomeworkDeadlineReminders } from "@/lib/homeworkEmailReminders";
 import { escapeRegex } from "@/lib/loginIdentity";
+import { matchTemplateForTopic } from "@/lib/assignmentAutomation";
 import { AssignmentTemplate } from "@/models/AssignmentTemplate";
 import { Homework, Submission } from "@/models/Homework";
 import { BranchAttendance, BranchSlot, BranchStudent } from "@/models/Branch";
@@ -15,6 +16,7 @@ import { moveCountsOn, movesForRegister } from "./changes";
 import { alertAbsences } from "./alerts";
 import { BranchHoliday } from "@/models/Branch";
 import { holidayFor } from "./comms";
+import { getBranchSettings } from "./settings";
 import { courseProgressFor, studentCourse, type StudentCourse } from "./courses";
 import {
   DAY_NAMES,
@@ -368,7 +370,12 @@ export async function saveRegister(branch: BranchKey, slotId: string, date: stri
     entityId: id(slot),
     metadata: { branch, date, ...registerCounts(records) },
   });
-  return getRegister(branch, slotId, date);
+  // A failed auto-share never loses the register: it is saved by now.
+  const autoShare = await autoShareHomework(branch, slot, date, actor).catch((error) => {
+    console.error("Branch homework auto-share failed", error);
+    return null;
+  });
+  return { ...(await getRegister(branch, slotId, date)), autoShare };
 }
 
 // ---------------------------------------------------------------------------
@@ -442,15 +449,39 @@ export async function assignHomework(branch: BranchKey, slotId: string, date: st
   const dueDate = input?.dueDate ? String(input.dueDate) : shiftDateKey(date, 6);
   if (!isDateKey(dueDate)) throw new BranchError("Pick a due date.");
   if (dueDate < todayKey()) throw new BranchError("The due date has already passed.");
-  const dueAt = academyDateTime(dueDate, "23:59");
 
+  await giveHomework(branch, slot, date, register, template, userIds, academyDateTime(dueDate, "23:59"), actor, "branch_register");
+  return getRegister(branch, slotId, date);
+}
+
+/**
+ * Puts students on the register's copy of a template, creating it the first
+ * time. Returns the students newly given it; only they are told.
+ */
+async function giveHomework(
+  branch: BranchKey,
+  slot: any,
+  date: string,
+  register: any,
+  template: any,
+  userIds: string[],
+  dueAt: Date,
+  actor: Actor,
+  source: "branch_register" | "branch_auto_share"
+): Promise<string[]> {
   const key = { branchAttendance: register._id, sourceTemplate: template._id };
   let homework: any = await Homework.findOne(key).lean();
   let newUserIds = userIds;
   if (homework) {
     const already = new Set(((homework.assignedStudents || []) as any[]).map(id));
     newUserIds = userIds.filter((userId) => !already.has(userId));
-    await Homework.updateOne(key, { $addToSet: { assignedStudents: { $each: newUserIds } }, $set: { dueAt } });
+    if (!newUserIds.length && source === "branch_auto_share") return [];
+    // Auto-share adds students without moving a deadline staff may have set.
+    await Homework.updateOne(key, {
+      $addToSet: { assignedStudents: { $each: newUserIds } },
+      ...(source === "branch_register" ? { $set: { dueAt } } : {}),
+    });
+    if (source === "branch_auto_share") dueAt = homework.dueAt || dueAt;
   } else {
     try {
       homework = await Homework.create({
@@ -473,8 +504,9 @@ export async function assignHomework(branch: BranchKey, slotId: string, date: st
         isPublished: true,
       });
     } catch (error: any) {
+      // Two saves at once: the loser adds its students to the winner's copy.
       if (error?.code !== 11000) throw error;
-      return assignHomework(branch, slotId, date, input, actor);
+      return giveHomework(branch, slot, date, register, template, userIds, dueAt, actor, source);
     }
     homework = homework.toObject();
     await BranchAttendance.updateOne({ _id: register._id }, { $addToSet: { homework: homework._id } });
@@ -488,13 +520,97 @@ export async function assignHomework(branch: BranchKey, slotId: string, date: st
     void recordActivity({
       actor: actor.id,
       type: "homework.created",
-      label: `Set homework ${template.title} for ${newUserIds.length} Bowbazar student${newUserIds.length === 1 ? "" : "s"}`,
+      label: `${source === "branch_auto_share" ? "Auto-shared" : "Set"} homework ${template.title} for ${newUserIds.length} Bowbazar student${newUserIds.length === 1 ? "" : "s"}`,
       entityType: "Homework",
       entityId: id(homework),
-      metadata: { branch, slot: id(slot), date, assignedStudents: newUserIds.length, source: "branch_register" },
+      metadata: { branch, slot: id(slot), date, assignedStudents: newUserIds.length, source },
     });
   }
-  return getRegister(branch, slotId, date);
+  return newUserIds;
+}
+
+// ---------------------------------------------------------------------------
+// Homework auto-share
+// ---------------------------------------------------------------------------
+
+export type AutoShareResult = {
+  shared: { title: string; names: string[] }[];
+  missed: { name: string; topic: string; reason: string }[];
+};
+
+/** Registers older than this are corrections, not a recent class: nothing is auto-shared from them. */
+const AUTO_SHARE_DAYS = 6;
+
+/**
+ * Shares homework from a saved register, online and centre classes alike.
+ * Each present or late student gets the academy template for the topic they
+ * were taught, matched to their own course level the way the online
+ * automation matches a classroom. Students on one template share one copy.
+ * A student/template pair is shared once per register: taking a student off
+ * by hand sticks, and re-saving adds only students newly marked present.
+ */
+export async function autoShareHomework(branch: BranchKey, slot: any, date: string, actor: Actor): Promise<AutoShareResult | null> {
+  if (date < shiftDateKey(todayKey(), -AUTO_SHARE_DAYS)) return null;
+  const settings = await getBranchSettings(branch);
+  if (!settings.autoHomework) return null;
+  const register: any = await BranchAttendance.findOne({ slot: slot._id, date }).lean();
+  if (!register) return null;
+
+  const taught = ((register.records || []) as any[]).filter((record) => record.status === "present" || record.status === "late");
+  const result: AutoShareResult = { shared: [], missed: [] };
+  if (!taught.length) return result;
+  const students: any[] = await BranchStudent.find({ _id: { $in: taught.map((record) => record.student) }, branch })
+    .select("name user course courseName courseLevelName")
+    .lean();
+  const studentById = new Map(students.map((student) => [id(student), student]));
+  const done = new Set<string>(register.autoShared || []);
+  const matches = new Map<string, Promise<{ template: any; reason: string }>>();
+  const groups = new Map<string, { template: any; userIds: string[]; names: string[]; pairs: string[] }>();
+
+  for (const record of taught) {
+    const student = studentById.get(id(record.student));
+    const name = student?.name || record.name || "Student";
+    const topic = text(record.topic, 200);
+    if (!topic) {
+      result.missed.push({ name, topic: "", reason: "No topic written, so no homework could be matched." });
+      continue;
+    }
+    const userId = id(record.user || student?.user);
+    if (!userId) {
+      result.missed.push({ name, topic, reason: "Has no login yet." });
+      continue;
+    }
+    const place = {
+      course: student?.course,
+      courseName: student?.courseName || "",
+      levelName: student?.courseLevelName || "",
+    };
+    const cacheKey = [topic.toLowerCase(), id(place.course), place.courseName, place.levelName].join("|");
+    if (!matches.has(cacheKey)) matches.set(cacheKey, matchTemplateForTopic(place, topic));
+    const { template, reason } = await matches.get(cacheKey)!;
+    if (!template) {
+      result.missed.push({ name, topic, reason });
+      continue;
+    }
+    const pair = `${id(record.student)}:${id(template._id)}`;
+    if (done.has(pair)) continue;
+    const group = groups.get(id(template._id)) || { template, userIds: [], names: [], pairs: [] };
+    group.userIds.push(userId);
+    group.names.push(name);
+    group.pairs.push(pair);
+    groups.set(id(template._id), group);
+  }
+
+  let dueDate = shiftDateKey(date, 6);
+  if (dueDate < todayKey()) dueDate = todayKey();
+  const dueAt = academyDateTime(dueDate, "23:59");
+  for (const group of groups.values()) {
+    const added = new Set(await giveHomework(branch, slot, date, register, group.template, group.userIds, dueAt, actor, "branch_auto_share"));
+    await BranchAttendance.updateOne({ _id: register._id }, { $addToSet: { autoShared: { $each: group.pairs } } });
+    const names = group.names.filter((_, index) => added.has(group.userIds[index]));
+    if (names.length) result.shared.push({ title: group.template.title, names });
+  }
+  return result;
 }
 
 /** Takes one student off a piece of branch homework they haven't done; the last one off removes it. */

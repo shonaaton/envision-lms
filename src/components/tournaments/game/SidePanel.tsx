@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useState } from "react";
 import { Crown, Eye } from "lucide-react";
 import { MoveList } from "./MoveList";
+import { OnlineDot } from "../OnlineDot";
 
 type Tab = "moves" | "standings" | "boards";
 
@@ -23,6 +24,7 @@ export function SidePanel({
   liveGames,
   tournamentId,
   stacked,
+  online,
 }: {
   moves: string[];
   standings: any[];
@@ -32,6 +34,8 @@ export function SidePanel({
   tournamentId: string;
   /** Desktop shows every section at once; narrow screens use the tab strip. */
   stacked: boolean;
+  /** Who is in the room; left out, standings show no dots. */
+  online?: Set<string>;
 }) {
   const [tab, setTab] = useState<Tab>("moves");
 
@@ -53,6 +57,7 @@ export function SidePanel({
               <span className="w-6 shrink-0 text-right text-xs font-bold tabular-nums text-slate-400">
                 {index === 0 ? <Crown size={13} className="ml-auto text-accent-500" aria-label="Leader" /> : index + 1}
               </span>
+              {online ? <OnlineDot online={online.has(entry.playerKey)} /> : null}
               <span className="min-w-0 flex-1 truncate font-medium text-slate-800">{entry.displayName}</span>
               <span className="shrink-0 font-semibold tabular-nums text-slate-900">{entry.points}</span>
               {tieBreak && entry[tieBreak.key] !== undefined ? (

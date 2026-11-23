@@ -7,6 +7,7 @@ import { cookies } from "next/headers";
 import { getTournamentGuestUsername } from "@/lib/tournamentGuests";
 import { inactiveStudentMessage, isCurrentStudent } from "@/lib/studentAccess";
 import { redactGameForViewer, redactTournamentForPlayer } from "@/lib/tournament/redact";
+import { isPlayerPresent } from "@/lib/tournament/presence";
 
 export const dynamic = "force-dynamic";
 
@@ -50,6 +51,10 @@ export async function GET(_: Request, { params }: { params: { gameId: string } }
   return NextResponse.json({
     game: redactGameForViewer(game, canManage),
     tournament: redactTournamentForPlayer(tournament, canManage),
+    // The two players' online dots; socket presence events keep them current.
+    onlinePlayerKeys: [game.whiteKey, game.blackKey].filter(
+      (key: any) => key && isPlayerPresent(String(tournament._id), String(key))
+    ),
     serverNow: Date.now(),
   });
 }

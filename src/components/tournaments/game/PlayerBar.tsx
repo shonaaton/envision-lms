@@ -2,6 +2,7 @@
 
 import { Flame, Zap } from "lucide-react";
 import { GameClock } from "./GameClock";
+import { OnlineDot } from "../OnlineDot";
 
 function initials(name: string) {
   const parts = String(name || "?").trim().split(/\s+/).slice(0, 2);
@@ -26,6 +27,7 @@ export function PlayerBar({
   onStreak,
   berserk,
   isYou,
+  online,
   compact = false,
 }: {
   name: string;
@@ -38,6 +40,8 @@ export function PlayerBar({
   onStreak?: boolean;
   berserk?: boolean;
   isYou?: boolean;
+  /** Whether this player is in the room. Left out, no dot is drawn. */
+  online?: boolean;
   compact?: boolean;
 }) {
   return (
@@ -47,15 +51,20 @@ export function PlayerBar({
         active ? "border-brand/25 bg-brand-50/60" : "border-slate-200/80 bg-white/90",
       ].join(" ")}
     >
-      <div
-        aria-hidden
-        className={[
-          "grid shrink-0 place-items-center rounded-full text-xs font-bold",
-          compact ? "h-8 w-8" : "h-10 w-10",
-          isYou ? "bg-brand text-white" : "bg-slate-100 text-slate-600",
-        ].join(" ")}
-      >
-        {initials(name)}
+      <div className="relative shrink-0">
+        <div
+          aria-hidden
+          className={[
+            "grid place-items-center rounded-full text-xs font-bold",
+            compact ? "h-8 w-8" : "h-10 w-10",
+            isYou ? "bg-brand text-white" : "bg-slate-100 text-slate-600",
+          ].join(" ")}
+        >
+          {initials(name)}
+        </div>
+        {online !== undefined ? (
+          <OnlineDot online={online} className="absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 ring-2 ring-white" />
+        ) : null}
       </div>
 
       <div className="min-w-0 flex-1">

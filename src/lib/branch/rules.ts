@@ -167,8 +167,10 @@ export function timeLabel(time: string) {
   return minutes ? `${hour12}:${String(minutes).padStart(2, "0")}${suffix}` : `${hour12}${suffix}`;
 }
 
-export function slotLabel(slot: { dayOfWeek: number; startTime: string; endTime: string }) {
-  return `${DAY_NAMES[slot.dayOfWeek].slice(0, 3)} ${timeLabel(slot.startTime)}–${timeLabel(slot.endTime)}`;
+/** "Tue 5pm–6pm"; an online class with a name is "Upasana · Tue 5pm–6pm", since several may share a time. */
+export function slotLabel(slot: { dayOfWeek: number; startTime: string; endTime: string; name?: string | null }) {
+  const time = `${DAY_NAMES[slot.dayOfWeek].slice(0, 3)} ${timeLabel(slot.startTime)}–${timeLabel(slot.endTime)}`;
+  return slot.name ? `${slot.name} · ${time}` : time;
 }
 
 export function isTime(value: unknown): value is string {
@@ -334,10 +336,13 @@ export function rupeesInWords(paise: number) {
 }
 
 /** The fee reminder families get, by email or pasted into WhatsApp. */
-export function reminderText(input: { studentName: string; balance: number; months: string[]; branchLabel: string }) {
+export function reminderText(input: { studentName: string; balance: number; months: string[]; branchLabel: string; payUrl?: string }) {
   const amount = `₹${Math.round((input.balance || 0) / 100).toLocaleString("en-IN")}`;
   const months = [...input.months].sort().map(monthLabel).join(", ");
-  return `${input.studentName}'s chess class fees of ${amount} are due (${months}). Please pay at the ${input.branchLabel} centre by cash or UPI. If you have already paid, please ignore this message.`;
+  const how = input.payUrl
+    ? `Pay by UPI here (any UPI app, the amount is filled in): ${input.payUrl} - or at the ${input.branchLabel} centre by cash.`
+    : `Please pay at the ${input.branchLabel} centre by cash or UPI.`;
+  return `${input.studentName}'s chess class fees of ${amount} are due (${months}). ${how} If you have already paid, please ignore this message.`;
 }
 
 // ---------------------------------------------------------------------------

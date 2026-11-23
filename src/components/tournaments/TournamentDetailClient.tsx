@@ -24,6 +24,8 @@ import { useNow } from "@/lib/useLiveClock";
 import { formatAcademyDateTime } from "@/lib/academyTime";
 import { useViewerTimeZone, zoneAbbreviation } from "@/lib/viewerTime";
 import { TournamentAdminPanel } from "./TournamentAdminPanel";
+import { OnlineDot } from "./OnlineDot";
+import { isRoomOpenStatus, useOnlinePlayers } from "@/lib/tournament/useOnlinePlayers";
 import { TournamentRules } from "./TournamentRules";
 import { tournamentRuleSections, type RuleSection } from "@/lib/tournament/rules";
 import { lateEntryOpen } from "@/lib/tournament/lichessRules";
@@ -90,6 +92,7 @@ export function TournamentDetailClient({
 }) {
   const router = useRouter();
   const [state, setState] = useState<DetailState>(initialState);
+  const { online, onPresence } = useOnlinePlayers((state as any)?.onlinePlayerKeys);
   const [error, setError] = useState("");
   const [chatMessage, setChatMessage] = useState("");
   const [registerOpen, setRegisterOpen] = useState(false);
@@ -153,15 +156,17 @@ export function TournamentDetailClient({
       onRoundCompleted: () => void refresh(),
       onTournamentStatus: () => void refresh(),
       onTournamentEnded: () => void refresh(),
+      onPresence,
       onResync: () => void refresh(),
     }),
-    [refresh, refreshSoon]
+    [refresh, refreshSoon, onPresence]
   );
   const { connected } = useTournamentSocket({ tournamentId, handlers });
 
   /* Without the live connection a pairing event never arrives, and a player
      waiting here would sit out their board until the first-move clock beat
      them. Poll instead, as the play room does. */
+  const showOnline = isRoomOpenStatus(state.tournament?.status);
   const lobbyLive = ["live", "playing"].includes(String(state.tournament?.status || "")) && Boolean(state.joined);
   useEffect(() => {
     if (connected || !lobbyLive) return;
@@ -455,6 +460,7 @@ export function TournamentDetailClient({
                           {index === 0 ? <Crown size={13} className="text-accent-500" aria-label="Leader" /> : index + 1}
                         </td>
                         <td className="max-w-0 truncate px-1 py-2 font-medium text-slate-800">
+                          {showOnline ? <OnlineDot online={online.has(entry.playerKey)} className="mr-1.5 align-middle" /> : null}
                           {entry.displayName}
                           {entry.onStreak ? <span className="ml-1.5 text-[11px] font-bold text-orange-600">2x</span> : null}
                         </td>
@@ -615,6 +621,7 @@ export function TournamentDetailClient({
           tournament={tournament}
           games={state.games || []}
           standings={standings}
+          online={showOnline ? online : undefined}
           pending={pending}
           onAction={runAction}
           onPatch={patchTournament}

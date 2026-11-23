@@ -17,6 +17,7 @@ import {
   UserMinus,
 } from "lucide-react";
 import { GameDialog } from "./game/GameDialog";
+import { OnlineDot } from "./OnlineDot";
 
 /**
  * Everything an arbiter can do, in one place.
@@ -44,6 +45,7 @@ export function TournamentAdminPanel({
   tournament,
   games,
   standings,
+  online,
   pending,
   onAction,
   onPatch,
@@ -54,6 +56,8 @@ export function TournamentAdminPanel({
   tournament: any;
   games: any[];
   standings: any[];
+  /** Who is in the room while it is open; left out, no dots. */
+  online?: Set<string>;
   pending: boolean;
   onAction: (path: string, body?: any) => Promise<void>;
   onPatch: (body: any) => Promise<boolean>;
@@ -330,6 +334,7 @@ export function TournamentAdminPanel({
               <ol className="max-h-64 divide-y divide-slate-100 overflow-y-auto border-t border-slate-100">
                 {standings.map((entry: any) => (
                   <li key={entry.playerKey} className="flex items-center gap-2 px-3 py-2 text-sm">
+                    {online ? <OnlineDot online={online.has(entry.playerKey)} /> : null}
                     <span className="min-w-0 flex-1 truncate text-slate-700">{entry.displayName}</span>
                     <span className="shrink-0 tabular-nums text-slate-500">{entry.points} pts</span>
                     <button

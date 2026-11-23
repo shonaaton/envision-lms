@@ -20,6 +20,7 @@ export type BranchSettingsView = {
   receiptPrefix: string;
   parentReportEnabled: boolean;
   absenceAlertAfter: number;
+  autoHomework: boolean;
 };
 
 export const DEFAULT_BRANCH_SETTINGS: BranchSettingsView = {
@@ -33,6 +34,7 @@ export const DEFAULT_BRANCH_SETTINGS: BranchSettingsView = {
   receiptPrefix: "BB",
   parentReportEnabled: false,
   absenceAlertAfter: 3,
+  autoHomework: true,
 };
 
 export async function getBranchSettings(branch: BranchKey): Promise<BranchSettingsView> {
@@ -54,6 +56,7 @@ export async function getBranchSettings(branch: BranchKey): Promise<BranchSettin
     receiptPrefix: doc.receiptPrefix || "BB",
     parentReportEnabled: Boolean(doc.parentReportEnabled),
     absenceAlertAfter: doc.absenceAlertAfter ?? 3,
+    autoHomework: doc.autoHomework !== false,
   };
 }
 
@@ -95,6 +98,7 @@ export async function saveBranchSettings(branch: BranchKey, input: any, actorId:
         receiptPrefix,
         parentReportEnabled: Boolean(input?.parentReportEnabled),
         absenceAlertAfter: whole(input?.absenceAlertAfter ?? 3, 2, 10, "The absence alert"),
+        autoHomework: input?.autoHomework !== false,
         updatedBy: actorId,
       },
     },

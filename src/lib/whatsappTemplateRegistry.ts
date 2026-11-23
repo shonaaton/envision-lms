@@ -2569,6 +2569,19 @@ export const WHATSAPP_TEMPLATE_DEFINITIONS = [
     ]
   },
   {
+    "name": "bowbazar_fee_reminder_pay",
+    "language": "en",
+    "sourceAutomation": "Bowbazar Fee Reminder",
+    "body": "Hello {{1}}, this is a reminder from the Envision Chess Academy Bowbazar centre. The chess class fees for {{2}} are due: {{3}} for {{4}}.\n\nPay by UPI here, the amount is filled in: {{5}}\nYou can also pay at the centre by cash. If you have already paid, please ignore this message.\n\nTeam Envision Chess Academy",
+    "variables": [
+      { "position": 1, "key": "parent_name", "sample": "Mrs Sen" },
+      { "position": 2, "key": "student_name", "sample": "Aarav" },
+      { "position": 3, "key": "amount", "sample": "₹1,000" },
+      { "position": 4, "key": "months", "sample": "November 2026" },
+      { "position": 5, "key": "pay_link", "sample": "https://envisionchessacademy.com/pay/bowbazar/6b04b2fa6fe594ea828fc07a/AbCdEf123" }
+    ]
+  },
+  {
     "name": "bowbazar_welcome_login",
     "language": "en",
     "sourceAutomation": "Bowbazar Welcome + Set Password",

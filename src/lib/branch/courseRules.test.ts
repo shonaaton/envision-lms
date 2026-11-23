@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { countTopics, levelProgress, shapeCourse, topicKey } from "@/lib/branch/courseRules";
+import { countTopics, levelProgress, shapeCourse, topicKey, topicsUpTo } from "@/lib/branch/courseRules";
 
 const level = {
   id: "l1",
@@ -54,5 +54,24 @@ describe("branch course progress", () => {
     expect(course.levels.map((item) => item.name)).toEqual(["Level 1", "Level 2"]);
     expect(course.levels[0].topics.map((item) => item.name)).toEqual(["Second", "First", "Last"]);
     expect(course.levels[0].topics[2].sessionCount).toBe(1);
+  });
+});
+
+describe("hand-marked topics", () => {
+  const level = { id: "L1", name: "Level 1", topics: [
+    { id: "t1", name: "Board", sessionCount: 1 },
+    { id: "t2", name: "Pawns", sessionCount: 2 },
+    { id: "t3", name: "Knights", sessionCount: 1 },
+  ] };
+
+  it("counts a marked topic as done, beside the register ones", () => {
+    const progress = levelProgress(level, countTopics([{ topic: "board" }]), new Set(["t2"]));
+    expect(progress.topics.map((topic) => [topic.id, topic.done, topic.marked])).toEqual([["t1", true, false], ["t2", true, true], ["t3", false, false]]);
+    expect(progress).toMatchObject({ done: 2, next: "Knights", complete: false });
+  });
+
+  it("lists every topic up to and including the one picked", () => {
+    expect(topicsUpTo(level, "t2")).toEqual(["t1", "t2"]);
+    expect(topicsUpTo(level, "nope")).toEqual([]);
   });
 });

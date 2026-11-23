@@ -10,7 +10,8 @@
 export type CourseTopic = { id: string; name: string; sessionCount: number };
 export type CourseLevel = { id: string; name: string; topics: CourseTopic[] };
 
-export type TopicProgress = CourseTopic & { taught: number; done: boolean };
+/** `marked`: done because staff ticked it (learnt before the registers), not from classes taught. */
+export type TopicProgress = CourseTopic & { taught: number; done: boolean; marked: boolean };
 
 export type LevelProgress = {
   topics: TopicProgress[];
@@ -34,11 +35,13 @@ export function countTopics(lines: { topic: string; count?: number }[]) {
   return counts;
 }
 
-export function levelProgress(level: CourseLevel | null | undefined, taught: Map<string, number>): LevelProgress {
+export function levelProgress(level: CourseLevel | null | undefined, taught: Map<string, number>, markedDone: ReadonlySet<string> = new Set()): LevelProgress {
   const topics = (level?.topics || []).map((topic) => {
     const sessionCount = Math.max(1, Number(topic.sessionCount) || 1);
     const count = taught.get(topicKey(topic.name)) || 0;
-    return { ...topic, sessionCount, taught: count, done: count >= sessionCount };
+    const fromClasses = count >= sessionCount;
+    const marked = !fromClasses && markedDone.has(topic.id);
+    return { ...topic, sessionCount, taught: count, done: fromClasses || marked, marked };
   });
   const done = topics.filter((topic) => topic.done).length;
   return {
@@ -48,6 +51,12 @@ export function levelProgress(level: CourseLevel | null | undefined, taught: Map
     next: topics.find((topic) => !topic.done)?.name || "",
     complete: topics.length > 0 && done === topics.length,
   };
+}
+
+/** Topic ids of `level` from its start up to and including `topicId`: "done up to here". */
+export function topicsUpTo(level: CourseLevel, topicId: string) {
+  const index = level.topics.findIndex((topic) => topic.id === topicId);
+  return index < 0 ? [] : level.topics.slice(0, index + 1).map((topic) => topic.id);
 }
 
 type RawCourse = { _id?: unknown; name?: string; level?: string; levels?: any[] };

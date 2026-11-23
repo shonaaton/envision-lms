@@ -67,6 +67,8 @@ export const authConfig = {
         // The UPI pay page for a non-GST invoice, opened from a reminder by a
         // parent who is not signed in. The page checks the link's signature.
         nextUrl.pathname.startsWith("/pay/upi/") ||
+        // The Bowbazar fee QR page, linked from the branch fee reminder. Same check.
+        nextUrl.pathname.startsWith("/pay/bowbazar/") ||
         nextUrl.pathname.startsWith("/api/register") ||
         // The campaign page's free demo form and its WhatsApp code check.
         nextUrl.pathname.startsWith("/book-free-demo-class") ||

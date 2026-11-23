@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { BookOpenCheck, CalendarDays, NotebookPen, Repeat, Trophy, Video } from "lucide-react";
 import { ClassLogList, HomeworkLogList } from "@/components/bowbazar/ClassLog";
 import { CourseProgress } from "@/components/bowbazar/CourseProgress";
+import { UpiPayBox, branchUpiNote } from "@/components/bowbazar/UpiPayBox";
 import { auth } from "@/lib/auth";
 import { myClassLog } from "@/lib/branch/attendance";
 import { describeChange } from "@/lib/branch/changes";
@@ -275,7 +276,15 @@ export default async function BowbazarMyClassPage() {
             </div>
           ))}
         </div>
-        <p className="border-t border-slate-100 px-5 py-3 text-xs text-slate-500">Pay at the centre by cash or UPI; the centre marks it paid here.</p>
+        {view.pending > 0 && (
+          <div className="border-t border-slate-100 px-5 py-4">
+            <h3 className="mb-3 text-sm font-black text-slate-950">Pay {formatINR(view.pending)} by UPI</h3>
+            <UpiPayBox amount={view.pending} note={branchUpiNote(view.name, view.regNo)} compact />
+          </div>
+        )}
+        <p className="border-t border-slate-100 px-5 py-3 text-xs text-slate-500">
+          Pay by UPI above, or at the centre by cash. The centre marks it paid here, usually within a day.
+        </p>
       </section>
     </div>
   );

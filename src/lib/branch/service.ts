@@ -29,7 +29,9 @@ import { getBranchSettings } from "./settings";
 import { absentStreaks, alertFreedSeats } from "./alerts";
 import { nextReceiptNumber } from "./receipts";
 import { ensureBranchBills } from "./bills";
+import { branchPayPageUrl } from "./payLink";
 import { checkCourseInput, courseProgressFor, setStudentsCourse } from "./courses";
+import { ensureBranchSlotIndexes } from "./onlineClasses";
 
 export { ensureBranchBills };
 
@@ -65,6 +67,7 @@ async function slotOccupancy(branch: BranchKey) {
 function serializeSlot(slot: any, seated: { id: string; name: string }[] = []) {
   return {
     id: id(slot),
+    name: slot.name || "",
     dayOfWeek: slot.dayOfWeek,
     startTime: slot.startTime,
     endTime: slot.endTime,
@@ -93,6 +96,7 @@ export async function listSlots(branch: BranchKey, { includeInactive = true } = 
 
 export async function saveSlot(branch: BranchKey, input: any, slotId?: string) {
   await dbConnect();
+  await ensureBranchSlotIndexes();
   const dayOfWeek = Number(input?.dayOfWeek);
   if (!Number.isInteger(dayOfWeek) || dayOfWeek < 0 || dayOfWeek > 6) throw new BranchError("Choose a day.");
   if (!isTime(input?.startTime) || !isTime(input?.endTime)) throw new BranchError("Enter start and end times.");
@@ -130,7 +134,7 @@ export async function seedDefaultSlots(branch: BranchKey) {
   const result = await BranchSlot.bulkWrite(
     DEFAULT_SLOTS.map((slot) => ({
       updateOne: {
-        filter: { branch, dayOfWeek: slot.dayOfWeek, startTime: slot.startTime },
+        filter: { branch, dayOfWeek: slot.dayOfWeek, startTime: slot.startTime, mode: slot.mode },
         update: { $setOnInsert: { branch, ...slot, capacity: 7, isActive: true } },
         upsert: true,
       },
@@ -141,7 +145,7 @@ export async function seedDefaultSlots(branch: BranchKey) {
 }
 
 function duplicateSlot(error: any): never {
-  if (error?.code === 11000) throw new BranchError("There is already a slot on that day at that time.", 409);
+  if (error?.code === 11000) throw new BranchError("There is already a centre slot on that day at that time. Online classes can share a time: make them on Online Classes.", 409);
   throw error;
 }
 
@@ -480,6 +484,8 @@ function serializeBill(bill: any, student?: any, slotById?: Map<string, any>) {
           phone: student.phone || "",
           parentName: student.parentName || "",
           status: student.status,
+          // The UPI pay page the staff "Remind" message links to.
+          payUrl: branchPayPageUrl(id(student)),
           slots: (student.slots || [])
             .map((slot: any) => slotById?.get(id(slot)))
             .filter(Boolean)
@@ -848,6 +854,7 @@ export async function myBranchView(userId: string) {
   const rows = (bills as any[]).map((bill) => serializeBill(bill));
   return {
     name: student.name,
+    regNo: student.regNo || "",
     branch: student.branch as BranchKey,
     status: student.status,
     monthlyFee: student.monthlyFee || 0,

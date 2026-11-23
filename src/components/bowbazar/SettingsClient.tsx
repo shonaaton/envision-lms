@@ -17,6 +17,7 @@ type Settings = {
   receiptPrefix: string;
   parentReportEnabled: boolean;
   absenceAlertAfter: number;
+  autoHomework: boolean;
 };
 
 const rupeesText = (paise: number) => (paise ? String(paise / 100) : "0");
@@ -193,6 +194,13 @@ export default function SettingsClient({ can }: { can: string[] }) {
           <button type="button" className="btn-outline h-9 px-3 text-sm" disabled={sending !== ""} onClick={() => void sendNow("reports")}>
             {sending === "reports" ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />} Send last month&apos;s reports now
           </button>
+        </Section>
+
+        <Section
+          title="Homework auto-share"
+          hint="When a register is saved (by hand, or by ending an online class), each present student gets the homework template for the topic they were taught, matched to their course level. Templates with auto-share switched off are skipped."
+        >
+          <Toggle checked={form.autoHomework} onChange={(value) => set({ autoHomework: value })} label="Share homework automatically after every class" />
         </Section>
 
         <Section title="Absence alerts" hint="You and the manager get a notification when a student misses this many classes in a row.">

@@ -7,6 +7,7 @@ import { Notification } from "@/models/Fee";
 import { User } from "@/models/User";
 import { BranchFeeBill, BranchReminderLog, BranchStudent } from "@/models/Branch";
 import { ensureBranchBills } from "./bills";
+import { branchPayPageUrl } from "./payLink";
 import { BRANCHES, BRANCH_LABELS, type BranchKey } from "./scope";
 import { getBranchSettings } from "./settings";
 import { billBalance, lateFeeApplies, monthKey, monthLabel, reminderText } from "./rules";
@@ -83,10 +84,13 @@ export async function sendFeeReminders(branch: BranchKey, { manual = false, requ
       throw error;
     }
     const user: any = await User.findById(student.user).select("name email phone countryCode").lean();
-    const message = reminderText({ studentName: student.name, balance: due.balance, months: due.months, branchLabel });
+    const payUrl = branchPayPageUrl(id(student), request);
+    const message = reminderText({ studentName: student.name, balance: due.balance, months: due.months, branchLabel, payUrl });
     const channels: string[] = [];
     if (user) {
-      await Notification.create({ user: user._id, type: "branch_fee_reminder", title: "Fees due", message, metadata: { href: "/bowbazar/me" } });
+      // In the portal the QR is on their own page, so the notice opens that.
+      const portalMessage = `${reminderText({ studentName: student.name, balance: due.balance, months: due.months, branchLabel })} You can also pay by UPI: the QR is under Fees on your page.`;
+      await Notification.create({ user: user._id, type: "branch_fee_reminder", title: "Fees due", message: portalMessage, metadata: { href: "/bowbazar/me" } });
       channels.push("portal");
       if (user.email && !/\.invalid$/i.test(user.email)) {
         const email = await sendAutomationEmail({
@@ -97,12 +101,25 @@ export async function sendFeeReminders(branch: BranchKey, { manual = false, requ
         }).catch(() => null);
         if (email?.delivered) channels.push("email");
       }
-      const whatsapp = await sendWhatsAppAutomationTemplate({
-        user,
-        templateName: "bowbazar_fee_reminder",
-        bodyParameters: [student.parentName || "Parent", student.name, rupees(due.balance), due.months.sort().map(monthLabel).join(", ")],
-        metadata: { kind: "branch_fee_reminder", studentId: id(student), dedupKey: `branch-fee-reminder:${id(student)}:${today}` },
-      }).catch(() => null);
+      const params = [student.parentName || "Parent", student.name, rupees(due.balance), due.months.sort().map(monthLabel).join(", ")];
+      // The version with the UPI pay link first; until Meta approves it, the
+      // approved one without the link (pay at the centre) still goes out.
+      let whatsapp = payUrl
+        ? await sendWhatsAppAutomationTemplate({
+            user,
+            templateName: "bowbazar_fee_reminder_pay",
+            bodyParameters: [...params, payUrl],
+            metadata: { kind: "branch_fee_reminder", studentId: id(student), dedupKey: `branch-fee-reminder-pay:${id(student)}:${today}` },
+          }).catch(() => null)
+        : null;
+      if (!whatsapp?.delivered) {
+        whatsapp = await sendWhatsAppAutomationTemplate({
+          user,
+          templateName: "bowbazar_fee_reminder",
+          bodyParameters: params,
+          metadata: { kind: "branch_fee_reminder", studentId: id(student), dedupKey: `branch-fee-reminder:${id(student)}:${today}` },
+        }).catch(() => null);
+      }
       if (whatsapp?.delivered) channels.push("whatsapp");
     }
     await BranchReminderLog.updateOne({ student: student._id, date: today }, { $set: { channels } });

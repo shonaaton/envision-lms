@@ -66,6 +66,7 @@ import {
   MonitorCheck,
   FileSpreadsheet,
   Globe2,
+  Video,
 } from "lucide-react";
 import Logo from "./Logo";
 import { cn } from "@/lib/utils";
@@ -352,6 +353,7 @@ function branchSections(role: Role, branchCan: string[]): NavSection[] {
   const staffItems: (NavItem & { need: string })[] = [
     { href: "/bowbazar", label: "Overview", icon: LayoutDashboard, need: "view" },
     { href: "/bowbazar/attendance", label: "Attendance", icon: ClipboardCheck, need: "attendance" },
+    { href: "/bowbazar/online", label: "Online Classes", icon: Video, need: "attendance" },
     { href: "/bowbazar/slots", label: "Slots", icon: CalendarDays, need: "view" },
     { href: "/bowbazar/students", label: "Students", icon: Users, need: "view" },
     { href: "/bowbazar/admissions", label: "Admissions", icon: UserPlus, need: "students" },

@@ -9,7 +9,7 @@ import { getTournamentGuestSessionFromCookieHeader } from "@/lib/tournamentGuest
 import { TournamentGame } from "@/models/TournamentGame";
 import { registerTournamentSocketServer, tournamentGameRoomName, tournamentRoomName } from "@/lib/tournamentSocketServer";
 import { pruneExpiredEntries } from "@/lib/requestSecurity";
-import { playerSocketClosed, playerSocketOpened } from "@/lib/tournament/presence";
+import { playerSocketClosed, playerSocketOpened, setPresenceNotifier } from "@/lib/tournament/presence";
 import { memberCanPlayTournaments } from "@/lib/tournament/studentAccess";
 
 type SocketServerWithIO = NextApiResponse["socket"] & {
@@ -261,6 +261,11 @@ export default function handler(_: NextApiRequest, res: NextApiResponse) {
 
     socket.server.io = io;
     registerTournamentSocketServer(io);
+    // Who is online: one small event per arrival or departure, to the whole
+    // room, so player bars and standings can show a dot without polling.
+    setPresenceNotifier((tournamentId, playerKey, online) => {
+      io.to(tournamentRoomName(tournamentId)).emit("tournament:presence", { playerKey, online });
+    });
   }
 
   res.status(200).json({ ok: true });

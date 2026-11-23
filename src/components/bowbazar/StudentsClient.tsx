@@ -10,7 +10,8 @@ import { BranchHeader, CredentialsNote, Drawer, Field, ModeBadge, SlotPicker, ap
 import type { Slot } from "./SlotsClient";
 import { ClassLogList, HomeworkLogList, type ClassLogEntry, type ClassLogHomework } from "./ClassLog";
 import { CourseProgress, type CourseProgressData } from "./CourseProgress";
-import type { BranchCourse } from "@/lib/branch/courseRules";
+
+import { topicsUpTo, type BranchCourse } from "@/lib/branch/courseRules";
 
 type Student = {
   id: string;
@@ -445,7 +446,7 @@ export default function StudentsClient({ can }: { can: string[] }) {
         />
       )}
       {leaving && <LeaveDrawer student={leaving} onClose={() => setLeaving(null)} onDone={() => { setLeaving(null); void load(); }} />}
-      {history && <HistoryDrawer student={history} onClose={() => setHistory(null)} />}
+      {history && <HistoryDrawer student={history} canEdit={canEdit} onClose={() => setHistory(null)} onChanged={() => void load()} />}
     </div>
   );
 }
@@ -458,13 +459,29 @@ type StudentHistory = {
   lastMonth: { attended: number; marked: number };
 };
 
-function HistoryDrawer({ student, onClose }: { student: Student; onClose: () => void }) {
+function HistoryDrawer({ student, canEdit, onClose, onChanged }: { student: Student; canEdit: boolean; onClose: () => void; onChanged: () => void }) {
   const [data, setData] = useState<StudentHistory | null>(null);
-  useEffect(() => {
+  const [marking, setMarking] = useState(false);
+  const loadHistory = useCallback(() => {
     api<StudentHistory>(`/api/bowbazar/students/${student.id}/history`)
       .then(setData)
       .catch((error) => toast.error(error.message));
   }, [student.id]);
+  useEffect(loadHistory, [loadHistory]);
+
+  async function mark(change: { done?: string[]; undone?: string[]; replace?: boolean }) {
+    if (!data?.course?.levelId) return;
+    setMarking(true);
+    try {
+      await api("/api/bowbazar/courses/progress", { method: "POST", json: { studentIds: [student.id], levelId: data.course.levelId, ...change } });
+      loadHistory();
+      onChanged();
+    } catch (error: any) {
+      toast.error(error.message);
+    } finally {
+      setMarking(false);
+    }
+  }
   return (
     <Drawer title={student.name} onClose={onClose}>
       {!data ? (
@@ -483,7 +500,11 @@ function HistoryDrawer({ student, onClose }: { student: Student; onClose: () => 
           </div>
           <section>
             <h3 className="mb-2 text-sm font-black text-slate-950">Course</h3>
-            {data.course ? <CourseProgress course={data.course} /> : <p className="text-sm text-slate-500">Not on a course yet. Set one with Edit.</p>}
+            {data.course ? (
+              <CourseProgress course={data.course} busy={marking} onMark={canEdit ? (change) => void mark(change) : undefined} />
+            ) : (
+              <p className="text-sm text-slate-500">Not on a course yet. Set one with Edit.</p>
+            )}
           </section>
           <section>
             <h3 className="mb-1 text-sm font-black text-slate-950">Portal homework</h3>
@@ -794,15 +815,23 @@ function BulkCourseBar({
 }) {
   const [courseId, setCourseId] = useState("");
   const [levelId, setLevelId] = useState("");
+  const [upTo, setUpTo] = useState("");
   const [saving, setSaving] = useState(false);
   const allPicked = picked.length > 0 && picked.length === shown.length;
+  const level = courses.find((item) => item.id === courseId)?.levels.find((item) => item.id === levelId);
 
   async function apply() {
     setSaving(true);
     try {
-      await api("/api/bowbazar/students/course", { method: "POST", json: { studentIds: picked.map((student) => student.id), courseId, levelId } });
+      const studentIds = picked.map((student) => student.id);
+      await api("/api/bowbazar/students/course", { method: "POST", json: { studentIds, courseId, levelId } });
+      // Where the group already is in the syllabus: every topic up to the chosen one counts as learnt.
+      if (level && upTo) {
+        await api("/api/bowbazar/courses/progress", { method: "POST", json: { studentIds, levelId, done: topicsUpTo(level, upTo), replace: true } });
+      }
       const course = courses.find((item) => item.id === courseId);
-      toast.success(course ? `${picked.length} put on ${course.name}.` : `${picked.length} taken off their course.`);
+      const reached = level?.topics.find((topic) => topic.id === upTo)?.name;
+      toast.success(course ? `${picked.length} put on ${course.name}${reached ? `, done up to "${reached}"` : ""}.` : `${picked.length} taken off their course.`);
       onDone();
     } catch (error: any) {
       toast.error(error.message);
@@ -827,8 +856,19 @@ function BulkCourseBar({
               onChange={(nextCourse, nextLevel) => {
                 setCourseId(nextCourse);
                 setLevelId(nextLevel);
+                setUpTo("");
               }}
             />
+            {level && level.topics.length > 0 && (
+              <Field label="Already done up to" hint="Topics learnt before the portal. Later classes tick the rest by themselves.">
+                <select className="input" value={upTo} onChange={(event) => setUpTo(event.target.value)}>
+                  <option value="">Nothing yet / leave as it is</option>
+                  {level.topics.map((topic, index) => (
+                    <option key={topic.id} value={topic.id}>{index + 1}. {topic.name}</option>
+                  ))}
+                </select>
+              </Field>
+            )}
           </div>
           <button type="button" className="btn-primary h-10 shrink-0" onClick={apply} disabled={saving}>
             {saving && <Loader2 size={16} className="animate-spin" />} {courseId ? "Set course" : "Remove course"}

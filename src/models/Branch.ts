@@ -8,10 +8,16 @@ import { BRANCHES } from "@/lib/branch/scope";
  * lib/branch/scope.ts for how the online app is kept from seeing them.
  */
 
-/** A weekly class time at the centre. A slot is either online or offline, never mixed. */
+/**
+ * A weekly class time. A slot is either online or offline, never mixed. Online
+ * slots are the branch's online classes (Online Classes screen): they carry a
+ * name and a coach, and several may run at the same time.
+ */
 const BranchSlotSchema = new Schema(
   {
     branch: { type: String, enum: [...BRANCHES], required: true, index: true },
+    name: String, // online classes: "Upasana's class"; centre slots go by their time
+    coach: { type: Schema.Types.ObjectId, ref: "User" }, // online classes: who teaches it
     // 0 = Sunday ... 6 = Saturday, like Date#getDay.
     dayOfWeek: { type: Number, min: 0, max: 6, required: true },
     startTime: { type: String, required: true }, // "17:00", IST
@@ -23,7 +29,13 @@ const BranchSlotSchema = new Schema(
   },
   { timestamps: true }
 );
-BranchSlotSchema.index({ branch: 1, dayOfWeek: 1, startTime: 1 }, { unique: true });
+// One centre slot per day and time; online classes may share a time.
+BranchSlotSchema.index(
+  { branch: 1, dayOfWeek: 1, startTime: 1 },
+  { unique: true, name: "offline_slot_time_unique", partialFilterExpression: { mode: "offline" } }
+);
+/** The index before online classes could share a time; dropped by ensureBranchSlotIndexes. */
+export const OLD_SLOT_TIME_INDEX = "branch_1_dayOfWeek_1_startTime_1";
 
 /**
  * The branch's record of one student: the family details the admission form
@@ -76,6 +88,18 @@ const BranchStudentSchema = new Schema(
     courseLevel: Schema.Types.ObjectId, // the level's _id inside the course
     courseLevelName: String,
     courseLevelSince: Date,
+    // Topics staff marked done by hand: what a child learnt before the portal's
+    // registers began. Counted as done beside the topics the registers show.
+    topicsMarkedDone: [
+      {
+        _id: false,
+        level: String, // the course level's id
+        topic: String, // the topic's id
+        name: String, // snapshot, so the record still reads if the syllabus changes
+        markedAt: Date,
+        markedByName: String,
+      },
+    ],
     // The admission form the family filled in, which holds their identity document.
     admission: { type: Schema.Types.ObjectId, ref: "BranchAdmission" },
     // When the family was last sent the welcome message with a set-password link.
@@ -178,6 +202,9 @@ const BranchAttendanceSchema = new Schema(
     mode: { type: String, enum: ["online", "offline"] },
     records: [BranchAttendanceRecordSchema],
     homework: [{ type: Schema.Types.ObjectId, ref: "Homework" }],
+    // "studentId:templateId" pairs auto-shared from this register. A student
+    // taken off auto-shared homework by hand is not given it again on re-save.
+    autoShared: { type: [String], default: undefined },
     markedBy: { type: Schema.Types.ObjectId, ref: "User" },
     markedByName: String,
     updatedBy: { type: Schema.Types.ObjectId, ref: "User" },
@@ -311,6 +338,8 @@ const BranchSettingsSchema = new Schema(
     receiptPrefix: { type: String, default: "BB" },
     parentReportEnabled: { type: Boolean, default: false },
     absenceAlertAfter: { type: Number, default: 3, min: 2, max: 10 },
+    // Homework templates shared automatically from each saved register (on unless switched off).
+    autoHomework: { type: Boolean, default: true },
     // Feature access: what managers and coaches may do. Unset means the defaults in lib/branch/rules.ts.
     roleAccess: { type: Schema.Types.Mixed, default: undefined },
     updatedBy: { type: Schema.Types.ObjectId, ref: "User" },

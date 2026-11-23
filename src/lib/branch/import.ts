@@ -98,7 +98,8 @@ export async function previewBranchImport(branch: BranchKey, files: ImportFiles)
       : null,
     feeOnly: plan.feeOnly,
     slots: slots.map(({ students, ...slot }) => ({ ...slot, seatedIds: students.map((student) => student.id) })),
-    classes: plan.classes.map((entry) => ({ ...entry, guess: guessSlots(entry.name, slots) })),
+    // The sheet's class names give a day and time, which names a centre slot; online classes share times.
+    classes: plan.classes.map((entry) => ({ ...entry, guess: guessSlots(entry.name, slots.filter((slot) => slot.mode !== "online")) })),
     students: plan.students.map((student) => ({
       regNo: student.regNo,
       name: student.name,

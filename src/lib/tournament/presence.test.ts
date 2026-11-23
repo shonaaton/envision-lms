@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   PRESENCE_GRACE_MS,
   forgetTournamentPresence,
@@ -7,6 +7,7 @@ import {
   playerSocketClosed,
   playerSocketOpened,
   presentPlayerKeys,
+  setPresenceNotifier,
 } from "./presence";
 
 const T = "t1";
@@ -47,5 +48,53 @@ describe("tournament presence", () => {
   it("rooms are separate per tournament", () => {
     playerSocketOpened(T, "user:1", 0);
     expect(isPlayerPresent("t2", "user:1", 0)).toBe(false);
+  });
+});
+
+describe("online/offline notices", () => {
+  const events: Array<[string, boolean]> = [];
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    events.length = 0;
+    setPresenceNotifier((_t, key, online) => events.push([key, online]));
+  });
+
+  afterEach(() => {
+    forgetTournamentPresence(T);
+    setPresenceNotifier(undefined);
+    vi.useRealTimers();
+  });
+
+  it("announces an arrival once, however many tabs open", () => {
+    playerSocketOpened(T, "user:1", Date.now());
+    playerSocketOpened(T, "user:1", Date.now());
+    expect(events).toEqual([["user:1", true]]);
+  });
+
+  it("announces a departure only after the grace runs out", () => {
+    playerSocketOpened(T, "user:1", Date.now());
+    playerSocketClosed(T, "user:1", Date.now());
+    vi.advanceTimersByTime(PRESENCE_GRACE_MS - 1_000);
+    expect(events).toEqual([["user:1", true]]);
+    vi.advanceTimersByTime(2_000);
+    expect(events).toEqual([["user:1", true], ["user:1", false]]);
+  });
+
+  it("a reconnect inside the grace is no departure and no second arrival", () => {
+    playerSocketOpened(T, "user:1", Date.now());
+    playerSocketClosed(T, "user:1", Date.now());
+    vi.advanceTimersByTime(5_000);
+    playerSocketOpened(T, "user:1", Date.now());
+    vi.advanceTimersByTime(PRESENCE_GRACE_MS * 2);
+    expect(events).toEqual([["user:1", true]]);
+  });
+
+  it("a player kept present by HTTP polls goes offline when the polls stop", () => {
+    playerSeen(T, "external:ben", Date.now());
+    vi.advanceTimersByTime(10_000);
+    playerSeen(T, "external:ben", Date.now());
+    vi.advanceTimersByTime(PRESENCE_GRACE_MS + 1_000);
+    expect(events).toEqual([["external:ben", true], ["external:ben", false]]);
   });
 });

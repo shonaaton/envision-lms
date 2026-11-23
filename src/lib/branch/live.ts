@@ -96,9 +96,11 @@ export async function openBranchLiveRoom(branch: BranchKey, slotId: string, date
     classroom = await Classroom.findOneAndUpdate(filter, { $set: roomFields, $addToSet: { students: { $each: userIds } } }, { new: true }).lean();
   }
 
-  // The live room names a coach; the first staff member to open it is it.
-  // Pay never reads a branch classroom, so this decides nothing else.
-  if (actor.staff && !classroom.coach) {
+  // The live room names a coach: the class's own coach (Online Classes), else
+  // the first staff member to open it. Pay never reads a branch classroom.
+  if (slot.coach && String(classroom.coach || "") !== String(slot.coach)) {
+    await Classroom.updateOne(filter, { $set: { coach: slot.coach } });
+  } else if (!slot.coach && actor.staff && !classroom.coach) {
     await Classroom.updateOne({ ...filter, coach: { $exists: false } }, { $set: { coach: actor.id } });
   }
 

@@ -69,6 +69,13 @@ type Register = {
   topicSuggestions: string[];
   courseLevels: { levelId: string; label: string; topics: string[] }[];
   defaultDueDate: string;
+  // Only on the answer to a save: what auto-share gave out, and who it couldn't serve.
+  autoShare?: AutoShare | null;
+};
+
+type AutoShare = {
+  shared: { title: string; names: string[] }[];
+  missed: { name: string; topic: string; reason: string }[];
 };
 
 type Template = { id: string; title: string; topicName: string; levelName: string; courseName: string; activityCount: number };
@@ -255,6 +262,7 @@ function RegisterEditor({ slotId, date, onSaved }: { slotId: string; date: strin
   const [saving, setSaving] = useState(false);
   const [open, setOpen] = useState<Record<string, boolean>>({});
   const [bulkTopic, setBulkTopic] = useState("");
+  const [autoShare, setAutoShare] = useState<AutoShare | null>(null);
 
   const apply = useCallback((data: Register) => {
     setRegister(data);
@@ -316,7 +324,9 @@ function RegisterEditor({ slotId, date, onSaved }: { slotId: string; date: strin
         },
       });
       apply(data);
-      toast.success("Register saved.");
+      setAutoShare(data.autoShare || null);
+      const sharedCount = (data.autoShare?.shared || []).reduce((sum, item) => sum + item.names.length, 0);
+      toast.success(sharedCount ? `Register saved. Homework shared with ${sharedCount} student${sharedCount === 1 ? "" : "s"}.` : "Register saved.");
       onSaved();
     } catch (error: any) {
       toast.error(error.message);
@@ -614,12 +624,46 @@ function RegisterEditor({ slotId, date, onSaved }: { slotId: string; date: strin
             </div>
           </div>
 
+          {autoShare && (autoShare.shared.length > 0 || autoShare.missed.length > 0) && <AutoSharePanel result={autoShare} onClose={() => setAutoShare(null)} />}
+
           {register.saved && (
             <HomeworkSetter register={register} dirty={dirty} onDone={(data) => { apply(data); onSaved(); }} />
           )}
         </>
       )}
     </section>
+  );
+}
+
+/** What the save just auto-shared, and the students it could not match - those need homework set by hand below. */
+function AutoSharePanel({ result, onClose }: { result: AutoShare; onClose: () => void }) {
+  return (
+    <div className="space-y-2 border-t border-slate-100 bg-slate-50 px-4 py-3 text-sm">
+      <div className="flex items-center justify-between gap-2">
+        <h3 className="font-black text-slate-900">Homework auto-share</h3>
+        <button type="button" className="text-slate-400 hover:text-slate-700" onClick={onClose} aria-label="Close">
+          <X size={16} />
+        </button>
+      </div>
+      {result.shared.map((item) => (
+        <p key={item.title} className="text-emerald-800">
+          <span className="font-bold">Shared &ldquo;{item.title}&rdquo;</span> with {item.names.join(", ")}.
+        </p>
+      ))}
+      {result.missed.length > 0 && (
+        <div className="space-y-1">
+          <p className="font-bold text-amber-800">Not shared - set these by hand below:</p>
+          <ul className="list-disc space-y-0.5 pl-5 text-amber-900">
+            {result.missed.map((item) => (
+              <li key={item.name + item.topic}>
+                <span className="font-semibold">{item.name}</span>
+                {item.topic ? ` (${item.topic})` : ""}: {item.reason}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </div>
   );
 }
 

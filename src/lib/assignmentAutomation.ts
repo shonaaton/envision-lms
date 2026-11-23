@@ -211,6 +211,24 @@ function missingTemplateMessage(topicName: string, classroom: any, rejected: Arr
   return `Template exists for "${topicName}" but was not used: ${detail}${others}.`;
 }
 
+/**
+ * The template the automation would pick for a topic taught at this place
+ * (`course`, `courseName`, `levelName`, `level` - a classroom, or one branch
+ * student's course), or why none. Used by the Bowbazar register auto-share.
+ */
+export async function matchTemplateForTopic(place: Record<string, any>, topicName: string) {
+  const topic = String(topicName || "").trim();
+  if (isRevisionTopic(topic)) {
+    return { template: null, reason: `"${topic}" is a revision class: set its homework by hand.` };
+  }
+  const { template, ambiguous, rejected } = await findTemplateForSession(place, topic);
+  if (ambiguous.length) {
+    return { template: null, reason: `${ambiguous.length} templates match "${topic}" equally (${ambiguous.map((item: any) => item.title).join(", ")}).` };
+  }
+  if (!template) return { template: null, reason: missingTemplateMessage(topic, place, rejected) };
+  return { template, reason: "" };
+}
+
 async function buildRevisionAssignment(classroom: any, currentSession: any, topicName: string) {
   const course = classroom.course
     ? await Course.findById(classroom.course).select("name level levels").lean<Pick<CourseDoc, "name" | "level" | "levels">>()

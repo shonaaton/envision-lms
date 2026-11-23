@@ -30,6 +30,8 @@ export type TournamentSocketHandlers = {
   onRoundCompleted?: (payload: any) => void;
   onTournamentStatus?: (payload: any) => void;
   onTournamentEnded?: (payload: any) => void;
+  /** A player arrived in or left the room: { playerKey, online }. */
+  onPresence?: (payload: { playerKey: string; online: boolean }) => void;
   /** Structural change, or reconnect: reload from the server. */
   onResync?: (reason: string) => void;
 };
@@ -110,6 +112,7 @@ export function useTournamentSocket({ tournamentId, gameId, handlers }: Options)
       forward("tournament:status", "onTournamentStatus");
       forward("tournament:ended", "onTournamentEnded");
       forward("tournament:game-ended", "onGameEnded");
+      forward("tournament:presence", "onPresence");
 
       socket.on("tournament:update", (payload: any) => {
         handlersRef.current.onResync?.(String(payload?.reason || "changed"));

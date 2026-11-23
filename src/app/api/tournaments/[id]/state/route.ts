@@ -263,6 +263,9 @@ export async function GET(request: Request, { params }: { params: { id: string }
     nextRoundAt,
     arenaEndsAt: tournament.arenaEndsAt || null,
     otherPlayersInRoom,
+    // Who is online now (in the room, or seen within the grace). Kept current
+    // after this by "tournament:presence" socket events.
+    onlinePlayerKeys: Array.from(presentPlayerKeys(params.id)),
     serverNow: Date.now(),
     health: {
       activeGames: Number(countsByStatus.active || 0),

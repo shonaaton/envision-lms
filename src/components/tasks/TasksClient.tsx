@@ -339,7 +339,7 @@ export default function TasksClient({ canCreate, isAdmin, currentUserId }: { can
         )}
         {!loading && (total > 0 || page > 1) && (
           <div className="flex items-center justify-between gap-2 border-t border-slate-100 px-4 py-3 text-xs text-slate-500">
-            <span>{total} tasks · Page {page} of {Math.max(1, Math.ceil(total / 50))}</span>
+            <span>{total} tasks Â· Page {page} of {Math.max(1, Math.ceil(total / 50))}</span>
             <div className="flex gap-2">
               <button type="button" className="btn btn-outline" disabled={page === 1} onClick={() => setPage(page - 1)}>Previous</button>
               <button type="button" className="btn btn-outline" disabled={page * 50 >= total} onClick={() => setPage(page + 1)}>Next</button>

@@ -9,12 +9,14 @@
  * hold those older URLs and are recognised too.
  */
 
-export const UPLOAD_AREAS = ["profiles", "achievements"] as const;
+export const UPLOAD_AREAS = ["profiles", "achievements", "popups"] as const;
 export type UploadArea = (typeof UPLOAD_AREAS)[number];
 
 const LEGACY_PREFIXES: Record<UploadArea, string> = {
   profiles: "/images/profiles/",
   achievements: "/images/achievements/uploads/",
+  // Never existed under public/; a prefix nothing starts with.
+  popups: "/uploads/popups/",
 };
 
 /** Letters, digits, dots, dashes and underscores; never a path. */

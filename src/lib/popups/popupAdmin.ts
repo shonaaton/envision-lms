@@ -2,7 +2,7 @@ import "server-only";
 
 import { Types } from "mongoose";
 import { engagementSendHour, engagementWeekKey, engagementWhatsAppEnabled } from "@/lib/engagement/engagementRules";
-import { safePopupHref } from "@/lib/popups/popupRules";
+import { popupImageSrc, safePopupHref } from "@/lib/popups/popupRules";
 import { Batch } from "@/models/Batch";
 import { Classroom } from "@/models/Classroom";
 import { Course } from "@/models/Course";
@@ -164,6 +164,7 @@ export type PopupInput = {
   startsAt?: string;
   endsAt?: string | null;
   priority?: string;
+  maxViews?: number | string | null;
   status?: string;
 };
 
@@ -184,8 +185,9 @@ export function validatePopupInput(input: PopupInput, options: { partial?: boole
     fields.body = body;
   }
   if (has("imageUrl")) {
-    const imageUrl = String(input.imageUrl || "").trim();
-    if (imageUrl && !/^https:\/\/\S+$/i.test(imageUrl)) return { error: "The image must be an https:// link." };
+    const raw = String(input.imageUrl || "").trim();
+    const imageUrl = popupImageSrc(raw);
+    if (raw && !imageUrl) return { error: "Upload an image, or use an https:// link to the image itself." };
     fields.imageUrl = imageUrl;
   }
   if (has("ctaLabel") || has("ctaHref")) {
@@ -217,6 +219,11 @@ export function validatePopupInput(input: PopupInput, options: { partial?: boole
     if (endsAt && Number.isNaN(endsAt.getTime())) return { error: "The end date is not valid." };
     if (endsAt && fields.startsAt && endsAt <= (fields.startsAt as Date)) return { error: "The end date must be after the start." };
     fields.endsAt = endsAt;
+  }
+  if (has("maxViews")) {
+    const maxViews = input.maxViews === null || input.maxViews === undefined || input.maxViews === "" ? null : Number(input.maxViews);
+    if (maxViews !== null && (!Number.isInteger(maxViews) || maxViews < 1 || maxViews > 50)) return { error: "Choose how many times to show it (1 to 50)." };
+    fields.maxViews = maxViews;
   }
   if (has("priority")) fields.priority = input.priority === "high" ? "high" : "normal";
   if (has("status") && input.status) {

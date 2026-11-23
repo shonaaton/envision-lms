@@ -157,15 +157,15 @@ export function MarketingHeader({ demoHref, ctaLabel = "Book Free Demo Class" }:
             ),
           )}
         </nav>
-        <div className="hidden items-center gap-2 sm:flex">
-          <Link href="/login" className="btn whitespace-nowrap border border-white/30 bg-white/10 text-white hover:bg-white/20">
+        <div className="ml-auto flex shrink-0 items-center gap-2 xl:ml-0">
+          <Link href="/login" className="inline-flex min-h-11 items-center justify-center whitespace-nowrap rounded-lg border border-accent bg-accent px-3 text-sm font-bold text-brand-900 hover:bg-accent/90 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent sm:border-white/30 sm:bg-white/10 sm:px-4 sm:text-white sm:hover:bg-white/20">
             Login
           </Link>
-          <Link href={demoHref} className="btn-accent whitespace-nowrap">
+          <Link href={demoHref} className="btn-accent hidden whitespace-nowrap sm:inline-flex">
             {ctaLabel}
           </Link>
         </div>
-        <details className="relative xl:hidden">
+        <details className="relative shrink-0 xl:hidden">
           <summary aria-label="Open navigation menu" className="grid h-11 w-11 cursor-pointer list-none place-items-center rounded-lg border border-white/30 bg-white/10 text-accent">
             <Menu size={20} />
           </summary>

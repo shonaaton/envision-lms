@@ -16,6 +16,7 @@ import {
   choosePopup,
   isRecapDay,
   popupRank,
+  popupImageSrc,
   safePopupHref,
   type PopupCandidate,
   type PopupViewState,
@@ -40,7 +41,7 @@ export function isPopupKey(value: unknown): value is string {
   return typeof value === "string" && KEY_PATTERN.test(value);
 }
 
-export type PopupPayload = Omit<PopupCandidate, "createdAt">;
+export type PopupPayload = Omit<PopupCandidate, "createdAt" | "maxViews">;
 
 /**
  * The one pop-up this student should see now, or null - and it is counted as
@@ -68,7 +69,7 @@ export async function nextPopupFor(userId: string, now = new Date()): Promise<Po
   }
   if (!chosen) return null;
   await markSeen(user._id, chosen, now);
-  const { createdAt: _createdAt, ...payload } = chosen;
+  const { createdAt: _createdAt, maxViews: _maxViews, ...payload } = chosen;
   return payload;
 }
 
@@ -165,7 +166,7 @@ export async function nextLivePopupFor(userId: string, role: string, now = new D
   const chosen = choosePopup(candidates, new Map<string, PopupViewState>(rows.map((row) => [row.key, row])));
   if (!chosen) return null;
   await markSeen(user._id, chosen, now);
-  const { createdAt: _createdAt, ...payload } = chosen;
+  const { createdAt: _createdAt, maxViews: _maxViews, ...payload } = chosen;
   return payload;
 }
 
@@ -185,10 +186,11 @@ async function campaignCandidates(user: any, now: Date, preloaded?: any[]): Prom
       kind: campaign.priority === "high" ? "campaign_high" : "campaign",
       title: campaign.title,
       body: campaign.body,
-      imageUrl: campaign.imageUrl || "",
+      imageUrl: popupImageSrc(campaign.imageUrl),
       ctaLabel: campaign.ctaLabel || "",
       ctaHref: safePopupHref(campaign.ctaHref),
       createdAt: campaign.createdAt,
+      maxViews: campaign.maxViews || null,
     }));
 }
 

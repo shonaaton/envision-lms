@@ -24,6 +24,8 @@ const PopupSchema = new Schema(
     startsAt: { type: Date, required: true, index: true },
     endsAt: { type: Date, index: true },
     priority: { type: String, enum: ["high", "normal"], default: "normal" },
+    /** Stop showing it to a person after this many showings, even if never closed. Empty = until closed. */
+    maxViews: { type: Number, min: 1, max: 50, default: null },
     status: { type: String, enum: ["draft", "active", "archived"], default: "active", index: true },
     createdBy: { type: Schema.Types.ObjectId, ref: "User" },
     createdByName: String,

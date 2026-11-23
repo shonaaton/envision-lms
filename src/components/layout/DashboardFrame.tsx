@@ -108,8 +108,8 @@ export default function DashboardFrame({
         </main>
       </div>
       <LiveDataRefresher />
-      {/* One pop-up at a time: the details form first, the usual login pop-up once details are in. */}
-      {role === "student" && (studentDetails ? <StudentDetailsPopup {...studentDetails} /> : <LoginPopup />)}
+      {/* One pop-up at a time: a student's details form first, the usual pop-up once details are in. Every role gets pop-ups written for everyone or for staff. */}
+      {role === "student" && studentDetails ? <StudentDetailsPopup {...studentDetails} /> : <LoginPopup />}
     </div>
   );
 }

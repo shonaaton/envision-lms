@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { campaignIsLive, campaignMatches, choosePopup, isHandled, safePopupHref, type PopupCandidate } from "./popupRules";
+import { campaignIsLive, campaignMatches, choosePopup, isHandled, popupImageSrc, safePopupHref, type PopupCandidate } from "./popupRules";
 
 const candidate = (key: string, kind: PopupCandidate["kind"], createdAt?: string): PopupCandidate => ({
   key,
@@ -136,5 +136,33 @@ describe("everyone and staff pop-ups", () => {
     expect(campaignMatches({ audience: "all_students" }, coach)).toBe(false);
     expect(campaignMatches({ audience: "batch", targetIds: ["b1"] }, { ...coach, batchIds: ["b1"] })).toBe(false);
     expect(campaignMatches({ audience: "student", targetIds: ["c1"] }, coach)).toBe(false);
+  });
+});
+
+describe("stop after N showings", () => {
+  it("hides an admin pop-up once it has been shown maxViews times, even if never closed", () => {
+    const capped = { ...candidate("campaign:c", "campaign"), maxViews: 3 };
+    expect(choosePopup([capped], new Map([["campaign:c", { seenCount: 2 }]]))?.key).toBe("campaign:c");
+    expect(choosePopup([capped], new Map([["campaign:c", { seenCount: 3 }]]))).toBeNull();
+  });
+
+  it("keeps an uncapped pop-up until it is closed", () => {
+    expect(choosePopup([candidate("campaign:c", "campaign")], new Map([["campaign:c", { seenCount: 40 }]]))?.key).toBe("campaign:c");
+  });
+});
+
+describe("popupImageSrc", () => {
+  it("keeps uploads and https links, and turns a Drive share link into the picture", () => {
+    expect(popupImageSrc("/uploads/popups/popup-1-ab.png")).toBe("/uploads/popups/popup-1-ab.png");
+    expect(popupImageSrc("https://example.com/a.jpg")).toBe("https://example.com/a.jpg");
+    expect(popupImageSrc("https://drive.google.com/file/d/1AbCdEfGhIjKlMnOp/view?usp=sharing")).toBe("https://drive.google.com/thumbnail?id=1AbCdEfGhIjKlMnOp&sz=w1200");
+    expect(popupImageSrc("https://drive.google.com/open?id=1AbCdEfGhIjKlMnOp")).toBe("https://drive.google.com/thumbnail?id=1AbCdEfGhIjKlMnOp&sz=w1200");
+  });
+
+  it("refuses anything else", () => {
+    expect(popupImageSrc("http://example.com/a.jpg")).toBe("");
+    expect(popupImageSrc("/uploads/profiles/x.png")).toBe("");
+    expect(popupImageSrc("/uploads/popups/../secret")).toBe("");
+    expect(popupImageSrc("javascript:alert(1)")).toBe("");
   });
 });

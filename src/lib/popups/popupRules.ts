@@ -29,6 +29,8 @@ export type PopupCandidate = {
   ctaHref?: string;
   /** Newer first within the same kind. */
   createdAt?: Date | null;
+  /** An admin pop-up stops after this many showings to one person. */
+  maxViews?: number | null;
 };
 
 export type PopupViewState = { seenCount?: number; dismissedAt?: Date | null; clickedAt?: Date | null };
@@ -37,12 +39,13 @@ export type PopupViewState = { seenCount?: number; dismissedAt?: Date | null; cl
  * Done with: closed or acted on. A recap is a summary, not a call to action,
  * so having seen it once is enough.
  */
-export function isHandled(candidate: Pick<PopupCandidate, "kind">, view?: PopupViewState | null) {
+export function isHandled(candidate: Pick<PopupCandidate, "kind" | "maxViews">, view?: PopupViewState | null) {
   // A tournament invitation comes back on every visit: it is only offered
   // while the student is not registered, and registering is what ends it.
   if (candidate.kind === "tournament") return false;
   if (!view) return false;
   if (view.dismissedAt || view.clickedAt) return true;
+  if (candidate.maxViews && Number(view.seenCount || 0) >= candidate.maxViews) return true;
   return candidate.kind === "recap" && Number(view.seenCount || 0) > 0;
 }
 
@@ -119,6 +122,22 @@ export function campaignMatches(campaign: CampaignShape, student: StudentShape) 
 /** Recaps of last week are shown Monday to Wednesday (academy weekday 1-3). */
 export function isRecapDay(weekday: number) {
   return weekday >= 1 && weekday <= 3;
+}
+
+/**
+ * The image a pop-up shows: an uploaded file (/uploads/popups/...) or an https
+ * link. A Google Drive "share" link points at Drive's viewer page, not the
+ * picture, so it is turned into Drive's direct image address (the file must be
+ * shared with "anyone with the link"). Anything else gives "".
+ */
+export function popupImageSrc(value?: string | null) {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+  if (/^\/uploads\/popups\/[a-z0-9][a-z0-9._-]{0,150}$/i.test(raw)) return raw;
+  if (!/^https:\/\/\S+$/i.test(raw)) return "";
+  const drive = raw.match(/^https:\/\/drive\.google\.com\/(?:file\/d\/([\w-]{10,})|(?:open|uc)\?(?:[^#]*&)?id=([\w-]{10,}))/i);
+  if (drive) return `https://drive.google.com/thumbnail?id=${drive[1] || drive[2]}&sz=w1200`;
+  return raw;
 }
 
 /** A link the pop-up button may open: a portal path or an https URL, nothing else. */

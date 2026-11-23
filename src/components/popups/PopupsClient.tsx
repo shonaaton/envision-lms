@@ -2,13 +2,14 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { LucideIcon } from "lucide-react";
-import { Archive, BookOpen, CheckCircle2, GraduationCap, MessageCircle, Pause, Play, Search, Send, Sparkles, UserPlus, Users } from "lucide-react";
+import { Archive, BarChart3, ImagePlus, X, BookOpen, Briefcase, CheckCircle2, ChevronUp, Globe2, GraduationCap, MessageCircle, Pause, Play, Search, Send, Sparkles, UserPlus, Users } from "lucide-react";
 import { toast } from "sonner";
 import { PopupCard } from "@/components/popups/LoginPopup";
+import { popupImageSrc } from "@/lib/popups/popupRules";
 import { academyDateTimeLocalInput, parseAcademyDateTimeLocal } from "@/lib/academyTime";
 import { cn } from "@/lib/utils";
 
-type Audience = "all_students" | "batch" | "course" | "student" | "demo_students";
+type Audience = "everyone" | "all_staff" | "all_students" | "batch" | "course" | "student" | "demo_students";
 type PickItem = { _id: string; name: string; detail?: string };
 type Targets = { batches: PickItem[]; courses: PickItem[]; students: PickItem[] };
 type PopupRow = {
@@ -24,10 +25,21 @@ type PopupRow = {
   startsAt: string;
   endsAt?: string | null;
   priority: "high" | "normal";
+  maxViews?: number | null;
   status: "draft" | "active" | "archived";
   createdByName?: string;
   createdAt: string;
-  stats: { seen: number; clicked: number; dismissed: number };
+  stats: { audience: number; seen: number; clicked: number; dismissed: number };
+};
+type Report = {
+  _id: string;
+  audience: number;
+  opened: number;
+  clicked: number;
+  dismissed: number;
+  openedBy: Array<{ _id: string; name: string; role: string; firstSeenAt: string; seenCount: number; action: "clicked" | "closed" | "open" }>;
+  notOpened: Array<{ _id: string; name: string; role: string; lastSeenAt: string | null }>;
+  notOpenedCount: number;
 };
 type Overview = {
   enabled: boolean;
@@ -41,6 +53,8 @@ type Overview = {
 };
 
 const audienceOptions: Array<{ type: Audience; title: string; description: string; icon: LucideIcon; pick?: keyof Targets }> = [
+  { type: "everyone", title: "Everyone", description: "Every account: students, demo families, coaches, admins", icon: Globe2 },
+  { type: "all_staff", title: "All staff", description: "Coaches, admins and sub-admins", icon: Briefcase },
   { type: "all_students", title: "All students", description: "Every enrolled student", icon: GraduationCap },
   { type: "batch", title: "Batches", description: "Students in chosen batches", icon: Users, pick: "batches" },
   { type: "course", title: "Courses", description: "Students in chosen courses", icon: BookOpen, pick: "courses" },
@@ -49,6 +63,8 @@ const audienceOptions: Array<{ type: Audience; title: string; description: strin
 ];
 
 const audienceLabels: Record<Audience, string> = {
+  everyone: "Everyone",
+  all_staff: "All staff",
   all_students: "All students",
   batch: "Batches",
   course: "Courses",
@@ -91,7 +107,7 @@ export default function PopupsClient() {
             </div>
             <h1 className="mt-1 text-2xl font-black text-brand">Pop-ups &amp; Engagement</h1>
             <p className="mt-1 text-sm text-slate-600">
-              Pop-ups appear once when a student opens the portal. Personal ones (report ready, new badge, homework due, last week&apos;s recap) are added automatically.
+              A pop-up reaches people already signed in within about two minutes, and everyone else when they next open the portal. It comes back until they close it, press its button, or it has been shown the number of times you set. Students also get personal ones (report ready, new badge, homework due, last week&apos;s recap) automatically.
             </p>
           </div>
           <div className="grid grid-cols-2 gap-2">
@@ -123,7 +139,7 @@ export default function PopupsClient() {
 }
 
 function ComposePanel({ targets, loading, onCreated }: { targets: Targets; loading: boolean; onCreated: (popup: PopupRow) => void }) {
-  const [audience, setAudience] = useState<Audience>("all_students");
+  const [audience, setAudience] = useState<Audience>("everyone");
   const [picked, setPicked] = useState<string[]>([]);
   const [query, setQuery] = useState("");
   const [title, setTitle] = useState("");
@@ -132,9 +148,26 @@ function ComposePanel({ targets, loading, onCreated }: { targets: Targets; loadi
   const [ctaLabel, setCtaLabel] = useState("");
   const [ctaHref, setCtaHref] = useState("");
   const [priority, setPriority] = useState<"normal" | "high">("normal");
+  const [maxViews, setMaxViews] = useState("3");
   const [startsAt, setStartsAt] = useState(() => academyDateTimeLocalInput(new Date()));
   const [endsAt, setEndsAt] = useState("");
   const [saving, setSaving] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [imageFailed, setImageFailed] = useState("");
+  const imageSrc = popupImageSrc(imageUrl);
+
+  async function uploadImage(file: File | undefined) {
+    if (!file) return;
+    setUploading(true);
+    const form = new FormData();
+    form.append("file", file);
+    const response = await fetch("/api/admin/popups/upload", { method: "POST", body: form });
+    const data = await response.json().catch(() => ({}));
+    setUploading(false);
+    if (!response.ok) return toast.error(data.error || "Could not upload the image");
+    setImageUrl(data.imageUrl);
+    setImageFailed("");
+  }
 
   const option = audienceOptions.find((item) => item.type === audience) || audienceOptions[0];
   const pickList = useMemo(() => (option.pick ? targets[option.pick] : []), [option.pick, targets]);
@@ -168,6 +201,7 @@ function ComposePanel({ targets, loading, onCreated }: { targets: Targets; loadi
         ctaLabel,
         ctaHref,
         priority,
+        maxViews: maxViews ? Number(maxViews) : null,
         audience,
         targetIds: picked,
         targetLabel: names.join(", "),
@@ -178,10 +212,11 @@ function ComposePanel({ targets, loading, onCreated }: { targets: Targets; loadi
     const data = await response.json().catch(() => ({}));
     setSaving(false);
     if (!response.ok) return toast.error(data.error || "Could not create the pop-up");
-    toast.success("Pop-up is live for the chosen students");
+    toast.success(`Pop-up published for ${data.stats?.audience ?? 0} ${data.stats?.audience === 1 ? "account" : "accounts"}`);
     setTitle("");
     setBody("");
     setImageUrl("");
+    setImageFailed("");
     setCtaLabel("");
     setCtaHref("");
     setPicked([]);
@@ -262,12 +297,35 @@ function ComposePanel({ targets, loading, onCreated }: { targets: Targets; loadi
             </div>
             <label className="block">
               <span className="text-xs font-bold uppercase tracking-wide text-slate-500">Message</span>
-              <textarea value={body} maxLength={1200} onChange={(event) => setBody(event.target.value)} rows={6} placeholder="What should students and parents know?" className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-3 text-sm outline-none transition focus:border-brand focus:ring-4 focus:ring-brand/10" />
+              <textarea value={body} maxLength={1200} onChange={(event) => setBody(event.target.value)} rows={6} placeholder="What should they know?" className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-3 text-sm outline-none transition focus:border-brand focus:ring-4 focus:ring-brand/10" />
             </label>
-            <label className="block">
-              <span className="text-xs font-bold uppercase tracking-wide text-slate-500">Image link (optional)</span>
-              <input value={imageUrl} onChange={(event) => setImageUrl(event.target.value)} placeholder="https://..." className={inputClass} />
-            </label>
+            <div>
+              <span className="text-xs font-bold uppercase tracking-wide text-slate-500">Image (optional)</span>
+              <div className="mt-1 flex flex-col gap-2 sm:flex-row">
+                <input
+                  value={imageUrl.startsWith("/uploads/") ? "Uploaded image" : imageUrl}
+                  readOnly={imageUrl.startsWith("/uploads/")}
+                  onChange={(event) => setImageUrl(event.target.value)}
+                  placeholder="Paste an image link, or upload"
+                  className={cn(inputClass, "mt-0")}
+                />
+                <label className={cn("btn h-11 shrink-0 cursor-pointer border border-slate-200 bg-white text-sm", uploading && "pointer-events-none opacity-60")}>
+                  <ImagePlus size={16} /> {uploading ? "Uploading..." : "Upload image"}
+                  <input type="file" accept="image/jpeg,image/png,image/webp,image/gif" className="sr-only" onChange={(event) => { void uploadImage(event.target.files?.[0]); event.target.value = ""; }} />
+                </label>
+                {imageUrl && (
+                  <button type="button" onClick={() => { setImageUrl(""); setImageFailed(""); }} className="btn h-11 shrink-0 border border-slate-200 bg-white text-sm" aria-label="Remove image">
+                    <X size={16} />
+                  </button>
+                )}
+              </div>
+              {imageUrl && !imageSrc && <p className="mt-1 text-xs text-red-600">Use an https:// link, or upload the image instead.</p>}
+              {imageSrc && imageFailed === imageSrc && (
+                <p className="mt-1 text-xs text-red-600">
+                  This link does not open a picture (it is probably a web page, or a file that is not shared publicly). Upload the image instead, or right-click the picture and copy the image address.
+                </p>
+              )}
+            </div>
             <div className="grid gap-3 sm:grid-cols-2">
               <label className="block">
                 <span className="text-xs font-bold uppercase tracking-wide text-slate-500">Button text (optional)</span>
@@ -278,6 +336,17 @@ function ComposePanel({ targets, loading, onCreated }: { targets: Targets; loadi
                 <input value={ctaHref} onChange={(event) => setCtaHref(event.target.value)} placeholder="/tournaments or https://..." className={inputClass} />
               </label>
             </div>
+            <label className="block">
+              <span className="text-xs font-bold uppercase tracking-wide text-slate-500">Stop after it has been shown</span>
+              <select value={maxViews} onChange={(event) => setMaxViews(event.target.value)} className={inputClass}>
+                <option value="1">1 time</option>
+                <option value="2">2 times</option>
+                <option value="3">3 times</option>
+                <option value="5">5 times</option>
+                <option value="10">10 times</option>
+                <option value="">Keep showing until they close it</option>
+              </select>
+            </label>
             <div className="grid gap-3 sm:grid-cols-2">
               <label className="block">
                 <span className="text-xs font-bold uppercase tracking-wide text-slate-500">Show from (IST)</span>
@@ -290,7 +359,7 @@ function ComposePanel({ targets, loading, onCreated }: { targets: Targets; loadi
             </div>
             <div className="flex flex-col gap-3 rounded-lg border border-accent/50 bg-accent/20 p-3 sm:flex-row sm:items-center sm:justify-between">
               <div className="text-xs text-slate-600">
-                Each student sees it once, the next time they open the dashboard. It stops appearing for them once they close it or press the button.
+                Anyone signed in sees it within about two minutes (never over a live class, game or exam); others see it when they next open the portal. It stops once they close it, press the button, or have been shown it {maxViews ? `${maxViews} ${maxViews === "1" ? "time" : "times"}` : "until they close it"}.
               </div>
               <button type="button" onClick={create} disabled={saving || loading} className="btn-primary h-10 shrink-0">
                 <Send size={16} />
@@ -303,7 +372,10 @@ function ComposePanel({ targets, loading, onCreated }: { targets: Targets; loadi
         <div className="min-w-0">
           <div className="text-sm font-black text-slate-950">Preview</div>
           <div className="mt-3 flex justify-center rounded-lg bg-slate-950/40 p-4">
-            <PopupCard popup={{ key: "preview", kind: priority === "high" ? "campaign_high" : "campaign", title, body, imageUrl: /^https:\/\//i.test(imageUrl) ? imageUrl : "", ctaLabel, ctaHref }} />
+            <PopupCard
+              popup={{ key: "preview", kind: priority === "high" ? "campaign_high" : "campaign", title, body, imageUrl: imageSrc, ctaLabel, ctaHref }}
+              onImageError={() => setImageFailed(imageSrc)}
+            />
           </div>
         </div>
       </div>
@@ -313,6 +385,7 @@ function ComposePanel({ targets, loading, onCreated }: { targets: Targets; loadi
 
 function PopupList({ popups, loading, onChanged }: { popups: PopupRow[]; loading: boolean; onChanged: (popup: PopupRow) => void }) {
   const [busy, setBusy] = useState("");
+  const [openReport, setOpenReport] = useState("");
 
   async function setStatus(popup: PopupRow, status: PopupRow["status"]) {
     setBusy(popup._id);
@@ -328,12 +401,16 @@ function PopupList({ popups, loading, onChanged }: { popups: PopupRow[]; loading
   if (!popups.length) return <section className="rounded-lg border border-brand/10 bg-white p-8 text-center text-sm text-slate-500 shadow-sm">No pop-ups yet.</section>;
   return (
     <section className="overflow-hidden rounded-lg border border-brand/10 bg-white shadow-sm">
+      <div className="border-b border-slate-100 bg-slate-50 px-4 py-2.5 text-xs text-slate-600">
+        <b>Sent to</b> is everyone the pop-up is for right now. <b>Opened</b> counts people it has appeared for at least once; <b>Open rate</b> is opened out of sent to. Press <b>Report</b> to see who has and has not opened it.
+      </div>
       <div className="divide-y divide-slate-100">
         {popups.map((popup) => {
           const ended = popup.endsAt && new Date(popup.endsAt) <= new Date();
           const state = popup.status === "archived" ? "Archived" : popup.status === "draft" ? "Paused" : ended ? "Ended" : new Date(popup.startsAt) > new Date() ? "Scheduled" : "Live";
           return (
-            <div key={popup._id} className="flex flex-col gap-3 p-4 lg:flex-row lg:items-center lg:justify-between">
+            <div key={popup._id} className="p-4">
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
               <div className="min-w-0">
                 <div className="flex flex-wrap items-center gap-2">
                   <span className="truncate text-sm font-black text-slate-950">{popup.title}</span>
@@ -342,13 +419,18 @@ function PopupList({ popups, loading, onChanged }: { popups: PopupRow[]; loading
                 </div>
                 <div className="mt-1 line-clamp-2 text-xs text-slate-600">{popup.body}</div>
                 <div className="mt-1 text-xs text-slate-500">
-                  {audienceLabels[popup.audience]}{popup.targetLabel ? `: ${popup.targetLabel}` : ""} - from {formatDate(popup.startsAt)}{popup.endsAt ? ` to ${formatDate(popup.endsAt)}` : ""}{popup.createdByName ? ` - by ${popup.createdByName}` : ""}
+                  {audienceLabels[popup.audience]}{popup.targetLabel ? `: ${popup.targetLabel}` : ""} - from {formatDate(popup.startsAt)}{popup.endsAt ? ` to ${formatDate(popup.endsAt)}` : ""}{popup.maxViews ? ` - stops after ${popup.maxViews} ${popup.maxViews === 1 ? "showing" : "showings"}` : ""}{popup.createdByName ? ` - by ${popup.createdByName}` : ""}
                 </div>
               </div>
               <div className="flex shrink-0 flex-wrap items-center gap-2">
-                <MiniStat label="Seen" value={popup.stats.seen} />
+                <MiniStat label="Sent to" value={popup.stats.audience} />
+                <MiniStat label="Opened" value={popup.stats.seen} />
+                <MiniStat label="Open rate" value={percent(popup.stats.seen, popup.stats.audience)} highlight />
                 <MiniStat label="Clicked" value={popup.stats.clicked} />
                 <MiniStat label="Closed" value={popup.stats.dismissed} />
+                <button type="button" onClick={() => setOpenReport(openReport === popup._id ? "" : popup._id)} className="btn h-9 border border-slate-200 bg-white text-xs">
+                  {openReport === popup._id ? <ChevronUp size={14} /> : <BarChart3 size={14} />} Report
+                </button>
                 {popup.status === "active" ? (
                   <button type="button" disabled={busy === popup._id} onClick={() => setStatus(popup, "draft")} className="btn h-9 border border-slate-200 bg-white text-xs">
                     <Pause size={14} /> Pause
@@ -365,11 +447,116 @@ function PopupList({ popups, loading, onChanged }: { popups: PopupRow[]; loading
                 )}
               </div>
             </div>
+            {openReport === popup._id && <PopupReport popupId={popup._id} />}
+            </div>
           );
         })}
       </div>
     </section>
   );
+}
+
+function PopupReport({ popupId }: { popupId: string }) {
+  const [report, setReport] = useState<Report | null>(null);
+  const [error, setError] = useState("");
+  const [view, setView] = useState<"opened" | "not_opened">("opened");
+  const [query, setQuery] = useState("");
+
+  useEffect(() => {
+    fetch(`/api/admin/popups/${popupId}`, { cache: "no-store" })
+      .then(async (response) => {
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(data.error || "Could not load the report");
+        setReport(data);
+      })
+      .catch((reason) => setError(reason.message));
+  }, [popupId]);
+
+  if (error) return <div className="mt-3 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</div>;
+  if (!report) return <div className="mt-3 rounded-lg bg-slate-50 p-3 text-sm text-slate-500">Loading report...</div>;
+  const needle = query.trim().toLowerCase();
+  const match = (row: { name: string; role: string }) => !needle || `${row.name} ${row.role}`.toLowerCase().includes(needle);
+  const total = view === "opened" ? report.opened : report.notOpenedCount;
+  const listed = view === "opened" ? report.openedBy.length : report.notOpened.length;
+  return (
+    <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50 p-3">
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">
+        <ReportStat label="Sent to" value={report.audience} />
+        <ReportStat label="Opened" value={report.opened} />
+        <ReportStat label="Open rate" value={percent(report.opened, report.audience)} />
+        <ReportStat label="Button clicked" value={`${report.clicked} (${percent(report.clicked, report.opened)} of opened)`} />
+        <ReportStat label="Not opened yet" value={report.notOpenedCount} />
+      </div>
+      <div className="mt-3 h-2 overflow-hidden rounded-full bg-slate-200">
+        <div className="h-full rounded-full bg-brand" style={{ width: percent(report.opened, report.audience) }} />
+      </div>
+      <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <div className="inline-flex rounded-lg bg-white p-1">
+          <TabButton active={view === "opened"} onClick={() => setView("opened")}>Opened ({report.opened})</TabButton>
+          <TabButton active={view === "not_opened"} onClick={() => setView("not_opened")}>Not opened ({report.notOpenedCount})</TabButton>
+        </div>
+        <div className="relative w-full sm:w-56">
+          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
+          <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search name or role" className="h-9 w-full rounded-lg border border-slate-200 bg-white pl-8 pr-2 text-xs outline-none focus:border-brand" />
+        </div>
+      </div>
+      <div className="mt-2 max-h-80 overflow-y-auto rounded-lg border border-slate-200 bg-white">
+        {view === "opened" ? (
+          <table className="w-full text-left text-xs">
+            <thead className="sticky top-0 bg-slate-50 uppercase tracking-wide text-slate-500">
+              <tr><th className="px-3 py-2">Name</th><th className="px-3 py-2">Role</th><th className="px-3 py-2">First opened</th><th className="px-3 py-2">Times shown</th><th className="px-3 py-2">Did</th></tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {report.openedBy.filter(match).map((row) => (
+                <tr key={row._id}>
+                  <td className="px-3 py-1.5 font-semibold text-slate-900">{row.name}</td>
+                  <td className="px-3 py-1.5 text-slate-600">{row.role}</td>
+                  <td className="px-3 py-1.5 text-slate-600">{formatDate(row.firstSeenAt)}</td>
+                  <td className="px-3 py-1.5 text-slate-600">{row.seenCount}</td>
+                  <td className="px-3 py-1.5">
+                    <span className={cn("rounded-full px-2 py-0.5 font-bold", row.action === "clicked" ? "bg-emerald-100 text-emerald-700" : row.action === "closed" ? "bg-slate-100 text-slate-600" : "bg-sky-100 text-sky-700")}>
+                      {row.action === "clicked" ? "Pressed the button" : row.action === "closed" ? "Closed it" : "Saw it, no action"}
+                    </span>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        ) : (
+          <table className="w-full text-left text-xs">
+            <thead className="sticky top-0 bg-slate-50 uppercase tracking-wide text-slate-500">
+              <tr><th className="px-3 py-2">Name</th><th className="px-3 py-2">Role</th><th className="px-3 py-2">Last in the portal</th></tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {report.notOpened.filter(match).map((row) => (
+                <tr key={row._id}>
+                  <td className="px-3 py-1.5 font-semibold text-slate-900">{row.name}</td>
+                  <td className="px-3 py-1.5 text-slate-600">{row.role}</td>
+                  <td className="px-3 py-1.5 text-slate-600">{row.lastSeenAt ? formatDate(row.lastSeenAt) : "No visit recorded"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+        {listed === 0 && <div className="p-4 text-center text-xs text-slate-500">{view === "opened" ? "Nobody has opened it yet." : "Everyone it is for has opened it."}</div>}
+      </div>
+      {listed < total && <div className="mt-1 text-[11px] text-slate-500">Showing the latest {listed} of {total}.</div>}
+    </div>
+  );
+}
+
+function ReportStat({ label, value }: { label: string; value: number | string }) {
+  return (
+    <div className="rounded-lg bg-white px-3 py-2">
+      <div className="text-[10px] font-bold uppercase tracking-wide text-slate-500">{label}</div>
+      <div className="mt-0.5 text-sm font-black text-slate-900">{value}</div>
+    </div>
+  );
+}
+
+function percent(part: number, whole: number) {
+  if (!whole) return "0%";
+  return `${Math.min(100, Math.round((part / whole) * 100))}%`;
 }
 
 function WhatsAppPanel() {
@@ -488,11 +675,11 @@ function Stat({ label, value }: { label: string; value: number }) {
   );
 }
 
-function MiniStat({ label, value }: { label: string; value: number }) {
+function MiniStat({ label, value, highlight }: { label: string; value: number | string; highlight?: boolean }) {
   return (
-    <div className="min-w-16 rounded-lg bg-slate-50 px-2.5 py-1 text-center">
+    <div className={cn("min-w-16 rounded-lg px-2.5 py-1 text-center", highlight ? "bg-brand/10" : "bg-slate-50")}>
       <div className="text-[10px] font-bold uppercase tracking-wide text-slate-500">{label}</div>
-      <div className="text-sm font-black text-slate-900">{value}</div>
+      <div className={cn("text-sm font-black", highlight ? "text-brand" : "text-slate-900")}>{value}</div>
     </div>
   );
 }

@@ -50,7 +50,8 @@ export type TaskRow = {
 
 type Assignee = { _id: string; name: string; email: string; label: string };
 type Summary = { pendingCount: number; overdueCount: number; completedThisWeek: number; assignedByMeOpen: number };
-type TabKey = "open" | "completed" | "cancelled" | "assigned" | "all";
+type TabKey = "open" | "pending" | "in_progress" | "overdue" | "completed" | "cancelled" | "all";
+type Scope = "all" | "mine" | "assigned_by_me";
 
 const POOL_LABEL: Record<string, string> = { admins: "Sub-admin team (shared)", sales: "Sales team (shared)" };
 
@@ -121,7 +122,11 @@ async function patchTask(id: string, body: Record<string, unknown>) {
 }
 
 export default function TasksClient({ canCreate, isAdmin, currentUserId }: { canCreate: boolean; isAdmin: boolean; currentUserId: string }) {
-  const [tab, setTab] = useState<TabKey>("open");
+  const [tab, setTab] = useState<TabKey>(isAdmin ? "all" : "open");
+  const [scope, setScope] = useState<Scope>(isAdmin ? "all" : "mine");
+  const [owner, setOwner] = useState("");
+  const [page, setPage] = useState(1);
+  const pageSize = 50;
   const [q, setQ] = useState("");
   const [source, setSource] = useState("");
   const [priority, setPriority] = useState("");
@@ -136,44 +141,38 @@ export default function TasksClient({ canCreate, isAdmin, currentUserId }: { can
   const loadVersion = useRef(0);
 
   const tabs: Array<{ key: TabKey; label: string }> = [
-    { key: "open", label: "Pending" },
+    { key: "all", label: "All statuses" },
+    { key: "open", label: "Open" },
+    { key: "pending", label: "Pending" },
+    { key: "in_progress", label: "In progress" },
+    { key: "overdue", label: "Overdue" },
     { key: "completed", label: "Completed" },
     { key: "cancelled", label: "Cancelled" },
-    ...(canCreate ? [{ key: "assigned" as TabKey, label: "Assigned by me" }] : []),
-    ...(isAdmin ? [{ key: "all" as TabKey, label: "All tasks" }] : []),
   ];
 
   const load = useCallback(async (silent = false) => {
     const version = ++loadVersion.current;
     if (!silent) setLoading(true);
     const params = new URLSearchParams();
-    if (tab === "open") params.set("status", "open");
-    if (tab === "completed") params.set("status", "completed");
-    // Admins review every cancellation and its reason; others see their own.
-    if (tab === "cancelled") {
-      params.set("status", "cancelled");
-      if (isAdmin) params.set("scope", "all");
-    }
-    if (tab === "assigned") {
-      params.set("scope", "assigned_by_me");
-      params.set("status", "any");
-    }
-    if (tab === "all") {
-      params.set("scope", "all");
-      params.set("status", "open");
-    }
+    params.set("scope", scope);
+    params.set("status", tab === "all" ? "any" : tab);
+    params.set("page", String(page));
+    params.set("limit", String(pageSize));
+    if (owner) params.set("owner", owner);
     if (q) params.set("q", q);
     if (source) params.set("source", source);
     if (priority) params.set("priority", priority);
     try {
       const [listResponse, summaryResponse] = await Promise.all([
         fetch(`/api/tasks?${params}`, { cache: "no-store" }),
-        fetch("/api/tasks?summary=1", { cache: "no-store" }),
+        fetch(`/api/tasks?summary=1&scope=${scope}`, { cache: "no-store" }),
       ]);
       if (!listResponse.ok) throw new Error("Could not load tasks.");
       const data = await listResponse.json();
       const summaryData = summaryResponse.ok ? await summaryResponse.json() : null;
       if (version !== loadVersion.current) return;
+      const lastPage = Math.max(1, Math.ceil((data.total || 0) / pageSize));
+      if (page > lastPage) { setPage(lastPage); return; }
       setTasks(data.tasks || []);
       setTotal(data.total || 0);
       if (summaryData) setSummary(summaryData);
@@ -182,18 +181,18 @@ export default function TasksClient({ canCreate, isAdmin, currentUserId }: { can
     } finally {
       if (version === loadVersion.current) setLoading(false);
     }
-  }, [isAdmin, priority, q, source, tab]);
+  }, [scope, owner, page, priority, q, source, tab]);
 
   const refresh = useCallback(() => { void load(true); }, [load]);
   useTaskRefresh(refresh);
 
   useEffect(() => {
-    const timer = setTimeout(load, q ? 300 : 0);
+    const timer = setTimeout(load, q || owner ? 300 : 0);
     return () => {
       clearTimeout(timer);
       loadVersion.current += 1;
     };
-  }, [load, q]);
+  }, [load, q, owner]);
 
   // Deep link from a notification: /tasks?id=<taskId>
   useEffect(() => {
@@ -226,10 +225,10 @@ export default function TasksClient({ canCreate, isAdmin, currentUserId }: { can
         eyebrow="Tasks"
         icon={ListChecks}
         title="Task Manager"
-        subtitle="Shared team tasks are resolved for everyone when one person completes them. This list refreshes automatically. Automatic tasks also close when the underlying work is done."
+        subtitle={`${scope === "all" ? "Showing work across all users." : scope === "mine" ? "Showing your tasks and shared team work." : "Showing tasks you assigned."} Shared team tasks are resolved for everyone when one person completes them. This list refreshes automatically. Automatic tasks also close when the underlying work is done.`}
       >
         <div className="grid grid-cols-2 gap-2 lg:grid-cols-4">
-          <StatCard label="Pending" value={summary?.pendingCount ?? "–"} icon={ClipboardList} tone="amber" />
+          <StatCard label={scope === "all" ? "Open across all users" : "Open in this view"} value={summary?.pendingCount ?? "–"} icon={ClipboardList} tone="amber" />
           <StatCard label="Overdue" value={summary?.overdueCount ?? "–"} icon={AlertTriangle} tone="rose" />
           <StatCard label="Done this week" value={summary?.completedThisWeek ?? "–"} icon={ClipboardCheck} tone="green" />
           {canCreate ? <StatCard label="Assigned by me, open" value={summary?.assignedByMeOpen ?? "–"} icon={Send} tone="purple" /> : null}
@@ -237,12 +236,22 @@ export default function TasksClient({ canCreate, isAdmin, currentUserId }: { can
       </PageHeader>
 
       <div className="flex flex-wrap items-center gap-2">
+        <select className="input w-auto" aria-label="Task scope" value={scope} onChange={(event) => { setScope(event.target.value as Scope); setPage(1); }}>
+          {isAdmin && <option value="all">All users</option>}
+          <option value="mine">My tasks and shared work</option>
+          {canCreate && <option value="assigned_by_me">Assigned by me</option>}
+        </select>
+        {isAdmin && <input className="input min-w-[200px] flex-1" aria-label="Filter by task owner" placeholder="Filter by owner name or email" value={owner} onChange={(event) => { setOwner(event.target.value); setPage(1); }} />}
+        <p className="text-xs text-slate-500">Summary counts cover the selected scope. Filters below apply to the task list.</p>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-2">
         <div className="flex max-w-full overflow-x-auto rounded-xl border border-brand/10 bg-white p-1 shadow-sm">
           {tabs.map((item) => (
             <button
               key={item.key}
               type="button"
-              onClick={() => setTab(item.key)}
+              onClick={() => { setTab(item.key); setPage(1); }}
               className={`whitespace-nowrap rounded-lg px-3 py-1.5 text-sm font-bold transition ${tab === item.key ? "bg-brand text-white" : "text-slate-600 hover:bg-slate-100"}`}
             >
               {item.label}
@@ -251,14 +260,14 @@ export default function TasksClient({ canCreate, isAdmin, currentUserId }: { can
         </div>
         <div className="relative min-w-[180px] flex-1">
           <Search size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-          <input className="input !pl-9" placeholder="Search tasks" value={q} onChange={(event) => setQ(event.target.value)} />
+          <input className="input !pl-9" placeholder="Search tasks" value={q} onChange={(event) => { setQ(event.target.value); setPage(1); }} />
         </div>
-        <select className="input w-auto" value={source} onChange={(event) => setSource(event.target.value)} aria-label="Source">
+        <select className="input w-auto" value={source} onChange={(event) => { setSource(event.target.value); setPage(1); }} aria-label="Source">
           <option value="">All sources</option>
           <option value="auto">Automatic</option>
           <option value="manual">Assigned by people</option>
         </select>
-        <select className="input w-auto" value={priority} onChange={(event) => setPriority(event.target.value)} aria-label="Priority">
+        <select className="input w-auto" value={priority} onChange={(event) => { setPriority(event.target.value); setPage(1); }} aria-label="Priority">
           <option value="">Any priority</option>
           <option value="high">High</option>
           <option value="normal">Normal</option>
@@ -277,7 +286,7 @@ export default function TasksClient({ canCreate, isAdmin, currentUserId }: { can
         {!loading && !tasks.length && (
           <div className="px-4 py-12 text-center">
             <ClipboardCheck size={28} className="mx-auto mb-2 text-slate-300" />
-            <p className="text-sm font-bold text-slate-700">{tab === "open" ? "Nothing pending — you're all caught up." : "No tasks here yet."}</p>
+            <p className="text-sm font-bold text-slate-700">No tasks match these filters.</p>
           </div>
         )}
         {!loading && tasks.length > 0 && (
@@ -291,13 +300,15 @@ export default function TasksClient({ canCreate, isAdmin, currentUserId }: { can
                     <SourceChip task={task} />
                   </div>
                   <div className="mt-1 break-words font-bold text-slate-950">{task.title}</div>
+                  {task.details && <p className="mt-1 line-clamp-2 whitespace-pre-wrap text-sm text-slate-600">{task.details}</p>}
                   <div className="mt-0.5 flex flex-wrap gap-x-3 text-xs text-slate-500">
                     <span>Owner: {ownerLabel(task)}</span>
                     {task.dueAt && <span className={isOverdue(task) ? "font-bold text-rose-600" : ""}>Due {formatWhen(task.dueAt)}</span>}
                     {task.completedAt && <span>Done {formatWhen(task.completedAt)}{task.completedBy?.name ? ` by ${task.completedBy.name}` : ""}</span>}
                     {task.cancelledAt && <span>Cancelled {formatWhen(task.cancelledAt)}{task.cancelledBy?.name ? ` by ${task.cancelledBy.name}` : ""}</span>}
-                    {!task.completedAt && !task.cancelledAt && task.createdAt && <span>Raised {formatWhen(task.createdAt)}</span>}
+                    {task.createdAt && <span>Raised {formatWhen(task.createdAt)}</span>}
                   </div>
+                  {task.completionNotes && <p className="mt-1 line-clamp-2 text-xs text-emerald-700"><span className="font-bold">Completion notes:</span> {task.completionNotes}</p>}
                   {task.status === "cancelled" && task.cancelReason && (
                     <p className="mt-1 line-clamp-2 break-words text-xs text-rose-700"><span className="font-bold">Reason:</span> {task.cancelReason}</p>
                   )}
@@ -328,8 +339,15 @@ export default function TasksClient({ canCreate, isAdmin, currentUserId }: { can
             ))}
           </ul>
         )}
-        {!loading && total > tasks.length && (
-          <p className="border-t border-slate-100 px-4 py-2 text-xs text-slate-500">Showing {tasks.length} of {total}. Narrow the search to find older tasks.</p>
+        {!loading && total > 0 && (
+          <div className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 px-4 py-3 text-sm">
+            <span>Showing {(page - 1) * pageSize + 1}–{Math.min(page * pageSize, total)} of {total} tasks</span>
+            <div className="flex items-center gap-2">
+              <button type="button" className="btn btn-outline" disabled={page <= 1} onClick={() => setPage((value) => value - 1)}>Previous</button>
+              <span>Page {page} of {Math.ceil(total / pageSize)}</span>
+              <button type="button" className="btn btn-outline" disabled={page * pageSize >= total} onClick={() => setPage((value) => value + 1)}>Next</button>
+            </div>
+          </div>
         )}
       </div>
 

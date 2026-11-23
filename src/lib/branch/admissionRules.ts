@@ -112,7 +112,7 @@ export function detailsUpdateMessage(input: { parentName?: string; studentName: 
   return [
     greeting,
     "",
-    `Envision Chess Academy's ${input.branchLabel} centre is moving its records online. Please check and complete ${input.studentName}'s details here: ${input.link}`,
+    `We are setting up online portal access for existing students of Envision Chess Academy's ${input.branchLabel} centre. To register ${input.studentName} for the online portal, kindly check and update the details here: ${input.link}`,
     "",
     `You will need a photo of ${input.studentName} and an identity document (each under ${formatKb(ADMISSION_MAX_FILE_BYTES)}). The link works for ${ADMISSION_LINK_DAYS} days.`,
   ].join("\n");

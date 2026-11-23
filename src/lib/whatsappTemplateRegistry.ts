@@ -2509,6 +2509,19 @@ export const WHATSAPP_TEMPLATE_DEFINITIONS = [
     ]
   },
   {
+    "name": "bowbazar_portal_registration",
+    "language": "en",
+    "category": "UTILITY",
+    "sourceAutomation": "Bowbazar Existing Student Portal Registration",
+    "body": "Hello {{1}}, we are setting up online portal access for existing students of Envision Chess Academy's Bowbazar centre.\n\nTo register {{2}} for the online portal, kindly check and update the details here: {{3}}\n\nKeep a photo of the student and an identity document ready. The link works for {{4}} days.\n\nTeam Envision Chess Academy",
+    "variables": [
+      { "position": 1, "key": "parent_name", "sample": "Mrs Sen" },
+      { "position": 2, "key": "student_name", "sample": "Aarav" },
+      { "position": 3, "key": "form_link", "sample": "https://envisionchessacademy.com/admission/abc123" },
+      { "position": 4, "key": "valid_days", "sample": "14" }
+    ]
+  },
+  {
     "name": "bowbazar_admission_form",
     "language": "en",
     "sourceAutomation": "Bowbazar Admission Form Link",

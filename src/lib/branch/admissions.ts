@@ -105,17 +105,17 @@ async function deliverLink(admission: any, link: string) {
       ? sendAutomationEmail({
           to: prefill.email,
           subject: update
-            ? `Please complete ${prefill.name}'s details for Envision Chess Academy ${branchLabel}`
+            ? `Online portal registration: ${prefill.name} at Envision Chess Academy ${branchLabel}`
             : `Admission form: ${prefill.name} at Envision Chess Academy ${branchLabel}`,
           message,
           actionUrl: link,
-          actionLabel: update ? "Complete the details" : "Fill in the admission form",
+          actionLabel: update ? "Update details for portal registration" : "Fill in the admission form",
           metadata,
         }).catch(() => ({ delivered: false }))
       : null,
     sendWhatsAppAutomationTemplate({
       to: `91${prefill.phone}`,
-      templateName: "bowbazar_admission_form",
+      templateName: update ? "bowbazar_portal_registration" : "bowbazar_admission_form",
       bodyParameters: [prefill.parentName || "Parent", prefill.name, link, String(ADMISSION_LINK_DAYS)],
       metadata,
     }).catch(() => ({ delivered: false })),

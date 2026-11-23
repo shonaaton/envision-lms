@@ -140,10 +140,10 @@ export default function AdmissionForm({
   return (
     <form onSubmit={submit} className="space-y-5 rounded-xl border border-slate-200 bg-white p-5 shadow-sm" noValidate>
       <div>
-        <h1 className="text-xl font-black text-slate-950">{kind === "update" ? "Student details" : "Admission form"}</h1>
+        <h1 className="text-xl font-black text-slate-950">{kind === "update" ? "Online portal registration" : "Admission form"}</h1>
         <p className="mt-1 text-sm text-slate-600">
           {kind === "update"
-            ? `Please check what the centre has for ${prefill.name || "your child"}, fill in anything missing and add a photo. Fields marked * are needed.`
+            ? `To register ${prefill.name || "your child"} for the online portal, kindly check and update the details below and add a photo. Fields marked * are needed.`
             : `Please fill in the details below${prefill.name ? ` for ${prefill.name}` : ""}. Fields marked * are needed.`}
         </p>
       </div>

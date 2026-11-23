@@ -747,6 +747,7 @@ async function patchClassroom(req: Request, { params }: { params: { id: string }
       target.topicName = nextTopicName;
       target.topicOrder = topicOrderForName(existing, nextTopicName, target.topicOrder);
       target.topicLocked = true;
+      target.topicAnchor = true;
       target.topicOverrideReason = String(body.reason || "").trim() || "Manual admin topic correction";
       target.summary = {
         ...(target.summary || {}),
@@ -795,9 +796,14 @@ async function patchClassroom(req: Request, { params }: { params: { id: string }
       }
       target.startTime = nextStartTime;
       target.durationMinutes = Math.max(15, Number(body.durationMinutes || target.durationMinutes || existing.durationMinutes || 60));
-      if (String(body.topicName || "").trim()) {
-        target.topicName = String(body.topicName).trim();
+      // Only a real topic change pins the class. The edit form always sends the
+      // topic, so a time-only edit used to freeze the topic it happened to have.
+      const editedTopicName = String(body.topicName || "").trim();
+      if (editedTopicName && editedTopicName !== String(target.topicName || "").trim()) {
+        target.topicName = editedTopicName;
+        target.topicOrder = topicOrderForName(existing, editedTopicName, target.topicOrder);
         target.topicLocked = true;
+        target.topicAnchor = true;
         target.topicOverrideReason = "Manual topic edit";
       }
       if (body.action === "reschedule_session") {

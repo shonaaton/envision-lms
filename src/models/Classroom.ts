@@ -32,6 +32,9 @@ const ScheduledSessionSchema = new Schema(
     topicName: { type: String, required: true },
     topicOrder: { type: Number, default: 0 },
     topicLocked: { type: Boolean, default: false },
+    // A person picked this topic, so the classes after it continue from here in
+    // the syllabus. See planFutureSessionTopics.
+    topicAnchor: { type: Boolean, default: false },
     topicOverrideReason: String,
     scheduledFor: { type: Date, required: true },
     startTime: { type: String, required: true },

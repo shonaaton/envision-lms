@@ -237,6 +237,61 @@ export async function notifyStudentNoShowCreditDeduction(studentId: string, coun
   );
 }
 
+type PlannedTopic = { topicName: string; topicOrder: number };
+
+/** A class whose topic a person chose, so the classes after it continue from there. */
+export function isTopicAnchor(session: any) {
+  if (!session?.topicLocked) return false;
+  if (String(session?.status || "").toLowerCase() === "cancelled") return false;
+  return Boolean(session?.topicAnchor || session?.summary?.adminTopicCorrection);
+}
+
+/**
+ * Which plan topic each upcoming class gets. `plan` is sorted by topicOrder.
+ *
+ * Untaught topics go out in syllabus order. When a person sets a class's topic
+ * (an anchor), the classes after it continue from that point in the syllabus:
+ * the topics after it come first, and topics it skipped over only return once
+ * those have run out, so no class is left without a topic. Before anchors, a
+ * class set to "Mate in One (Rook & Bishop)" was followed by the earlier topics
+ * it had jumped past (Promotion, En-Passant, ...).
+ */
+export function planFutureSessionTopics(sessions: any[], plan: PlannedTopic[]) {
+  const key = (name: unknown) => String(name || "").trim().toLowerCase();
+  const orderOf = (session: any) => {
+    const planned = plan.find((topic) => key(topic.topicName) === key(session?.topicName));
+    if (planned) return planned.topicOrder;
+    return Number.isFinite(Number(session?.topicOrder)) ? Number(session.topicOrder) : null;
+  };
+
+  const consumed = new Set<string>();
+  sessions.forEach((session: any) => {
+    if (sessionConsumesTopic(session)) consumed.add(key(session.topicName));
+    if (session?.topicLocked && isFutureTopicAssignable(session)) consumed.add(key(session.topicName));
+  });
+  const remaining = plan.filter((topic) => !consumed.has(key(topic.topicName)));
+
+  const byDate = [...sessions].sort((a: any, b: any) => new Date(a?.scheduledFor || 0).getTime() - new Date(b?.scheduledFor || 0).getTime());
+  const assignments: Array<{ session: any; topic: PlannedTopic }> = [];
+  let anchorOrder = -Infinity;
+  byDate.forEach((session: any) => {
+    if (isTopicAnchor(session)) {
+      const order = orderOf(session);
+      if (order !== null) anchorOrder = order;
+      return;
+    }
+    const assignable = isFutureTopicAssignable(session) && (!session.isExtra || session.summary?.createdForTopicContinuation) && !session.topicLocked;
+    if (!assignable) return;
+    const nextIndex = remaining.findIndex((topic) => topic.topicOrder > anchorOrder);
+    const index = nextIndex >= 0 ? nextIndex : 0;
+    const topic = remaining[index];
+    if (!topic) return;
+    remaining.splice(index, 1);
+    assignments.push({ session, topic });
+  });
+  return assignments;
+}
+
 export async function recalculateFutureSessionTopics(classroomOrId: any, actorId?: string) {
   const classroom: any = typeof classroomOrId === "string" ? await Classroom.findById(classroomOrId) : classroomOrId;
   if (!classroom || !Array.isArray(classroom.generatedSessions) || !classroom.generatedSessions.length) return classroom;
@@ -249,27 +304,13 @@ export async function recalculateFutureSessionTopics(classroomOrId: any, actorId
     .sort((a: any, b: any) => a.topicOrder - b.topicOrder);
   if (!plan.length) return classroom;
 
-  const consumed = new Set<string>();
-  (classroom.generatedSessions || []).forEach((session: any) => {
-    if (sessionConsumesTopic(session)) consumed.add(String(session.topicName || "").trim().toLowerCase());
-    if (session?.topicLocked && isFutureTopicAssignable(session)) consumed.add(String(session.topicName || "").trim().toLowerCase());
-  });
-  const pending = plan.filter((topic: any) => !consumed.has(topic.topicName.toLowerCase()));
-  let pendingIndex = 0;
-  const futureSessions = (classroom.generatedSessions || [])
-    .filter((session: any) => isFutureTopicAssignable(session) && (!session.isExtra || session.summary?.createdForTopicContinuation) && !session.topicLocked)
-    .sort((a: any, b: any) => new Date(a.scheduledFor || 0).getTime() - new Date(b.scheduledFor || 0).getTime());
-
   const changes: Array<{ sessionId: string; from: string; to: string }> = [];
-  futureSessions.forEach((session: any) => {
-    const nextTopic = pending[pendingIndex];
-    if (!nextTopic) return;
-    pendingIndex += 1;
+  planFutureSessionTopics(classroom.generatedSessions || [], plan).forEach(({ session, topic }) => {
     const from = String(session.topicName || "");
-    if (from !== nextTopic.topicName || Number(session.topicOrder || 0) !== nextTopic.topicOrder) {
-      session.topicName = nextTopic.topicName;
-      session.topicOrder = nextTopic.topicOrder;
-      changes.push({ sessionId: String(session._id), from, to: nextTopic.topicName });
+    if (from !== topic.topicName || Number(session.topicOrder || 0) !== topic.topicOrder) {
+      session.topicName = topic.topicName;
+      session.topicOrder = topic.topicOrder;
+      changes.push({ sessionId: String(session._id), from, to: topic.topicName });
     }
   });
 

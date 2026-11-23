@@ -1,3 +1,4 @@
+import BowbazarRegistration from "@/components/bowbazar/BowbazarRegistration";
 import type { Metadata } from "next";
 import LegalPage, { InShort, TableOfContents } from "@/components/marketing/LegalPage";
 import { ACADEMY_DEFAULTS } from "@/lib/branding";
@@ -70,7 +71,7 @@ const ADDRESS = "20, Dr Jagabandhu Lane, Kolkata 700 012, West Bengal, India";
 
 export default function TermsPage() {
   return (
-    <LegalPage title="Terms and Conditions" lastUpdated="16 September 2026">
+    <LegalPage title="Terms and Conditions" lastUpdated="24 November 2026">
       <p>
         These Terms and Conditions (<strong>&ldquo;Terms&rdquo;</strong>) govern the chess coaching
         services, classes, events and online learning platform offered by{" "}
@@ -87,6 +88,8 @@ export default function TermsPage() {
         <a href="/refund-policy">Refund Policy</a>, both of which form part of these Terms.
       </p>
 
+      <BowbazarRegistration />
+      <p>For Bowbazar branch enrolments and services, the separately registered business is Shatranjana Chess Foundation. References to the Academy in these Terms include that business for its branch services. The LLP registration and GSTIN stated above identify Envisions Chess Academy LLP and do not identify the Bowbazar business.</p>
       <h2>Table of contents</h2>
       <TableOfContents items={SECTIONS} />
 

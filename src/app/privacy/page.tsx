@@ -1,3 +1,4 @@
+import BowbazarRegistration from "@/components/bowbazar/BowbazarRegistration";
 import type { Metadata } from "next";
 import LegalPage, { InShort, TableOfContents } from "@/components/marketing/LegalPage";
 import { ACADEMY_DEFAULTS } from "@/lib/branding";
@@ -58,7 +59,7 @@ const ADDRESS = "20, Dr Jagabandhu Lane, Kolkata 700 012, West Bengal, India";
 
 export default function PrivacyPage() {
   return (
-    <LegalPage title="Privacy Policy" lastUpdated="16 September 2026">
+    <LegalPage title="Privacy Policy" lastUpdated="24 November 2026">
       <p>
         This policy explains what <strong>{ACADEMY_DEFAULTS.legalName}</strong>, trading as{" "}
         {ACADEMY_DEFAULTS.academyName} (<strong>&ldquo;we&rdquo;</strong>,{" "}
@@ -72,6 +73,8 @@ export default function PrivacyPage() {
         <a href="/terms">Terms and Conditions</a> and <a href="/refund-policy">Refund Policy</a>.
       </p>
 
+      <BowbazarRegistration />
+      <p>This policy also covers Bowbazar branch information handled by Shatranjana Chess Foundation through this website and learning platform. For questions or requests concerning Bowbazar branch records, contact shatranjanachess@gmail.com. The LLP details below identify Envisions Chess Academy LLP; Bowbazar is separately registered as stated above.</p>
       <h2>Table of contents</h2>
       <TableOfContents items={SECTIONS} />
 

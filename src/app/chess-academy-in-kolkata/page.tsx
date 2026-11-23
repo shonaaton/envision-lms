@@ -97,7 +97,7 @@ export default function KolkataAcademyPage() {
         { "@type": "Organization", name: "Kolkata District Chess Association" },
         { "@type": "Organization", name: "Sara Bangla Daba Sangstha" },
       ],
-      department: kolkataCentres.map((centre) => ({
+      department: kolkataCentres.filter((centre) => centre.slug !== "bowbazar").map((centre) => ({
         "@type": ["LocalBusiness", "EducationalOrganization"],
         "@id": `${MARKETING_BASE_URL}${centreHref(centre.slug)}#centre`,
         name: `Envision Chess Academy - ${centre.name}`,
@@ -318,6 +318,7 @@ export default function KolkataAcademyPage() {
                   </span>
                   <h3 className="mt-4 text-lg font-black text-brand-900">
                     <Link href={centreHref(centre.slug)} className="hover:text-brand hover:underline">{centre.h1}</Link>
+                    {centre.slug === "bowbazar" && <span className="mt-2 block text-xs font-normal">Separately registered as Shatranjana Chess Foundation</span>}
                   </h3>
                   <address className="mt-1.5 text-sm not-italic leading-6 text-brand-900/70">{centre.address}</address>
                   <p className="mt-3 text-sm leading-6 text-brand-900/75">{centre.supportingHeading}</p>

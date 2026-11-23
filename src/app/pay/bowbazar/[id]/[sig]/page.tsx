@@ -1,3 +1,4 @@
+import BowbazarRegistration from "@/components/bowbazar/BowbazarRegistration";
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { isValidObjectId } from "mongoose";
@@ -46,6 +47,7 @@ export default async function BranchPayPage({ params }: { params: { id: string; 
           <img src={ACADEMY_LOGO_URL} alt="Envision Chess Academy" className="h-8 w-auto" />
         </div>
         <div className="space-y-5 p-5">
+          {student.branch === "bowbazar" && <BowbazarRegistration />}
           <div>
             <p className="text-xs font-bold uppercase tracking-[0.14em] text-slate-500">{centre} centre · chess class fees</p>
             <p className="mt-1 text-sm text-slate-600">For {firstName}</p>

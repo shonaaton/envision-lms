@@ -1,3 +1,4 @@
+import BowbazarRegistration from "@/components/bowbazar/BowbazarRegistration";
 import type { ReceiptView } from "@/lib/branch/receipts";
 import PrintButton from "./PrintButton";
 
@@ -34,6 +35,7 @@ export default function ReceiptSheet({ receipt }: { receipt: ReceiptView }) {
             <div className="text-xs text-slate-500">{dateText(receipt.paidAt)}</div>
           </div>
         </header>
+        {receipt.branchLabel === "Bowbazar" && <BowbazarRegistration />}
         <div className="py-4">
           <Line label="Received from" value={[receipt.parentName, receipt.parentName ? `for ${receipt.studentName}` : receipt.studentName].filter(Boolean).join(" ")} />
           {receipt.regNo && <Line label="Registration no." value={receipt.regNo} />}

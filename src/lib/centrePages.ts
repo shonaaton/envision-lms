@@ -80,7 +80,7 @@ export const kolkataCentres: CentreConfig[] = [
     supportingHeading: "Offline chess classes in Bowbazar, central Kolkata, under National Instructor Sayantan Chandra.",
     title: "Chess Academy in Bowbazar, Kolkata | Envision",
     description:
-      "Chess academy in Bowbazar, Kolkata. Offline chess classes six days a week under a FIDE-certified National Instructor, with group and one-to-one coaching and tournament preparation.",
+      "Bowbazar branch, separately registered as Shatranjana Chess Foundation. Offline chess classes under a FIDE-certified National Instructor, with group and one-to-one coaching and tournament preparation.",
     keywords: [
       "chess academy in Bowbazar",
       "chess classes in Bowbazar",
@@ -93,7 +93,7 @@ export const kolkataCentres: CentreConfig[] = [
       "chess academy near me",
     ],
     intro:
-      "The academy's central Kolkata centre and its registered address, running batches six days a week. Beginners start from the board itself; competitive players prepare for district, state and national events in the same room.",
+      "Our Bowbazar branch is separately registered as Shatranjana Chess Foundation, distinct from Envisions Chess Academy LLP, at 20 Dr Jagabandhu Lane, Kolkata 700 012. Beginners start from the board itself; competitive players prepare for district, state and national events in the same room.",
     streetAddress: "20, Dr Jagabandhu Lane",
     postalCode: "700012",
     address: "20, Dr Jagabandhu Lane, Bowbazar, Kolkata 700012",
@@ -133,7 +133,7 @@ export const kolkataCentres: CentreConfig[] = [
     faqs: [
       {
         q: "Where is the Bowbazar chess academy located?",
-        a: "At 20, Dr Jagabandhu Lane, Bowbazar, Kolkata 700012 - also the academy's registered address. It is a short trip from Sealdah, College Street, Chandni Chowk and Esplanade, so families across central Kolkata can reach it on a weekday evening.",
+        a: "At 20, Dr Jagabandhu Lane, Bowbazar, Kolkata 700012 - the registered address of Shatranjana Chess Foundation, our separately registered Bowbazar branch. It is a short trip from Sealdah, College Street, Chandni Chowk and Esplanade, so families across central Kolkata can reach it on a weekday evening.",
       },
       {
         q: "Which days do chess classes run in Bowbazar?",

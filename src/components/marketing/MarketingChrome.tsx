@@ -92,7 +92,7 @@ function CentresMenu() {
           </Link>
           {kolkataCentres.map((centre) => (
             <Link key={centre.slug} href={centreHref(centre.slug)} className="block rounded-lg px-3 py-2.5 text-sm font-bold text-brand-900/80 hover:bg-brand-50 hover:text-brand">
-              {centre.name}
+              {centre.name}{centre.slug === "bowbazar" && <span className="block text-xs font-normal">Separately registered as Shatranjana Chess Foundation</span>}
             </Link>
           ))}
         </div>
@@ -118,7 +118,7 @@ function MobileMenuGroup({ href, label, links }: { href: string; label: string; 
 }
 
 const courseChildren: NavItem[] = coursePages.map((page) => [page.navLabel, `/${page.slug}`]);
-const centreChildren: NavItem[] = kolkataCentres.map((centre) => [centre.name, centreHref(centre.slug)]);
+const centreChildren: NavItem[] = kolkataCentres.map((centre) => [centre.slug === "bowbazar" ? "Bowbazar (Shatranjana Chess Foundation, separately registered)" : centre.name, centreHref(centre.slug)]);
 
 /**
  * `ctaLabel` exists for the offline pages. A parent reading a centre page wants
@@ -340,7 +340,7 @@ export function MarketingFooter() {
                   <MapPin size={14} className="mt-0.5 shrink-0 text-accent" />
                   <span>
                     <Link href={centreHref(centre.slug)} className="block text-sm font-bold text-white transition hover:text-accent hover:underline">
-                      {centre.h1}
+                      {centre.h1}{centre.slug === "bowbazar" && <span className="block text-xs font-normal">Separately registered as Shatranjana Chess Foundation</span>}
                     </Link>
                     <span className="block text-xs leading-5 text-white/65">{centre.address}</span>
                     <a href={`tel:${centre.phone}`} className="mt-0.5 inline-block text-xs font-bold text-accent transition hover:underline">
@@ -407,7 +407,7 @@ export function MarketingFooter() {
                   title={`Nearest centre: ${centre.h1}, ${centre.address}`}
                   className="inline-flex rounded-full border border-white/15 bg-white/[0.06] px-3 py-1.5 text-xs font-semibold text-white/80 transition hover:border-accent/60 hover:bg-white/10 hover:text-accent"
                 >
-                  Chess classes in {area}
+                  Chess classes in {area}{centre.slug === "bowbazar" && <span className="ml-1">(Shatranjana Chess Foundation, separately registered)</span>}
                 </Link>
               </li>
             ))}

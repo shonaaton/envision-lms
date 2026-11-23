@@ -1,3 +1,5 @@
+import BowbazarRegistration from "@/components/bowbazar/BowbazarRegistration";
+import { BOWBAZAR_REGISTRATION } from "@/lib/branch/registration";
 import Link from "next/link";
 import {
   ArrowRight,
@@ -69,6 +71,7 @@ export default function CentrePage({ config }: { config: CentreConfig }) {
       "@type": ["LocalBusiness", "EducationalOrganization"],
       "@id": `${pageUrl}#centre`,
       name: `Envision Chess Academy - ${config.name}`,
+      legalName: config.slug === "bowbazar" ? BOWBAZAR_REGISTRATION.businessName : undefined,
       alternateName: config.h1,
       description: config.description,
       url: pageUrl,
@@ -80,7 +83,7 @@ export default function CentrePage({ config }: { config: CentreConfig }) {
       areaServed: [{ "@type": "City", name: "Kolkata" }, ...config.nearby.map((area) => ({ "@type": "Place", name: `${area}, Kolkata` }))],
       openingHoursSpecification: centreOpeningHours(config),
       knowsAbout: ["Chess coaching", "Chess classes for kids", "Chess tournament preparation"],
-      parentOrganization: {
+      parentOrganization: config.slug === "bowbazar" ? undefined : {
         "@type": "EducationalOrganization",
         name: "Envision Chess Academy",
         legalName: ACADEMY_DEFAULTS.legalName,
@@ -139,6 +142,7 @@ export default function CentrePage({ config }: { config: CentreConfig }) {
             <h1 className="mt-4 text-[1.85rem] font-bold leading-[1.08] text-brand-900 sm:text-[2.25rem] lg:text-[2.6rem]">{config.h1}</h1>
             <h2 className="mt-2.5 max-w-lg text-base font-black leading-snug text-brand sm:text-lg">{config.supportingHeading}</h2>
             <p className="mt-4 max-w-lg text-sm leading-7 text-brand-900/70 sm:text-[0.95rem]">{config.intro}</p>
+            {config.slug === "bowbazar" && <BowbazarRegistration />}
             <div className="mt-6 flex flex-col gap-3 sm:flex-row">
               <Link href={contactHref} className="btn-accent min-h-11 whitespace-nowrap px-5 shadow-lg shadow-accent-600/20">
                 Contact Us <ArrowRight size={18} />
@@ -397,6 +401,7 @@ export default function CentrePage({ config }: { config: CentreConfig }) {
                     <span className="flex items-center gap-1.5 text-sm font-black text-brand-900">
                       <MapPin size={15} className="text-brand" /> {centre.h1}
                     </span>
+                    {centre.slug === "bowbazar" && <span className="mt-2 text-xs">Separately registered as Shatranjana Chess Foundation</span>}
                     <span className="mt-1.5 text-xs leading-5 text-brand-900/60">{centre.address}</span>
                     <span className="mt-1.5 text-xs font-bold text-brand">{centre.schedule.map((entry) => entry.day.slice(0, 3)).join(", ")}</span>
                   </Link>

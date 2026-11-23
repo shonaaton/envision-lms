@@ -187,7 +187,7 @@ const post: BlogPost = {
     },
     {
       q: "Which chess academy in Kolkata offers both online and offline classes?",
-      a: "Several do. Envision Chess Academy runs four offline centres in Bowbazar, Haridevpur, Jodhpur Park and New Alipore and live online classes on the same 240-session syllabus, so students can move between formats without starting again.",
+      a: "Several do. Envision Chess Academy runs four offline centres in Bowbazar (separately registered as Shatranjana Chess Foundation), Haridevpur, Jodhpur Park and New Alipore and live online classes on the same 240-session syllabus, so students can move between formats without starting again.",
     },
     {
       q: "What age can a child join a chess academy in Kolkata?",

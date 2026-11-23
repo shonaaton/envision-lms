@@ -1,3 +1,4 @@
+import BowbazarRegistration from "@/components/bowbazar/BowbazarRegistration";
 import type { Metadata } from "next";
 import Script from "next/script";
 import { CheckCircle2, Clock, XCircle } from "lucide-react";
@@ -36,6 +37,7 @@ export default async function AdmissionPage({ params }: { params: { token: strin
           <div className="text-sm font-semibold text-slate-600">{admission ? `${admission.branchLabel} centre` : "Admissions"}</div>
         </div>
 
+        {admission?.branchLabel === "Bowbazar" && <BowbazarRegistration />}
         {!admission ? (
           <Notice icon={<XCircle size={24} />} title="This link isn't valid">
             Please check you opened the whole link from the message, or ask the centre to send it again.

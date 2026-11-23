@@ -1,3 +1,4 @@
+import BowbazarRegistration from "@/components/bowbazar/BowbazarRegistration";
 import type { Metadata } from "next";
 import LegalPage, { InShort, TableOfContents } from "@/components/marketing/LegalPage";
 import { ACADEMY_DEFAULTS } from "@/lib/branding";
@@ -47,7 +48,7 @@ const ADDRESS = "20, Dr Jagabandhu Lane, Kolkata 700 012, West Bengal, India";
 
 export default function RefundPolicyPage() {
   return (
-    <LegalPage title="Refund Policy" lastUpdated="16 September 2026">
+    <LegalPage title="Refund Policy" lastUpdated="24 November 2026">
       <p>
         This Refund Policy explains when <strong>{ACADEMY_DEFAULTS.legalName}</strong>, trading as{" "}
         {ACADEMY_DEFAULTS.academyName}, refunds fees and credits, how to ask for a refund, and how
@@ -61,6 +62,8 @@ export default function RefundPolicyPage() {
         pause an enrolment.
       </p>
 
+      <BowbazarRegistration />
+      <p>For Bowbazar branch payments, the relevant separately registered business is Shatranjana Chess Foundation. Please direct branch payment and refund queries to shatranjanachess@gmail.com.</p>
       <h2>Table of contents</h2>
       <TableOfContents items={SECTIONS} />
 

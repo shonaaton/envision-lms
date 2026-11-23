@@ -45,7 +45,7 @@ export function centreLinks(exceptSlug?: string): RelatedLink[] {
     .filter((centre) => centre.slug !== exceptSlug)
     .map((centre) => ({
       href: centreHref(centre.slug),
-      label: centre.h1,
+      label: centre.slug === "bowbazar" ? `${centre.h1} — Shatranjana Chess Foundation (separately registered)` : centre.h1,
       detail: `${centre.address} - ${centre.schedule.map((entry) => entry.day.slice(0, 3)).join(", ")}, ${centreTimeRange(centre)}`,
     }));
 }

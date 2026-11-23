@@ -216,7 +216,7 @@ const homeFaqs = [
   },
   {
     q: "Do you offer online chess classes across India, or only in Kolkata?",
-    a: "Both. Live online chess classes run for students anywhere in India and abroad, and offline coaching runs at four Kolkata centres: Bowbazar, Haridevpur, Jodhpur Park and New Alipore. The curriculum, homework and tournaments are identical either way.",
+    a: "Both. Live online chess classes run for students anywhere in India and abroad, and offline coaching runs at four Kolkata centres: Bowbazar (separately registered as Shatranjana Chess Foundation), Haridevpur, Jodhpur Park and New Alipore. The curriculum, homework and tournaments are identical either way.",
   },
   {
     q: "Can a complete beginner join the chess coaching programme?",
@@ -795,6 +795,7 @@ export default async function Home() {
                 <h3 className="mt-3 font-black text-brand-900">
                   <Link href={centre.href} className="hover:text-brand hover:underline">{centre.name} chess coaching centre</Link>
                 </h3>
+                {centre.name === "Bowbazar" && <p className="mt-2 text-xs text-brand">Separately registered as Shatranjana Chess Foundation</p>}
                 <address className="mt-1 text-sm not-italic leading-5 text-brand-900/70">{centre.address}</address>
                 <Link href={centre.href} className="mt-3 inline-flex text-xs font-black text-brand hover:underline">
                   Timings, coach and directions

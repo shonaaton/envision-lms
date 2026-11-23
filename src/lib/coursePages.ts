@@ -428,7 +428,7 @@ export const courseHub = {
     },
     {
       q: "Are these online chess classes available across India?",
-      a: "Yes. Every course runs live online for students anywhere in India and in 15+ other countries, and the same courses run offline at our four Kolkata centres in Bowbazar, Haridevpur, Jodhpur Park and New Alipore.",
+      a: "Yes. Every course runs live online for students anywhere in India and in 15+ other countries, and the same courses run offline at our four Kolkata centres in Bowbazar (separately registered as Shatranjana Chess Foundation), Haridevpur, Jodhpur Park and New Alipore.",
     },
     {
       q: "How long does each online chess course take?",

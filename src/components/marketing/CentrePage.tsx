@@ -147,7 +147,7 @@ export default function CentrePage({ config, live = false, fees }: { config: Cen
             <h1 className="mt-4 text-[1.85rem] font-bold leading-[1.08] text-brand-900 sm:text-[2.25rem] lg:text-[2.6rem]">{config.h1}</h1>
             <h2 className="mt-2.5 max-w-lg text-base font-black leading-snug text-brand sm:text-lg">{config.supportingHeading}</h2>
             <p className="mt-4 max-w-lg text-sm leading-7 text-brand-900/70 sm:text-[0.95rem]">{config.intro}</p>
-            {config.slug === "bowbazar" && <BowbazarRegistration />}
+            {config.slug === "bowbazar" && <HeroSlots config={config} live={live} />}
             <div className="mt-6 flex flex-col gap-3 sm:flex-row">
               <Link href={contactHref} className="btn-accent min-h-11 whitespace-nowrap px-5 shadow-lg shadow-accent-600/20">
                 Contact Us <ArrowRight size={18} />
@@ -462,6 +462,15 @@ export default function CentrePage({ config, live = false, fees }: { config: Cen
         </div>
       </section>
 
+      {/* The branch's legal registration: needed on the page, not at the top of it. */}
+      {config.slug === "bowbazar" ? (
+        <section className="bg-white px-4 pb-12 sm:px-6 lg:px-8">
+          <div className="mx-auto max-w-7xl">
+            <BowbazarRegistration />
+          </div>
+        </section>
+      ) : null}
+
       <MarketingFooter />
     </main>
   );
@@ -501,5 +510,51 @@ function CentreFeesCard({ fees, centreName }: { fees: CentreFees; centreName: st
       ) : null}
       <p className="mt-3 text-xs leading-5 text-brand-900/60">The demo class is free. Fees are paid monthly, at the centre or by UPI.</p>
     </article>
+  );
+}
+
+/**
+ * The batch timings, in the hero, for a parent deciding on a time. With live
+ * seat counts it lists only the slots that still have room; the full list,
+ * fees and waitlist buttons stay in the timings section below.
+ */
+function HeroSlots({ config, live }: { config: CentreConfig; live: boolean }) {
+  const isOpen = (slot: CentreConfig["schedule"][number]["slots"][number]) =>
+    !live || typeof slot.seatsLeft !== "number" || slot.seatsLeft > 0;
+  const days = config.schedule
+    .map((entry) => ({ day: entry.day, slots: entry.slots.filter(isOpen) }))
+    .filter((entry) => entry.slots.length > 0);
+  return (
+    <div className="mt-5 rounded-2xl border border-brand/15 bg-white/90 p-4 shadow-lg shadow-brand-900/5 sm:p-5">
+      <h2 className="flex items-center gap-2 text-xs font-black uppercase tracking-[0.14em] text-brand">
+        <Clock3 size={15} /> {live ? "Available slots" : "Batch timings"}
+      </h2>
+      {days.length ? (
+        <ul className="mt-3 grid gap-2.5">
+          {days.map((entry) => (
+            <li key={entry.day} className="grid gap-1.5 sm:grid-cols-[6.5rem_1fr] sm:items-baseline">
+              <span className="text-sm font-black text-brand-900">{entry.day}</span>
+              <span className="flex flex-wrap gap-1.5">
+                {entry.slots.map((slot) => (
+                  <span key={`${slot.from}-${slot.to}`} className="inline-flex items-center gap-1.5 rounded-lg bg-brand-50 px-2.5 py-1 text-xs font-bold tabular-nums text-brand-900 ring-1 ring-brand/10">
+                    {slotLabel(slot)}
+                    {live && typeof slot.seatsLeft === "number" ? (
+                      <span className="font-black text-emerald-700">
+                        &middot; {slot.seatsLeft} {slot.seatsLeft === 1 ? "seat" : "seats"}
+                      </span>
+                    ) : null}
+                  </span>
+                ))}
+              </span>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="mt-2 text-sm leading-6 text-brand-900/70">Every batch is full right now. Join a batch&apos;s waitlist below and we will message you when a seat frees up.</p>
+      )}
+      <Link href="#timings" className="mt-3 inline-flex items-center gap-1 text-xs font-black text-brand hover:underline">
+        Full timetable, fees and waitlist <ArrowRight size={14} />
+      </Link>
+    </div>
   );
 }

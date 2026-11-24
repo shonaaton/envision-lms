@@ -7,10 +7,27 @@ import { getCoachAssignedStudentIds } from "@/lib/coachStudentAccess";
 import { User } from "@/models/User";
 import { decideChessAccess, type ChessAccessScope } from "./accessDecision";
 
+/** What a student does on their own chess profile: see it, link accounts, sync, open games. */
+const OWN_PROFILE_PERMISSIONS = ["view", "manage_accounts", "sync", "games"];
+
+/**
+ * Player Analytics access for this user. An offline-branch (Bowbazar) student
+ * always has their own chess profile: the branch has no say in the online
+ * academy's Feature Access roles or pilot cohorts, so leaving it to those
+ * bounced every branch student back to their class page. Everyone else goes
+ * through Feature Access as before.
+ */
+export async function canUseChessProfile(user: SessionUser | null | undefined, permission = "view") {
+  if (!user) return false;
+  const branch = (user as SessionUser & { branch?: string }).branch;
+  if (user.role === "student" && branch && OWN_PROFILE_PERMISSIONS.includes(permission)) return true;
+  return canAccessFeature("playerAnalytics", user, permission);
+}
+
 export async function requireChessSession(permission = "view") {
   const session = await auth();
   if (!session?.user) return null;
-  const allowed = await canAccessFeature("playerAnalytics", session.user as SessionUser, permission);
+  const allowed = await canUseChessProfile(session.user as SessionUser, permission);
   return allowed ? session : null;
 }
 

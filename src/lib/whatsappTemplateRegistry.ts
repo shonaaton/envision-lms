@@ -2509,6 +2509,44 @@ export const WHATSAPP_TEMPLATE_DEFINITIONS = [
     ]
   },
   {
+    "name": "offline_lead_assignment",
+    "language": "en",
+    "category": "UTILITY",
+    "sourceAutomation": "Offline Lead Assignment",
+    "body": "Hello {{1}}, a new offline admission lead has been assigned to the {{2}} centre.\n\nParent: {{3}}\nStudent: {{4}}\nWhatsApp: {{5}}\nEmail: {{6}}\nNote: {{7}}\n\nPlease call the family and use a button below as soon as the final outcome is known.",
+    "variables": [
+      { "position": 1, "key": "centre_head", "sample": "Sayan" },
+      { "position": 2, "key": "branch", "sample": "Haridevpur" },
+      { "position": 3, "key": "parent_name", "sample": "Mrs Sen" },
+      { "position": 4, "key": "student_name", "sample": "Aarav" },
+      { "position": 5, "key": "parent_phone", "sample": "+91 9876543210" },
+      { "position": 6, "key": "parent_email", "sample": "parent@example.com" },
+      { "position": 7, "key": "note", "sample": "Please call after 6 PM" }
+    ],
+    "buttons": [
+      { "type": "QUICK_REPLY", "text": "Admission taken" },
+      { "type": "QUICK_REPLY", "text": "Lead lost" }
+    ]
+  },
+  {
+    "name": "offline_lead_followup",
+    "language": "en",
+    "category": "UTILITY",
+    "sourceAutomation": "Offline Lead Follow-up",
+    "body": "Hello {{1}}, this is the day-{{2}} follow-up for an open {{3}} offline lead.\n\nParent: {{4}}\nWhatsApp: {{5}}\n\nPlease call the family. If the outcome is final, use a button below; otherwise no action is needed and the lead remains open.",
+    "variables": [
+      { "position": 1, "key": "centre_head", "sample": "Sayan" },
+      { "position": 2, "key": "followup_day", "sample": "5" },
+      { "position": 3, "key": "branch", "sample": "Haridevpur" },
+      { "position": 4, "key": "parent_name", "sample": "Mrs Sen" },
+      { "position": 5, "key": "parent_phone", "sample": "+91 9876543210" }
+    ],
+    "buttons": [
+      { "type": "QUICK_REPLY", "text": "Admission taken" },
+      { "type": "QUICK_REPLY", "text": "Lead lost" }
+    ]
+  },
+  {
     "name": "bowbazar_portal_registration",
     "language": "en",
     "category": "UTILITY",
@@ -2531,6 +2569,30 @@ export const WHATSAPP_TEMPLATE_DEFINITIONS = [
       { "position": 2, "key": "student_name", "sample": "Aarav" },
       { "position": 3, "key": "form_link", "sample": "https://envisionchessacademy.com/admission/abc123" },
       { "position": 4, "key": "valid_days", "sample": "14" }
+    ]
+  },
+  {
+    "name": "bowbazar_enquiry_reply",
+    "language": "en",
+    "sourceAutomation": "Bowbazar Enquiry Reply",
+    "body": "Hello {{1}}, thank you for asking about chess classes at the Envision Chess Academy Bowbazar centre.\n\nBatches with seats free now: {{2}}\n\nFees: {{3}}\n\nLive seats and the waitlist: {{4}}\n\nOur team will call you to fix a free demo class.\n\nTeam Envision Chess Academy",
+    "variables": [
+      { "position": 1, "key": "parent_name", "sample": "Mrs Sen" },
+      { "position": 2, "key": "open_slots", "sample": "Wed 5:00 PM–6:00 PM (3 left); Sat 10:00 AM–11:00 AM (2 left)" },
+      { "position": 3, "key": "fees", "sample": "1 class a week: ₹1,000 a month; 2 classes a week: ₹1,500 a month; admission fee ₹500 one time" },
+      { "position": 4, "key": "page_link", "sample": "https://envisionchessacademy.com/chess-academy-in-kolkata/bowbazar" }
+    ]
+  },
+  {
+    "name": "bowbazar_waitlist_seat_free",
+    "language": "en",
+    "sourceAutomation": "Bowbazar Waitlist Seat Free",
+    "body": "Hello {{1}}, good news: a seat has opened up in the {{3}} batch at the Envision Chess Academy Bowbazar centre, which {{2}} is waiting for.\n\nSeats go to the first family to confirm, so please reply here or call the centre to take it.\n\nLive seats: {{4}}\n\nTeam Envision Chess Academy",
+    "variables": [
+      { "position": 1, "key": "parent_name", "sample": "Mrs Sen" },
+      { "position": 2, "key": "student_name", "sample": "Aarav" },
+      { "position": 3, "key": "slot", "sample": "Sat 10:00 AM–11:00 AM" },
+      { "position": 4, "key": "page_link", "sample": "https://envisionchessacademy.com/chess-academy-in-kolkata/bowbazar" }
     ]
   },
   {
@@ -2620,6 +2682,75 @@ export const WHATSAPP_TEMPLATE_DEFINITIONS = [
       { "position": 5, "key": "topics", "sample": "Knight forks, pins, back-rank mate" },
       { "position": 6, "key": "homework_done", "sample": "3 of 4" },
       { "position": 7, "key": "portal_link", "sample": "https://envisionchessacademy.com/bowbazar/me" }
+    ]
+  },
+  {
+    "name": "bowbazar_class_cancelled",
+    "language": "en",
+    "sourceAutomation": "Bowbazar Class Changes",
+    "body": "Hello {{1}}, the Envision Chess Academy Bowbazar centre has cancelled the online class “{{2}}” on {{3}}.\n\nNote from the centre: {{4}}\n\nYour other classes go ahead as usual. You can see your schedule on your Bowbazar page.\n\nTeam Envision Chess Academy",
+    "variables": [
+      { "position": 1, "key": "recipient_name", "sample": "Aarav" },
+      { "position": 2, "key": "class_name", "sample": "Upasana" },
+      { "position": 3, "key": "class_datetime", "sample": "2 Dec 2026, 5:00 PM IST" },
+      { "position": 4, "key": "note", "sample": "The coach is unwell." }
+    ]
+  },
+  {
+    "name": "bowbazar_class_rescheduled",
+    "language": "en",
+    "sourceAutomation": "Bowbazar Class Changes",
+    "body": "Hello {{1}}, the Envision Chess Academy Bowbazar centre has moved the online class “{{2}}” from {{3}} to {{4}}.\n\nNote from the centre: {{5}}\n\nJoin it from your Bowbazar page at the new time.\n\nTeam Envision Chess Academy",
+    "variables": [
+      { "position": 1, "key": "recipient_name", "sample": "Aarav" },
+      { "position": 2, "key": "class_name", "sample": "Upasana" },
+      { "position": 3, "key": "old_datetime", "sample": "2 Dec 2026, 5:00 PM IST" },
+      { "position": 4, "key": "new_datetime", "sample": "4 Dec 2026, 6:00 PM IST" },
+      { "position": 5, "key": "note", "sample": "School exams this week." }
+    ]
+  },
+  {
+    "name": "bowbazar_extra_class",
+    "language": "en",
+    "sourceAutomation": "Bowbazar Class Changes",
+    "body": "Hello {{1}}, the Envision Chess Academy Bowbazar centre has added an extra online class “{{2}}” on {{3}}.\n\nNote from the centre: {{4}}\n\nJoin it from your Bowbazar page at class time.\n\nTeam Envision Chess Academy",
+    "variables": [
+      { "position": 1, "key": "recipient_name", "sample": "Aarav" },
+      { "position": 2, "key": "class_name", "sample": "Upasana" },
+      { "position": 3, "key": "class_datetime", "sample": "29 Nov 2026, 10:00 AM IST" },
+      { "position": 4, "key": "note", "sample": "A make-up class before the tournament." }
+    ]
+  },
+  {
+    "name": "bowbazar_class_added",
+    "language": "en",
+    "sourceAutomation": "Bowbazar Class Changes",
+    "body": "Hello {{1}}, you have been added to the online class “{{2}}” on {{3}} at the Envision Chess Academy Bowbazar centre. This is for that one class only, and your own weekly classes do not change.\n\nJoin it from your Bowbazar page at class time.\n\nTeam Envision Chess Academy",
+    "variables": [
+      { "position": 1, "key": "student_name", "sample": "Aarav" },
+      { "position": 2, "key": "class_name", "sample": "Upasana" },
+      { "position": 3, "key": "class_datetime", "sample": "25 Nov 2026, 5:00 PM IST" }
+    ]
+  },
+  {
+    "name": "bowbazar_class_restored",
+    "language": "en",
+    "sourceAutomation": "Bowbazar Class Changes",
+    "body": "Hello {{1}}, good news from the Envision Chess Academy Bowbazar centre: the online class “{{2}}” on {{3}} is back on as planned.\n\nJoin it from your Bowbazar page at class time.\n\nTeam Envision Chess Academy",
+    "variables": [
+      { "position": 1, "key": "recipient_name", "sample": "Aarav" },
+      { "position": 2, "key": "class_name", "sample": "Upasana" },
+      { "position": 3, "key": "class_datetime", "sample": "2 Dec 2026, 5:00 PM IST" }
+    ]
+  },
+  {
+    "name": "bowbazar_class_stopped",
+    "language": "en",
+    "sourceAutomation": "Bowbazar Class Changes",
+    "body": "Hello {{1}}, the online class “{{2}}” at the Envision Chess Academy Bowbazar centre has stopped running. The centre will contact you about your next class.\n\nTeam Envision Chess Academy",
+    "variables": [
+      { "position": 1, "key": "recipient_name", "sample": "Aarav" },
+      { "position": 2, "key": "class_name", "sample": "Upasana" }
     ]
   },
   {

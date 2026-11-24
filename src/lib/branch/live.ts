@@ -11,6 +11,7 @@ import { BRANCH_LABELS } from "./scope";
 import { BranchError } from "./errors";
 import { getRegister, saveRegister } from "./attendance";
 import { holidayFor } from "./comms";
+import { classOn } from "./classSessions";
 import { isAttendanceStatus, slotLabel, todayKey } from "./rules";
 
 /**
@@ -48,6 +49,13 @@ async function onlineSlot(branch: BranchKey, slotId: string) {
   return slot;
 }
 
+/** The class's time that day: its own, or the moved / extra meeting's. */
+async function meetingOn(slot: any, date: string) {
+  const occurrence = await classOn(slot, date);
+  if (!occurrence) throw new BranchError("This class doesn't meet that day.", 409);
+  return { startTime: occurrence.startTime, endTime: occurrence.endTime };
+}
+
 /** The students on that day's register (members, less moves out, plus moves in and guests). */
 async function dayRoster(branch: BranchKey, slotId: string, date: string) {
   const register = await getRegister(branch, slotId, date);
@@ -68,10 +76,11 @@ export async function openBranchLiveRoom(branch: BranchKey, slotId: string, date
   const slot = await onlineSlot(branch, slotId);
   if (date !== todayKey()) throw new BranchError("The live room opens on the day of the class.");
   const closedFor = await holidayFor(branch, slot._id, date);
-  if (closedFor) throw new BranchError(`The centre is closed today (${closedFor}).`);
+  if (closedFor) throw new BranchError(closedFor.startsWith("Class ") ? `${closedFor}.` : `The centre is closed today (${closedFor}).`);
+  const meeting = await meetingOn(slot, date);
   const { userIds } = await dayRoster(branch, slotId, date);
   const label = slotLabel(slot);
-  const durationMinutes = minutesBetween(slot.startTime, slot.endTime);
+  const durationMinutes = minutesBetween(meeting.startTime, meeting.endTime);
 
   const filter = { branch, branchSlot: slot._id };
   const roomFields = {
@@ -115,7 +124,7 @@ export async function openBranchLiveRoom(branch: BranchKey, slotId: string, date
             sessionNumber: sessions.length + 1,
             topicName: label,
             scheduledFor: academyDateTime(date),
-            startTime: slot.startTime,
+            startTime: meeting.startTime,
             durationMinutes,
             status: "scheduled",
             students: userIds,
@@ -134,7 +143,7 @@ export async function openBranchLiveRoom(branch: BranchKey, slotId: string, date
       {
         $set: {
           "generatedSessions.$.students": userIds,
-          ...(session.actualStartedAt ? {} : { "generatedSessions.$.startTime": slot.startTime, "generatedSessions.$.durationMinutes": durationMinutes }),
+          ...(session.actualStartedAt ? {} : { "generatedSessions.$.startTime": meeting.startTime, "generatedSessions.$.durationMinutes": durationMinutes }),
         },
       }
     );
@@ -153,8 +162,11 @@ export async function studentLiveRoom(branch: BranchKey, slotId: string, date: s
   const slot = await onlineSlot(branch, slotId);
   const { userIds } = await dayRoster(branch, slotId, date);
   if (!userIds.includes(student.userId)) throw new BranchError("You are not on this class today.", 403);
-  const durationMinutes = minutesBetween(slot.startTime, slot.endTime);
-  const probe = { scheduledFor: academyDateTime(date), startTime: slot.startTime, durationMinutes };
+  const closedFor = await holidayFor(branch, slot._id, date);
+  if (closedFor) throw new BranchError(closedFor.startsWith("Class ") ? `${closedFor}.` : `No class today (${closedFor}).`, 409);
+  const meeting = await meetingOn(slot, date);
+  const durationMinutes = minutesBetween(meeting.startTime, meeting.endTime);
+  const probe = { scheduledFor: academyDateTime(date), startTime: meeting.startTime, durationMinutes };
   if (date !== todayKey() || !isJoinWindowOpenOnServer(probe)) {
     throw new BranchError("The live room opens 15 minutes before your class starts.", 409);
   }

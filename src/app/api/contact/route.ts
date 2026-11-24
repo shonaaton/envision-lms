@@ -6,6 +6,9 @@ import { consumeRateLimit, getClientIp, jsonRateLimitHeaders } from "@/lib/reque
 import { contactMessageSchema } from "@/lib/validation";
 import { ContactMessage } from "@/models/ContactMessage";
 import { raiseContactEnquiryTask } from "@/lib/tasks/taskTriggers";
+import { leadFromContactForm } from "@/lib/branch/leads";
+import { addCentreEnquiryToDemoLeads } from "@/lib/demoLeadCrm";
+import { ONLINE_INTEREST } from "@/lib/contactEnquiries";
 
 export const dynamic = "force-dynamic";
 
@@ -54,7 +57,15 @@ export async function POST(req: Request) {
       sourcePath: data.sourcePath,
     });
 
-    await raiseContactEnquiryTask(created);
+    if (data.interest === ONLINE_INTEREST) {
+      await raiseContactEnquiryTask(created);
+    } else {
+      // A Kolkata centre: the enquiry becomes a Demo Leads row, so sales can
+      // call it and transfer it with "Move to Offline Leads".
+      await addCentreEnquiryToDemoLeads(created.toObject());
+      // Bowbazar families also get the open slots and fees at once.
+      if (data.interest === "bowbazar") await leadFromContactForm("bowbazar", created.toObject());
+    }
 
     return NextResponse.json({ ok: true, id: created._id.toString() });
   } catch (error) {

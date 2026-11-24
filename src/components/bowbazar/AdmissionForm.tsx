@@ -129,7 +129,7 @@ export default function AdmissionForm({
         <p className="mt-2 text-sm text-slate-600">
           {kind === "update"
             ? `${done}'s details have reached the ${branchLabel} centre. Nothing else is needed from you.`
-            : `${done}'s admission form has reached the ${branchLabel} centre. Once the centre confirms the place, you will get the login details on WhatsApp${prefill.email ? " and email" : ""}.`}
+            : `${done}'s admission form has reached the ${branchLabel} centre. Once the centre confirms the place, you will get the login details on WhatsApp and email.`}
         </p>
       </div>
     );
@@ -180,8 +180,8 @@ export default function AdmissionForm({
           <Label text="Mobile number (WhatsApp) *">
             <input name="phone" type="tel" inputMode="numeric" defaultValue={prefill.phone} className={input} autoComplete="tel-national" required />
           </Label>
-          <Label text="Email">
-            <input name="email" type="email" defaultValue={prefill.email} className={input} autoComplete="email" />
+          <Label text="Email *">
+            <input name="email" type="email" defaultValue={prefill.email} className={input} autoComplete="email" required />
           </Label>
         </div>
       </fieldset>

@@ -79,6 +79,8 @@ export const DEMO_LEAD_STAGES = [
   { value: "demo_taken", label: "Demo taken" },
   { value: "converted", label: "Converted" },
   { value: "lost", label: "Lost" },
+  /** A family for a Kolkata centre (2026-11-24): `offlineBranch` says which. Bowbazar's also sit in its Lead Center. */
+  { value: "offline", label: "Offline lead" },
 ] as const;
 
 export type DemoLeadStage = (typeof DEMO_LEAD_STAGES)[number]["value"];

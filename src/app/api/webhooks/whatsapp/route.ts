@@ -4,6 +4,7 @@ import { dbConnect } from "@/lib/db";
 import { findWhatsAppUserByPhone, normalizeWhatsAppNumber } from "@/lib/whatsappAutomation";
 import { handleOptOutReply } from "@/lib/engagement/optOut";
 import { handleDemoLeadButtonReply } from "@/lib/demoLeadWhatsApp";
+import { handleOfflineLeadButtonReply } from "@/lib/offlineLeads";
 import { WhatsAppMessage } from "@/models/WhatsApp";
 import { whatsAppDeliveryUpdate } from "@/lib/whatsappDeliveryStatus";
 import { recordTemplateStatusWebhook } from "@/lib/whatsappTemplateLibrary";
@@ -220,6 +221,9 @@ export async function POST(req: Request) {
         // must not send the family a second confirmation.
         // "Confirm call-back" on the new-lead welcome (src/lib/demoLeadWhatsApp.ts). First delivery only.
         if (stored.upsertedCount && (message.type === "button" || message.type === "interactive")) {
+          await handleOfflineLeadButtonReply(message).catch((error) => {
+            console.error("WhatsApp offline lead button handling failed", { error, phoneNumber });
+          });
           await handleDemoLeadButtonReply(message).catch((error) => {
             console.error("WhatsApp demo lead button handling failed", { error, phoneNumber });
           });

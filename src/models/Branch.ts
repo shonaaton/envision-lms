@@ -363,9 +363,45 @@ const BranchWaitlistSchema = new Schema(
     createdBy: { type: Schema.Types.ObjectId, ref: "User" },
     createdByName: String,
     closedAt: Date,
+    // Families who joined from the public centre page.
+    source: { type: String, enum: ["staff", "website"], default: "staff" },
+    parentName: String,
+    email: String,
+    /** Last time the family was told a seat freed up; one message per day at most. */
+    notifiedAt: Date,
+    notifyCount: { type: Number, default: 0 },
   },
   { timestamps: true }
 );
+
+/**
+ * A family who asked about the centre on the public contact form. They are sent
+ * the open slots and fees straight away; staff follow up and convert the lead
+ * into an admission (which sends the admission form).
+ */
+const BranchLeadSchema = new Schema(
+  {
+    branch: { type: String, enum: [...BRANCHES], required: true, index: true },
+    name: { type: String, required: true },
+    email: String,
+    countryCode: String,
+    phone: String, // ten digits for +91, else as typed
+    address: String,
+    message: String,
+    contactMessage: { type: Schema.Types.ObjectId, ref: "ContactMessage" },
+    /** The main portal's Offline Lead that was routed into this branch CRM. */
+    offlineLead: { type: Schema.Types.ObjectId, ref: "OfflineLead" },
+    status: { type: String, enum: ["new", "contacted", "converted", "closed"], default: "new", index: true },
+    note: String,
+    autoReply: { email: String, whatsapp: String, sentAt: Date },
+    admission: { type: Schema.Types.ObjectId, ref: "BranchAdmission" },
+    convertedAt: Date,
+    updatedByName: String,
+  },
+  { timestamps: true }
+);
+BranchLeadSchema.index({ branch: 1, createdAt: -1 });
+BranchLeadSchema.index({ offlineLead: 1 }, { unique: true, sparse: true });
 
 /** One family message about one month: what the student did, as sent. */
 const BranchMonthlyReportSchema = new Schema(
@@ -430,6 +466,33 @@ const BranchHolidaySchema = new Schema(
   },
   { timestamps: true }
 );
+
+/**
+ * One date of a weekly online class that differs from the usual week: a
+ * cancelled meeting, one moved to another day or time, an extra meeting, or
+ * students added for that one meeting only (`guests`). Rules: classSessionRules.ts.
+ */
+const BranchClassSessionSchema = new Schema(
+  {
+    branch: { type: String, enum: [...BRANCHES], required: true, index: true },
+    slot: { type: Schema.Types.ObjectId, ref: "BranchSlot", required: true },
+    kind: { type: String, enum: ["regular", "cancelled", "moved", "extra"], required: true },
+    date: { type: String, required: true }, // "YYYY-MM-DD": the day it meets (cancelled: the day it would have)
+    fromDate: String, // moved: the usual date it replaces
+    startTime: String, // moved / extra
+    endTime: String,
+    guests: [{ type: Schema.Types.ObjectId, ref: "BranchStudent" }],
+    reason: String,
+    createdBy: { type: Schema.Types.ObjectId, ref: "User" },
+    createdByName: String,
+    updatedByName: String,
+  },
+  { timestamps: true }
+);
+BranchClassSessionSchema.index({ slot: 1, date: 1 }, { unique: true });
+BranchClassSessionSchema.index({ slot: 1, fromDate: 1 });
+BranchClassSessionSchema.index({ branch: 1, date: 1 });
+BranchClassSessionSchema.index({ guests: 1, date: 1 });
 
 /** A student's result or milestone, kept by the centre and shown on the student's page. */
 const BranchAchievementSchema = new Schema(
@@ -497,9 +560,11 @@ export const BranchSlotChange = models.BranchSlotChange || model("BranchSlotChan
 export const BranchSettings = models.BranchSettings || model("BranchSettings", BranchSettingsSchema);
 export const BranchCounter = models.BranchCounter || model("BranchCounter", BranchCounterSchema);
 export const BranchWaitlist = models.BranchWaitlist || model("BranchWaitlist", BranchWaitlistSchema);
+export const BranchLead = models.BranchLead || model("BranchLead", BranchLeadSchema);
 export const BranchMonthlyReport = models.BranchMonthlyReport || model("BranchMonthlyReport", BranchMonthlyReportSchema);
 export const BranchReminderLog = models.BranchReminderLog || model("BranchReminderLog", BranchReminderLogSchema);
 export const BranchAnnouncement = models.BranchAnnouncement || model("BranchAnnouncement", BranchAnnouncementSchema);
 export const BranchHoliday = models.BranchHoliday || model("BranchHoliday", BranchHolidaySchema);
 export const BranchCashEntry = models.BranchCashEntry || model("BranchCashEntry", BranchCashEntrySchema);
 export const BranchAchievement = models.BranchAchievement || model("BranchAchievement", BranchAchievementSchema);
+export const BranchClassSession = models.BranchClassSession || model("BranchClassSession", BranchClassSessionSchema);

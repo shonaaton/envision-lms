@@ -51,7 +51,7 @@ type Admission = {
   studentId: string;
 };
 
-type Delivery = { link: string; message: string; whatsappLink: string; email: "sent" | "failed" | "none"; whatsapp: "sent" | "failed" };
+export type Delivery = { link: string; message: string; whatsappLink: string; email: "sent" | "failed" | "none"; whatsapp: "sent" | "failed" };
 
 const STATUS: Record<Admission["status"], { label: string; style: string }> = {
   sent: { label: "Waiting for family", style: "bg-amber-100 text-amber-900" },
@@ -241,15 +241,38 @@ export default function AdmissionsClient({ can }: { can: string[] }) {
   );
 }
 
-function StartDrawer({ slots, onClose, onSent }: { slots: Slot[]; onClose: () => void; onSent: (name: string, delivery: Delivery) => void }) {
-  const [form, setForm] = useState({ name: "", parentName: "", phone: "", email: "", monthlyFee: "", note: "", slots: [] as string[] });
+export type AdmissionStart = { name?: string; parentName?: string; phone?: string; email?: string; note?: string; slots?: string[] };
+
+/** The "New admission" form; from the Lead Center it opens filled in from the lead (`leadId` marks the lead converted). */
+export function StartDrawer({
+  slots,
+  onClose,
+  onSent,
+  initial,
+  leadId,
+}: {
+  slots: Slot[];
+  onClose: () => void;
+  onSent: (name: string, delivery: Delivery) => void;
+  initial?: AdmissionStart;
+  leadId?: string;
+}) {
+  const [form, setForm] = useState({
+    name: initial?.name || "",
+    parentName: initial?.parentName || "",
+    phone: initial?.phone || "",
+    email: initial?.email || "",
+    note: initial?.note || "",
+    slots: initial?.slots || ([] as string[]),
+    monthlyFee: (initial?.slots?.length && slotFee(initial.slots).monthlyFee) || "",
+  });
   const [saving, setSaving] = useState(false);
   const set = (patch: Partial<typeof form>) => setForm((current) => ({ ...current, ...patch }));
 
   async function send() {
     setSaving(true);
     try {
-      const data = await api<{ delivery: Delivery }>("/api/bowbazar/admissions", { method: "POST", json: form });
+      const data = await api<{ delivery: Delivery }>("/api/bowbazar/admissions", { method: "POST", json: { ...form, leadId } });
       onSent(form.name, data.delivery);
     } catch (error: any) {
       toast.error(error.message);
@@ -300,7 +323,7 @@ function StartDrawer({ slots, onClose, onSent }: { slots: Slot[]; onClose: () =>
   );
 }
 
-function SentDrawer({ name, delivery, onClose }: { name: string; delivery: Delivery; onClose: () => void }) {
+export function SentDrawer({ name, delivery, onClose }: { name: string; delivery: Delivery; onClose: () => void }) {
   const [copied, setCopied] = useState("");
   const copy = async (what: string, value: string) => {
     await navigator.clipboard?.writeText(value);
@@ -432,7 +455,7 @@ function ReviewDrawer({ admission, slots, onClose, onDone }: { admission: Admiss
   }
 
   return (
-    <Drawer
+    <Drawer side
       title={update ? `Review ${source.name}'s details` : `Review ${source.name}`}
       onClose={onClose}
       footer={

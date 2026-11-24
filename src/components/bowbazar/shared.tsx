@@ -33,7 +33,9 @@ const TABS = [
   { href: "/bowbazar/online", label: "Online classes", need: "attendance" },
   { href: "/bowbazar/slots", label: "Slots", need: "view" },
   { href: "/bowbazar/students", label: "Students", need: "view" },
+  { href: "/bowbazar/leads", label: "Lead Center", need: "students" },
   { href: "/bowbazar/admissions", label: "Admissions", need: "students" },
+  { href: "/bowbazar/waitlist", label: "Waitlist", need: "view" },
   { href: "/bowbazar/changes", label: "Time changes", need: "students" },
   { href: "/bowbazar/messages", label: "Messages", need: "messages" },
   { href: "/bowbazar/exams", label: "Exams", need: "exams" },
@@ -56,8 +58,8 @@ const LAYER_CSS = `
 .bb-backdrop{animation:bb-fade .18s ease-out}
 .bb-sheet{animation:bb-slide-up .24s cubic-bezier(.2,.8,.2,1)}
 .bb-pop{animation:bb-pop .18s ease-out}
-@media (min-width:640px){.bb-sheet{animation:bb-slide-right .26s cubic-bezier(.2,.8,.2,1)}}
-@media (prefers-reduced-motion:reduce){.bb-backdrop,.bb-sheet,.bb-pop{animation:none}}
+@media (min-width:640px){.bb-sheet{animation:bb-slide-right .26s cubic-bezier(.2,.8,.2,1)}.bb-sheet.bb-center{animation:bb-pop .2s ease-out}}
+@media (prefers-reduced-motion:reduce){.bb-backdrop,.bb-sheet,.bb-sheet.bb-center,.bb-pop{animation:none}}
 `;
 
 /** Open panels and pop-ups, newest last: Esc closes only the top one. */
@@ -134,8 +136,10 @@ export function BranchHeader({ title, subtitle, can, actions }: { title: string;
 }
 
 /**
- * A side panel for an action or a record: slides in from the right on a computer,
- * rises from the bottom on a phone. Esc or a tap outside closes it.
+ * A window for an action or a record. By default it is a centred pop-up on a computer
+ * (actions: add, edit, collect, send); with `side` it slides in from the right instead
+ * (records you read: class history, a bill, a user). On a phone both rise from the bottom.
+ * Esc or a tap outside closes it.
  */
 export function Drawer({
   title,
@@ -144,6 +148,7 @@ export function Drawer({
   children,
   footer,
   wide,
+  side,
 }: {
   title: string;
   subtitle?: ReactNode;
@@ -151,18 +156,27 @@ export function Drawer({
   children: ReactNode;
   footer?: ReactNode;
   wide?: boolean;
+  side?: boolean;
 }) {
   useLayer(onClose);
   return (
-    <div className="bb-backdrop fixed inset-0 z-50 flex items-end justify-end bg-slate-950/45 backdrop-blur-[2px] sm:items-stretch" onClick={onClose}>
+    <div
+      className={cn(
+        "bb-backdrop fixed inset-0 z-50 flex items-end bg-slate-950/45 backdrop-blur-[2px]",
+        side ? "justify-end sm:items-stretch" : "justify-center sm:items-center sm:p-6"
+      )}
+      onClick={onClose}
+    >
       <style>{LAYER_CSS}</style>
       <div
         role="dialog"
         aria-modal="true"
         aria-label={title}
         className={cn(
-          "bb-sheet flex max-h-[92dvh] w-full flex-col rounded-t-2xl bg-white shadow-2xl shadow-slate-950/30 sm:h-full sm:max-h-none sm:rounded-none sm:rounded-l-2xl",
-          wide ? "sm:max-w-2xl" : "sm:max-w-xl"
+          "flex max-h-[92dvh] w-full flex-col rounded-t-2xl bg-white shadow-2xl shadow-slate-950/30",
+          side
+            ? cn("bb-sheet sm:h-full sm:max-h-none sm:rounded-none sm:rounded-l-2xl", wide ? "sm:max-w-2xl" : "sm:max-w-xl")
+            : cn("bb-sheet bb-center sm:max-h-[88dvh] sm:rounded-2xl", wide ? "sm:max-w-3xl" : "sm:max-w-xl")
         )}
         onClick={(event) => event.stopPropagation()}
       >
@@ -178,7 +192,12 @@ export function Drawer({
         </div>
         <div className="flex-1 space-y-4 overflow-y-auto overscroll-contain px-5 py-4">{children}</div>
         {footer && (
-          <div className="flex justify-end gap-2 border-t border-slate-100 bg-slate-50/80 px-5 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] [&>*]:grow sm:[&>*]:grow-0">
+          <div
+            className={cn(
+              "flex justify-end gap-2 border-t border-slate-100 bg-slate-50/80 px-5 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] [&>*]:grow sm:[&>*]:grow-0",
+              !side && "sm:rounded-b-2xl"
+            )}
+          >
             {footer}
           </div>
         )}

@@ -25,6 +25,7 @@ import {
   type AdmissionFileKind,
 } from "./admissionRules";
 import { readAdmissionFile, removeAdmissionFiles, saveAdmissionFile } from "./admissionFiles";
+import { markLeadConverted } from "./leads";
 
 const id = (value: unknown) => String((value as any)?._id ?? value ?? "");
 const text = (value: unknown, max = 300) => String(value ?? "").trim().slice(0, max);
@@ -169,6 +170,7 @@ export async function startAdmission(branch: BranchKey, input: any, actor: Actor
     createdByName: actor.name || "",
   });
   const delivery = await deliverLink(admission.toObject(), linkFor(token, request));
+  if (input?.leadId) await markLeadConverted(branch, input.leadId, admission._id, actor.name);
   void recordActivity({
     actor: actor.id,
     type: "branch.admission_sent",

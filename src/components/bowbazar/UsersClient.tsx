@@ -409,7 +409,7 @@ function Row({ label, value }: { label: string; value: string }) {
 
 function DetailsDrawer({ user, onClose }: { user: BranchUser; onClose: () => void }) {
   return (
-    <Drawer title={user.name} onClose={onClose}>
+    <Drawer side title={user.name} onClose={onClose}>
       <div>
         <Row label="User ID" value={user.username} />
         <Row label={user.kind === "students" ? "Type" : "Role"} value={user.kind === "students" ? "Student" : ROLE_LABEL[user.branchRole] || user.branchRole} />

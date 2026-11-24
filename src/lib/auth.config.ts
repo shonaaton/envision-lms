@@ -80,6 +80,8 @@ export const authConfig = {
         // sent. The link's token is checked by the page and the API.
         nextUrl.pathname.startsWith("/admission/") ||
         nextUrl.pathname.startsWith("/api/admission/") ||
+        // The Bowbazar centre page's "join the waitlist" form. Rate limited in the route.
+        nextUrl.pathname.startsWith("/api/public/bowbazar/") ||
         // The openings sales pages and their free preview chapter. Listed so a
         // signed-in demo account is not bounced to /dashboard from them.
         nextUrl.pathname === "/chess-openings" ||

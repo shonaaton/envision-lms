@@ -96,7 +96,8 @@ export function readAdmissionForm(input: AdmissionFormInput, today: Date = new D
   }
   if (!form.fatherName && !form.motherName && !form.parentName) return { error: "Enter at least one parent's name." };
   if (!form.phone) return { error: "Enter a 10-digit mobile number." };
-  if (form.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email)) return { error: "Enter a valid email address." };
+  if (!form.email || form.email.endsWith(".invalid")) return { error: "Enter an email address." };
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email)) return { error: "Enter a valid email address." };
   return { form };
 }
 

@@ -149,6 +149,16 @@ export function billStatus(bill: BillMoney): "unpaid" | "partial" | "paid" | "wa
  */
 export const SLOT_FEES: Readonly<Record<number, number>> = { 1: 1000, 2: 1500 };
 
+/**
+ * The one-time admission fee families are quoted (rupees) when Branch Settings
+ * has none set (the user's figure, 2026-11-24). Settings wins when it is set.
+ */
+export const DEFAULT_ADMISSION_FEE_RUPEES = 500;
+
+export function quotedAdmissionFee(settingsAdmissionFeePaise: number) {
+  return settingsAdmissionFeePaise > 0 ? Math.round(settingsAdmissionFeePaise / 100) : DEFAULT_ADMISSION_FEE_RUPEES;
+}
+
 /** The fee for this many slots, in rupees, or null when the rule doesn't say (none, or three or more). */
 export function feeForSlots(count: number): number | null {
   return SLOT_FEES[count] ?? null;

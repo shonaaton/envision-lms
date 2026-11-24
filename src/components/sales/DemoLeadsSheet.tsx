@@ -46,6 +46,10 @@ export type DemoLeadSheetRow = {
   stage: string;
   /** Converted leads: the invoice and its total. */
   invoiceLabel: string;
+  /** The centre of an "Offline lead", e.g. "Bowbazar centre". */
+  offlineLabel: string;
+  /** What the family asked for: "online" or a centre slug (the centre picker starts there). */
+  interest: string;
   ownerId: string;
   ownerName: string;
   noteCount: number;
@@ -107,6 +111,8 @@ type Props = {
   /** Saves the Edit details form; same state shape as the reminder form. */
   editLead: ReminderAction;
   editOptions: LeadEditOptions;
+  /** Moves the lead to the "Offline lead" stage for a centre; same state shape as the reminder form. */
+  moveOffline: ReminderAction;
   /** The lead to open on arrival: the one a reminder email links to. */
   initialOpen?: string | null;
 };
@@ -119,7 +125,15 @@ const STAGE_STYLES: Record<string, string> = {
   demo_taken: "bg-violet-100 text-violet-900",
   converted: "bg-emerald-100 text-emerald-900",
   lost: "bg-slate-200 text-slate-700",
+  offline: "bg-orange-100 text-orange-900",
 };
+
+const OFFLINE_CENTRES = [
+  { value: "bowbazar", label: "Bowbazar" },
+  { value: "new-alipore", label: "New Alipore" },
+  { value: "haridevpur", label: "Haridevpur" },
+  { value: "jodhpur-park", label: "Jodhpur Park" },
+];
 
 const VERIFICATION: Record<DemoLeadSheetRow["verification"], { label: string; style: string }> = {
   verified: { label: "Verified", style: "bg-emerald-100 text-emerald-800" },
@@ -199,6 +213,7 @@ function CallSummary({ row }: { row: DemoLeadSheetRow }) {
 }
 
 function InvoiceLine({ row }: { row: DemoLeadSheetRow }) {
+  if ((row.stage === "offline" || row.stage === "lost") && row.offlineLabel) return <span className="mt-1 block text-[11px] font-semibold leading-4 text-orange-800">{row.offlineLabel}</span>;
   if (row.stage !== "converted" || !row.invoiceLabel) return null;
   return <span className="mt-1 block text-[11px] font-semibold leading-4 text-emerald-800">{row.invoiceLabel}</span>;
 }
@@ -239,6 +254,54 @@ function ConvertForm({ row, convertLead, onClose }: Pick<Shared, "convertLead"> 
   );
 }
 
+/** "Offline lead" asks which centre before it saves. Bowbazar leads also go to its Lead Center. */
+function OfflineForm({ row, moveOffline, onClose }: Pick<Shared, "moveOffline"> & { row: DemoLeadSheetRow; onClose: () => void }) {
+  const [state, action] = useFormState(moveOffline, { error: "", saved: 0 });
+  useEffect(() => {
+    if (state.saved) onClose();
+  }, [state.saved, onClose]);
+  const preset = OFFLINE_CENTRES.some((centre) => centre.value === row.interest) ? row.interest : "";
+  return (
+    <form action={action} className="mt-1 space-y-1 rounded-md border border-orange-200 bg-orange-50 p-1.5">
+      <input type="hidden" name="lead" value={row.id} />
+      <label className="block text-[10px] font-black uppercase tracking-[0.04em] text-orange-900" htmlFor={`centre-${row.id}`}>
+        Centre
+      </label>
+      <select
+        id={`centre-${row.id}`}
+        name="branch"
+        required
+        defaultValue={preset}
+        className="h-8 w-full rounded border border-orange-300 bg-white px-1 text-xs font-semibold text-slate-900 outline-none focus:border-brand"
+      >
+        <option value="" disabled>Choose centre</option>
+        {OFFLINE_CENTRES.map((centre) => (
+          <option key={centre.value} value={centre.value}>{centre.label}</option>
+        ))}
+      </select>
+      <p className="text-[10px] leading-4 text-orange-900/80">
+        Bowbazar: goes to its Lead Center and the family gets the slots and fees. Other centres: the centre head gets it on WhatsApp, with reminders on day 5 and day 10.
+      </p>
+      {state.error ? <p className="text-[11px] font-semibold leading-4 text-rose-700">{state.error}</p> : null}
+      <div className="flex gap-1">
+        <OfflineButton />
+        <button type="button" onClick={onClose} className="h-7 rounded px-2 text-[11px] font-black text-slate-600 hover:bg-white">
+          Cancel
+        </button>
+      </div>
+    </form>
+  );
+}
+
+function OfflineButton() {
+  const { pending } = useFormStatus();
+  return (
+    <button type="submit" disabled={pending} className="h-7 rounded bg-orange-700 px-2 text-[11px] font-black text-white disabled:opacity-60">
+      {pending ? "Saving…" : "Move"}
+    </button>
+  );
+}
+
 function ConvertButton() {
   const { pending } = useFormStatus();
   return (
@@ -248,12 +311,25 @@ function ConvertButton() {
   );
 }
 
-function StageControl({ row, stages, canManage, moveStage, convertLead, className = "" }: Pick<Shared, "stages" | "canManage" | "moveStage" | "convertLead"> & { row: DemoLeadSheetRow; className?: string }) {
+function StageControl({
+  row,
+  stages,
+  canManage,
+  moveStage,
+  convertLead,
+  moveOffline,
+  className = "",
+}: Pick<Shared, "stages" | "canManage" | "moveStage" | "convertLead" | "moveOffline"> & { row: DemoLeadSheetRow; className?: string }) {
   const [converting, setConverting] = useState(false);
+  const [offline, setOffline] = useState(false);
   // Bumped on Cancel, so the select drops back to the saved stage.
   const [resetKey, setResetKey] = useState(0);
   const closeConvert = useCallback(() => {
     setConverting(false);
+    setResetKey((key) => key + 1);
+  }, []);
+  const closeOffline = useCallback(() => {
+    setOffline(false);
     setResetKey((key) => key + 1);
   }, []);
   if (!canManage) {
@@ -277,10 +353,17 @@ function StageControl({ row, stages, canManage, moveStage, convertLead, classNam
           aria-label={`Stage for ${row.name}`}
           onChange={(event) => {
             if (event.currentTarget.value === "converted") {
+              setOffline(false);
               setConverting(true);
               return;
             }
+            if (event.currentTarget.value === "offline") {
+              setConverting(false);
+              setOffline(true);
+              return;
+            }
             setConverting(false);
+            setOffline(false);
             event.currentTarget.form?.requestSubmit();
           }}
           className={`w-full cursor-pointer rounded-md border border-transparent px-1 font-black outline-none focus:border-brand ${STAGE_STYLES[row.stage] || ""} ${className || "h-8 text-xs"}`}
@@ -290,7 +373,13 @@ function StageControl({ row, stages, canManage, moveStage, convertLead, classNam
           ))}
         </select>
       </form>
-      {converting && row.stage !== "converted" ? <ConvertForm row={row} convertLead={convertLead} onClose={closeConvert} /> : <InvoiceLine row={row} />}
+      {converting && row.stage !== "converted" ? (
+        <ConvertForm row={row} convertLead={convertLead} onClose={closeConvert} />
+      ) : offline ? (
+        <OfflineForm row={row} moveOffline={moveOffline} onClose={closeOffline} />
+      ) : (
+        <InvoiceLine row={row} />
+      )}
     </div>
   );
 }
@@ -838,7 +927,7 @@ function LeadDetailsModal({ row, shared, onClose }: { row: DemoLeadSheetRow; sha
 
 /** Phones: one card per lead, the call buttons first, no sideways scrolling. */
 function LeadCard({ row, openDetails, shared }: { row: DemoLeadSheetRow; openDetails: () => void; shared: Shared }) {
-  const { stages, owners, canManage, seesAll, canDelete, moveStage, convertLead, changeOwner, deleteLead } = shared;
+  const { stages, owners, canManage, seesAll, canDelete, moveStage, convertLead, moveOffline, changeOwner, deleteLead } = shared;
   return (
     <li className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
       <div className="flex items-start justify-between gap-3">
@@ -905,7 +994,7 @@ function LeadCard({ row, openDetails, shared }: { row: DemoLeadSheetRow; openDet
       <div className={`mt-3 grid gap-2 ${seesAll ? "grid-cols-2" : "grid-cols-1"}`}>
         <div className="min-w-0">
           <p className="mb-1 text-[10px] font-black uppercase tracking-[0.06em] text-slate-500">Stage</p>
-          <StageControl row={row} stages={stages} canManage={canManage} moveStage={moveStage} convertLead={convertLead} className="h-10 text-sm" />
+          <StageControl row={row} stages={stages} canManage={canManage} moveStage={moveStage} convertLead={convertLead} moveOffline={moveOffline} className="h-10 text-sm" />
         </div>
         {seesAll ? (
           <div className="min-w-0 text-sm">
@@ -931,7 +1020,7 @@ function LeadCard({ row, openDetails, shared }: { row: DemoLeadSheetRow; openDet
 }
 
 export function DemoLeadsSheet({ rows, initialOpen = null, ...shared }: Props) {
-  const { stages, owners, canManage, seesAll, canDelete, moveStage, convertLead, changeOwner, deleteLead } = shared;
+  const { stages, owners, canManage, seesAll, canDelete, moveStage, convertLead, moveOffline, changeOwner, deleteLead } = shared;
   const [open, setOpen] = useState<string | null>(initialOpen);
   const closeDetails = useCallback(() => setOpen(null), []);
   const openRow = open ? rows.find((row) => row.id === open) ?? null : null;
@@ -1026,7 +1115,7 @@ export function DemoLeadsSheet({ rows, initialOpen = null, ...shared }: Props) {
                     <td className={TD}>{row.callTime || <span className="text-slate-400">Not given</span>}</td>
                     <td className={TD}>{row.demoSlot || <span className="text-slate-400">Not chosen</span>}</td>
                     <td className={TD}>
-                      <StageControl row={row} stages={stages} canManage={canManage} moveStage={moveStage} convertLead={convertLead} />
+                      <StageControl row={row} stages={stages} canManage={canManage} moveStage={moveStage} convertLead={convertLead} moveOffline={moveOffline} />
                     </td>
                     {seesAll ? (
                       <td className={TD}>

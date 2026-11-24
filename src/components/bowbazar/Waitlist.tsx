@@ -7,7 +7,22 @@ import { cn } from "@/lib/utils";
 import { Drawer, Field, api } from "./shared";
 
 type SlotLite = { id: string; label: string; isActive: boolean; free: number };
-export type WaitlistEntry = { id: string; slotId: string; name: string; phone: string; note: string; createdAt: string; createdByName: string };
+export type WaitlistEntry = {
+  id: string;
+  slotId: string;
+  name: string;
+  phone: string;
+  note: string;
+  createdAt: string;
+  createdByName: string;
+  parentName?: string;
+  email?: string;
+  source?: "staff" | "website";
+  notifiedAt?: string | null;
+  notifyCount?: number;
+};
+
+const shortDay = (value: string) => new Date(value).toLocaleDateString("en-IN", { day: "numeric", month: "short" });
 
 /** Who is waiting for which slot, oldest first; slots with a free seat come first. */
 export function WaitlistPanel({
@@ -44,7 +59,9 @@ export function WaitlistPanel({
           <h2 className="flex items-center gap-2 text-base font-black text-slate-950">
             <Hourglass size={16} className="text-brand" /> Waitlist
           </h2>
-          <p className="text-xs text-slate-500">Families waiting for a full slot. You and the manager are notified when a seat frees up.</p>
+          <p className="text-xs text-slate-500">
+            Families waiting for a full slot, from the centre or the website. When a seat frees up, the waiting families are messaged automatically and you and the manager get a notice and an email.
+          </p>
         </div>
         {canEdit && (
           <button type="button" className="btn-outline h-9 px-3 text-sm" onClick={onAdd}>
@@ -68,8 +85,18 @@ export function WaitlistPanel({
                     <span>
                       <span className="mr-2 text-xs text-slate-400">{index + 1}.</span>
                       <span className="font-semibold text-slate-900">{entry.name}</span>
+                      {entry.source === "website" && (
+                        <span className="ml-2 rounded-full bg-sky-50 px-1.5 py-0.5 text-[10px] font-black uppercase text-sky-800 ring-1 ring-sky-200">Website</span>
+                      )}
                       <span className="ml-2 text-xs text-slate-500">
-                        {[entry.phone, entry.note, `since ${new Date(entry.createdAt).toLocaleDateString("en-IN", { day: "numeric", month: "short" })}`]
+                        {[
+                          entry.parentName && `parent ${entry.parentName}`,
+                          entry.phone,
+                          entry.email,
+                          entry.note,
+                          `since ${shortDay(entry.createdAt)}`,
+                          entry.notifiedAt && `told of a free seat ${shortDay(entry.notifiedAt)}${(entry.notifyCount || 0) > 1 ? ` (${entry.notifyCount}×)` : ""}`,
+                        ]
                           .filter(Boolean)
                           .join(" · ")}
                       </span>
@@ -96,7 +123,7 @@ export function WaitlistPanel({
 }
 
 export function WaitlistDrawer({ slots, onClose, onSaved }: { slots: SlotLite[]; onClose: () => void; onSaved: (list: WaitlistEntry[]) => void }) {
-  const [form, setForm] = useState({ slotId: slots.find((slot) => slot.isActive && slot.free === 0)?.id || slots[0]?.id || "", name: "", phone: "", note: "" });
+  const [form, setForm] = useState({ slotId: slots.find((slot) => slot.isActive && slot.free === 0)?.id || slots[0]?.id || "", name: "", parentName: "", phone: "", email: "", note: "" });
   const [saving, setSaving] = useState(false);
   const set = (patch: Partial<typeof form>) => setForm((current) => ({ ...current, ...patch }));
 
@@ -140,8 +167,14 @@ export function WaitlistDrawer({ slots, onClose, onSaved }: { slots: SlotLite[];
       <Field label="Name *" hint="The child, or a current student who wants this slot">
         <input className="input" value={form.name} onChange={(event) => set({ name: event.target.value })} />
       </Field>
-      <Field label="Parent's phone">
+      <Field label="Parent's name">
+        <input className="input" value={form.parentName} onChange={(event) => set({ parentName: event.target.value })} />
+      </Field>
+      <Field label="Parent's phone" hint="They are messaged here when a seat frees up">
         <input className="input" inputMode="tel" value={form.phone} onChange={(event) => set({ phone: event.target.value })} />
+      </Field>
+      <Field label="Email">
+        <input className="input" type="email" value={form.email} onChange={(event) => set({ email: event.target.value })} />
       </Field>
       <Field label="Note">
         <input className="input" value={form.note} onChange={(event) => set({ note: event.target.value })} />

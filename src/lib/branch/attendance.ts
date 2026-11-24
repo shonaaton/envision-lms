@@ -16,6 +16,8 @@ import { moveCountsOn, movesForRegister } from "./changes";
 import { alertAbsences } from "./alerts";
 import { BranchHoliday } from "@/models/Branch";
 import { holidayFor } from "./comms";
+import { classOn, movedInSlotIds, occurrencesOn } from "./classSessions";
+import { shortDate } from "./classSessionRules";
 import { getBranchSettings } from "./settings";
 import { courseProgressFor, studentCourse, type StudentCourse } from "./courses";
 import {
@@ -43,11 +45,26 @@ async function findSlot(branch: BranchKey, slotId: string) {
   return slot;
 }
 
-function checkDay(slot: any, date: string) {
+/**
+ * The class's meeting on `date`, or an error when it doesn't meet then. An
+ * online class may meet off its weekday (moved or extra) or not on it
+ * (cancelled or moved away: `closed`, which holidayFor also reports). A
+ * switched-off slot keeps its past registers.
+ */
+async function checkDay(slot: any, date: string) {
   if (!isDateKey(date)) throw new BranchError("Pick a date.");
-  if (dayOfDateKey(date) !== slot.dayOfWeek) {
+  const occurrence = await classOn({ ...slot, isActive: true }, date);
+  if (!occurrence) {
     throw new BranchError(`This class runs on ${DAY_NAMES[slot.dayOfWeek]}s, and ${date} is a ${DAY_NAMES[dayOfDateKey(date)]}.`);
   }
+  return occurrence;
+}
+
+/** "Upasana · Thu 6pm–7pm (moved from Tue 25 Nov)" for a meeting off the usual week. */
+function occurrenceLabel(slot: any, occurrence: { kind: string; startTime: string; endTime: string; fromDate: string }, date: string) {
+  if (occurrence.kind === "regular") return slotLabel(slot);
+  const label = slotLabel({ ...slot, dayOfWeek: dayOfDateKey(date), startTime: occurrence.startTime, endTime: occurrence.endTime });
+  return occurrence.kind === "extra" ? `${label} (extra class)` : `${label} (moved from ${shortDate(occurrence.fromDate)})`;
 }
 
 /** Homework set in a register, with who has done it. */
@@ -90,8 +107,10 @@ async function homeworkFor(filter: Record<string, unknown>, nameByUser: Map<stri
 export async function registerDay(branch: BranchKey, date: string) {
   if (!isDateKey(date)) throw new BranchError("Pick a date.");
   await dbConnect();
+  const movedIn = await movedInSlotIds(branch, date);
   const [slots, registers, members, moves, holidays] = await Promise.all([
-    BranchSlot.find({ branch, dayOfWeek: dayOfDateKey(date) }).lean(),
+    // The weekday's classes, plus online classes moved to this date or added on it.
+    BranchSlot.find({ branch, $or: [{ dayOfWeek: dayOfDateKey(date) }, { _id: { $in: movedIn } }] }).lean(),
     BranchAttendance.find({ branch, date }).select("slot records.status homework updatedByName updatedAt").lean(),
     BranchStudent.find({ branch, status: "active" }).select("slots").lean(),
     moveCountsOn(branch, date),
@@ -100,6 +119,10 @@ export async function registerDay(branch: BranchKey, date: string) {
   const holidayOf = (slotId: string) =>
     holidays.find((holiday) => !(holiday.slots || []).length || (holiday.slots || []).some((slot: any) => id(slot) === slotId))?.reason || "";
   const registerBySlot = new Map((registers as any[]).map((register) => [id(register.slot), register]));
+  const occurrences = await occurrencesOn(
+    (slots as any[]).map((slot) => ({ ...slot, isActive: true })),
+    date
+  );
   const memberCount = new Map<string, number>();
   for (const student of members as any[]) {
     for (const slot of student.slots || []) memberCount.set(id(slot), (memberCount.get(id(slot)) || 0) + 1);
@@ -109,21 +132,22 @@ export async function registerDay(branch: BranchKey, date: string) {
     today: todayKey(),
     classes: (slots as any[])
       // A closed slot drops off the list, unless it was taught that day.
-      .filter((slot) => slot.isActive !== false || registerBySlot.has(id(slot)))
-      .sort((a, b) => a.startTime.localeCompare(b.startTime))
-      .map((slot) => {
+      .filter((slot) => occurrences.get(id(slot)) && (slot.isActive !== false || registerBySlot.has(id(slot))))
+      .map((slot) => ({ slot, occurrence: occurrences.get(id(slot))! }))
+      .sort((a, b) => a.occurrence.startTime.localeCompare(b.occurrence.startTime))
+      .map(({ slot, occurrence }) => {
         const register: any = registerBySlot.get(id(slot));
         const moved = moves.get(id(slot)) || { arriving: 0, leaving: 0 };
         return {
           slotId: id(slot),
-          label: slotLabel(slot),
-          startTime: slot.startTime,
-          endTime: slot.endTime,
+          label: occurrenceLabel(slot, occurrence, date),
+          startTime: occurrence.startTime,
+          endTime: occurrence.endTime,
           mode: slot.mode,
-          // Expected that day: members, less one-week moves out, plus moves in.
-          members: Math.max(0, (memberCount.get(id(slot)) || 0) - moved.leaving) + moved.arriving,
+          // Expected that day: members, less one-week moves out, plus moves in and that day's added students.
+          members: Math.max(0, (memberCount.get(id(slot)) || 0) - moved.leaving) + moved.arriving + occurrence.guests.length,
           movedIn: moved.arriving,
-          holiday: holidayOf(id(slot)),
+          holiday: holidayOf(id(slot)) || occurrence.closed,
           movedAway: moved.leaving,
           saved: Boolean(register),
           counts: register ? registerCounts(register.records || []) : null,
@@ -191,7 +215,7 @@ async function topicSuggestions(branch: BranchKey, date: string) {
 export async function getRegister(branch: BranchKey, slotId: string, date: string) {
   await dbConnect();
   const slot = await findSlot(branch, slotId);
-  checkDay(slot, date);
+  const occurrence = await checkDay(slot, date);
   const [register, slotMembers, everyone, moves]: [any, any[], any[], Awaited<ReturnType<typeof movesForRegister>>] = await Promise.all([
     BranchAttendance.findOne({ slot: slot._id, date }).lean(),
     BranchStudent.find({ branch, status: "active", slots: slot._id }).select("name regNo user").lean(),
@@ -208,7 +232,9 @@ export async function getRegister(branch: BranchKey, slotId: string, date: strin
   const members = [
     ...slotMembers.filter((student) => !leaving.has(id(student))),
     ...moves.arriving.map((move) => studentById.get(move.studentId)).filter(Boolean),
-  ];
+    // Students added to this one meeting (Online Classes).
+    ...occurrence.guests.map((studentId) => studentById.get(studentId)).filter(Boolean),
+  ].filter((student, index, list) => list.findIndex((other) => id(other) === id(student)) === index);
   const roster = buildRoster(
     members.map((student) => ({ id: id(student), name: student.name as string })),
     ((register?.records || []) as any[]).map((record) => ({ ...record, student: id(record.student) })),
@@ -265,12 +291,22 @@ export async function getRegister(branch: BranchKey, slotId: string, date: strin
   ];
   const onRegister = new Set(rows.map((row) => row.studentId));
   const nameByUser = new Map(rows.map((row) => [row.userId, { studentId: row.studentId, name: row.name }]));
+  const holiday = await holidayFor(branch, slot._id, date);
 
   return {
     date,
     today: todayKey(),
-    holiday: await holidayFor(branch, slot._id, date),
-    slot: { id: id(slot), label: slotLabel(slot), mode: slot.mode, dayOfWeek: slot.dayOfWeek, startTime: slot.startTime, isActive: slot.isActive !== false },
+    holiday,
+    slot: {
+      id: id(slot),
+      label: occurrenceLabel(slot, occurrence, date),
+      mode: slot.mode,
+      dayOfWeek: slot.dayOfWeek,
+      startTime: occurrence.startTime,
+      isActive: slot.isActive !== false,
+    },
+    // Why the register is closed besides a holiday: "cancelled" or "moved".
+    closedKind: holiday && holiday === occurrence.closed ? (occurrence.cancelled ? "cancelled" : "moved") : "",
     saved: Boolean(register),
     markedByName: register?.markedByName || "",
     updatedByName: register?.updatedByName || "",
@@ -304,7 +340,7 @@ export async function getRegister(branch: BranchKey, slotId: string, date: strin
 export async function saveRegister(branch: BranchKey, slotId: string, date: string, input: any, actor: Actor) {
   await dbConnect();
   const slot = await findSlot(branch, slotId);
-  checkDay(slot, date);
+  const occurrence = await checkDay(slot, date);
   if (date > todayKey()) throw new BranchError("The register can't be taken for a day that hasn't come yet.");
   const closedFor = await holidayFor(branch, slot._id, date);
   if (closedFor) throw new BranchError(`The centre was closed that day (${closedFor}). Cancel the holiday first to take a register.`);
@@ -349,7 +385,7 @@ export async function saveRegister(branch: BranchKey, slotId: string, date: stri
   });
 
   const update = {
-    $set: { branch, slotLabel: slotLabel(slot), mode: slot.mode, records, updatedBy: actor.id, updatedByName: actor.name || "" },
+    $set: { branch, slotLabel: occurrenceLabel(slot, occurrence, date), mode: slot.mode, records, updatedBy: actor.id, updatedByName: actor.name || "" },
     $setOnInsert: { markedBy: actor.id, markedByName: actor.name || "" },
   };
   try {
@@ -364,7 +400,7 @@ export async function saveRegister(branch: BranchKey, slotId: string, date: stri
   void recordActivity({
     actor: actor.id,
     type: "branch.attendance_saved",
-    label: `${existing ? "Updated" : "Took"} the ${slotLabel(slot)} register for ${date}`,
+    label: `${existing ? "Updated" : "Took"} the ${occurrenceLabel(slot, occurrence, date)} register for ${date}`,
     entityType: "BranchAttendance",
     // Activity ids must be ObjectIds or the record is dropped; the date goes in the metadata.
     entityId: id(slot),
@@ -428,7 +464,7 @@ function homeworkType(activities: any[]) {
 export async function assignHomework(branch: BranchKey, slotId: string, date: string, input: any, actor: Actor) {
   await dbConnect();
   const slot = await findSlot(branch, slotId);
-  checkDay(slot, date);
+  await checkDay(slot, date);
   const register: any = await BranchAttendance.findOne({ slot: slot._id, date }).lean();
   if (!register) throw new BranchError("Save the register first, then set homework.");
   if (!isObjectId(input?.templateId)) throw new BranchError("Pick the homework to set.");

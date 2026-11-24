@@ -6,7 +6,8 @@ import { User } from "@/models/User";
 import { BranchSlot, BranchStudent, OLD_SLOT_TIME_INDEX } from "@/models/Branch";
 import type { BranchKey } from "./scope";
 import { BranchError } from "./errors";
-import { DAY_NAMES, WEEK_ORDER, isTime, slotLabel, todayKey, dayOfDateKey } from "./rules";
+import { upcomingSchedules } from "./classSessions";
+import { DAY_NAMES, WEEK_ORDER, isTime, slotLabel, todayKey } from "./rules";
 
 /**
  * The branch's online classes (Online Classes screen). Each one is an online
@@ -70,7 +71,8 @@ export async function listOnlineClasses(branch: BranchKey) {
     for (const user of extra) coachName.set(id(user), String(user.name || "Coach"));
   }
   const today = todayKey();
-  const todayDay = dayOfDateKey(today);
+  const schedules = await upcomingSchedules(slots.filter((slot) => slot.isActive !== false));
+  const studentName = new Map(students.map((student) => [id(student), String(student.name)]));
   const classes = slots
     .sort(
       (a, b) =>
@@ -79,6 +81,7 @@ export async function listOnlineClasses(branch: BranchKey) {
         a.startTime.localeCompare(b.startTime)
     )
     .map((slot) => {
+      const schedule = schedules.get(id(slot)) || [];
       const seated = students.filter((student) => (student.slots || []).some((ref: any) => id(ref) === id(slot)));
       return {
         id: id(slot),
@@ -92,7 +95,20 @@ export async function listOnlineClasses(branch: BranchKey) {
         isActive: slot.isActive !== false,
         coach: slot.coach ? { id: id(slot.coach), name: coachName.get(id(slot.coach)) || "Coach" } : null,
         students: seated.map((student) => ({ id: id(student), name: student.name as string, regNo: student.regNo || "", hasLogin: Boolean(student.user) })),
-        meetsToday: slot.isActive !== false && slot.dayOfWeek === todayDay,
+        // Meets today: its usual day not cancelled or moved away, or moved here or added.
+        meetsToday: schedule.some((item) => item.date === today && !item.closed),
+        todayTime: schedule.find((item) => item.date === today && !item.closed) || null,
+        upcoming: schedule.map((item) => ({
+          date: item.date,
+          kind: item.kind,
+          startTime: item.startTime,
+          endTime: item.endTime,
+          fromDate: item.fromDate,
+          cancelled: item.cancelled,
+          movedTo: item.movedTo,
+          reason: item.reason,
+          guests: item.guests.map((guestId) => ({ id: guestId, name: studentName.get(guestId) || "Student" })),
+        })),
       };
     });
   return {

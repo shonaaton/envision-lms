@@ -21,6 +21,11 @@ export async function listWaitlist(branch: BranchKey) {
     note: entry.note || "",
     createdAt: entry.createdAt,
     createdByName: entry.createdByName || "",
+    parentName: entry.parentName || "",
+    email: entry.email || "",
+    source: (entry.source || "staff") as "staff" | "website",
+    notifiedAt: entry.notifiedAt || null,
+    notifyCount: entry.notifyCount || 0,
   }));
 }
 
@@ -32,7 +37,20 @@ export async function addToWaitlist(branch: BranchKey, input: any, actor: { id: 
   if (!name) throw new BranchError("Enter a name.");
   const phone = input?.phone ? tenDigitPhone(input.phone) : "";
   if (input?.phone && !phone) throw new BranchError("Enter a 10-digit mobile number.");
-  await BranchWaitlist.create({ branch, slot: slotId, name, phone, note: text(input?.note, 300), createdBy: actor.id, createdByName: actor.name || "" });
+  const email = text(input?.email, 200).toLowerCase();
+  if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new BranchError("Enter a valid email address.");
+  await BranchWaitlist.create({
+    branch,
+    slot: slotId,
+    name,
+    phone,
+    email,
+    parentName: text(input?.parentName, 120),
+    note: text(input?.note, 300),
+    source: "staff",
+    createdBy: actor.id,
+    createdByName: actor.name || "",
+  });
   return listWaitlist(branch);
 }
 

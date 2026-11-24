@@ -13,6 +13,7 @@ import { myAchievements } from "@/lib/branch/records";
 import { todayKey } from "@/lib/branch/rules";
 import { BranchSlot, BranchSlotChange, BranchStudent } from "@/models/Branch";
 import { myBranchView } from "@/lib/branch/service";
+import { studentClassesOn, studentScheduleNotices } from "@/lib/branch/classSessions";
 import { monthLabel } from "@/lib/branch/rules";
 import { formatINR } from "@/lib/utils";
 import { cn } from "@/lib/utils";
@@ -57,10 +58,20 @@ export default async function BowbazarMyClassPage() {
     : [[], []];
   const meetingFor = new Map(changeSlots.map((slot) => [String(slot._id), slot.mode === "online" ? slot.meetingUrl || "" : ""]));
   const onlineChangeSlots = new Set(changeSlots.filter((slot) => slot.mode === "online").map((slot) => String(slot._id)));
-  // Today's online classes open the live room; a class moved away this week doesn't.
+  // Today's online classes open the live room: a class moved away this week,
+  // or cancelled / moved by the centre, doesn't; one moved to today, an extra
+  // class, or one the student was added to for today does.
   const today = todayKey();
-  const todayDay = new Date(`${today}T12:00:00Z`).getUTCDay();
   const movedAwayToday = new Set(changes.filter((change) => change.status === "approved" && change.type === "week" && change.fromDate === today).map((change) => String(change.fromSlot)));
+  const ownSlotIds = view ? view.slots.map((slot) => slot.id) : [];
+  const [onlineToday, scheduleNotices] = record && view
+    ? await Promise.all([
+        studentClassesOn(view.branch, record._id, ownSlotIds, today),
+        studentScheduleNotices(view.branch, record._id, ownSlotIds),
+      ])
+    : [[], []];
+  const liveToday = new Map(onlineToday.filter((item) => !movedAwayToday.has(item.slotId)).map((item) => [item.slotId, item]));
+  const extraToday = [...liveToday.values()].filter((item) => item.guest || item.kind !== "regular");
 
   if (!view) {
     return (
@@ -118,7 +129,7 @@ export default async function BowbazarMyClassPage() {
             {view.slots.map((slot) => (
               <li key={slot.id} className="flex items-center justify-between gap-2 rounded-lg bg-slate-50 px-3 py-2">
                 <span className="font-bold text-slate-900">{slot.label}</span>
-                {slot.mode === "online" && slot.dayOfWeek === todayDay && !movedAwayToday.has(slot.id) ? (
+                {slot.mode === "online" && liveToday.has(slot.id) && liveToday.get(slot.id)!.kind === "regular" ? (
                   // Today's class: the academy's live room, which also links the Meet call.
                   <Link href={`/bowbazar/me/live/${slot.id}`} className="btn-primary h-8 px-3 text-xs">
                     <Video size={14} /> Join live class
@@ -137,6 +148,33 @@ export default async function BowbazarMyClassPage() {
               </li>
             ))}
           </ul>
+          {extraToday.length > 0 && (
+            <ul className="mt-3 space-y-1.5">
+              {extraToday.map((item) => (
+                <li key={item.slotId} className="flex items-center justify-between gap-2 rounded-lg bg-violet-50 px-3 py-2">
+                  <span className="font-bold text-slate-900">
+                    Today · {item.label}
+                    <span className="ml-1 text-xs font-semibold text-violet-800">{item.guest ? "(you're added to this class)" : item.kind === "extra" ? "(extra class)" : "(moved to today)"}</span>
+                  </span>
+                  <Link href={`/bowbazar/me/live/${item.slotId}`} className="btn-primary h-8 px-3 text-xs">
+                    <Video size={14} /> Join live class
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          )}
+          {scheduleNotices.length > 0 && (
+            <ul className="mt-3 space-y-1.5">
+              {scheduleNotices.map((notice) => (
+                <li
+                  key={notice.id}
+                  className={cn("rounded-lg px-3 py-2 text-sm", notice.kind === "cancelled" ? "bg-red-50 text-red-900" : "bg-sky-50 text-sky-900")}
+                >
+                  {notice.message}
+                </li>
+              ))}
+            </ul>
+          )}
           {changes.length > 0 && (
             <ul className="mt-3 space-y-1.5">
               {changes.map((change) => (

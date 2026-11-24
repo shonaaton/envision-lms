@@ -624,7 +624,7 @@ function HistoryDrawer({ student, canEdit, onClose, onChanged }: { student: Stud
     }
   }
   return (
-    <Drawer title={student.name} onClose={onClose}>
+    <Drawer side title={student.name} onClose={onClose}>
       {!data ? (
         <div className="flex items-center gap-2 text-sm text-slate-500"><Loader2 size={16} className="animate-spin" /> Loading...</div>
       ) : (

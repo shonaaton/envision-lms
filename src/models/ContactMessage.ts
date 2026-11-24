@@ -139,6 +139,9 @@ const ContactMessageSchema = new Schema(
     convertedInvoiceNumber: { type: String, trim: true },
     /** Invoice total in paise, as it was when the lead was converted. */
     convertedValue: Number,
+    /** Set when sales moves this record out of Demo CRM and into Offline Leads. */
+    offlineLead: { type: Schema.Types.ObjectId, ref: "OfflineLead", index: true },
+    offlineBranch: { type: String, trim: true },
     /**
      * When each stage's event (DEMO_LEAD_META_EVENTS) reached Meta. Set as the
      * claim before the send and removed again if Meta refuses, so a stage is

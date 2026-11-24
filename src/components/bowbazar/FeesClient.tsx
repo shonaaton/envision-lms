@@ -577,7 +577,7 @@ function BillDrawer({ bill, onClose, onDone }: { bill: Bill; onClose: () => void
   }
 
   return (
-    <Drawer
+    <Drawer side
       title={`${bill.student?.name} · ${monthLabel(bill.month)}`}
       onClose={onClose}
       footer={

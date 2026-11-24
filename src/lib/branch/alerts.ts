@@ -35,12 +35,28 @@ export async function alertFreedSeats(branch: BranchKey, slotIds: unknown[]) {
       const members = await BranchStudent.countDocuments({ branch, status: "active", slots: slot._id });
       const free = slot.capacity - members;
       if (free < 1) continue;
+      // Loaded on use: leads.ts imports this file too.
+      const { emailBranchRunners, tellWaitingFamilies } = await import("./leads");
+      const told = await tellWaitingFamilies(branch, slot, free).catch((error) => {
+        console.error("Waitlist family alert failed", error);
+        return 0;
+      });
+      const familyLine = told ? ` ${told} waiting famil${told === 1 ? "y was" : "ies were"} told automatically.` : "";
+      const message = `${free} seat${free === 1 ? "" : "s"} free in ${slotLabel(slot)} at ${BRANCH_LABELS[branch]}. Waiting: ${waiting.map((entry) => entry.name).join(", ")}.${familyLine}`;
       await notifyBranchRunners(branch, {
         type: "branch_seat_free",
         title: `A seat is free in ${slotLabel(slot)}`,
-        message: `${free} seat${free === 1 ? "" : "s"} free in ${slotLabel(slot)} at ${BRANCH_LABELS[branch]}. Waiting: ${waiting.map((entry) => entry.name).join(", ")}.`,
-        href: "/bowbazar/slots",
+        message,
+        href: "/bowbazar/waitlist",
         metadata: { slotId: id(slot) },
+      });
+      await emailBranchRunners(branch, {
+        subject: `A seat is free in ${slotLabel(slot)} (${BRANCH_LABELS[branch]})`,
+        message: `${message}
+
+The first family to confirm takes the seat. Mark them Placed on the waitlist once they have it.`,
+        href: "/bowbazar/waitlist",
+        dedupKey: `branch-seat-free-staff:${id(slot)}:${Date.now()}`,
       });
     }
   } catch (error) {

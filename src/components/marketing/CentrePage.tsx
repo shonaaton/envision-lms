@@ -31,6 +31,11 @@ import {
 } from "@/lib/centrePages";
 import { courseHub, coursePages } from "@/lib/coursePages";
 import { MARKETING_BASE_URL } from "@/lib/publicLinks";
+import type { CentreFees } from "@/lib/branch/publicSlots";
+import JoinWaitlist from "@/components/marketing/JoinWaitlist";
+
+const rupees = (value: number) => `₹${value.toLocaleString("en-IN")}`;
+const PLAN_NAMES = { quarterly: "3 months", half_yearly: "6 months", yearly: "12 months" } as const;
 
 /**
  * The offline pages lead with the contact form rather than the demo booking.
@@ -50,7 +55,7 @@ const CENTRE_OG_IMAGE = "/images/achievements/682626726_122217430778279433_77868
  * address, the coach, the batch timings and the localities the centre serves -
  * rather than the same paragraph with the locality swapped out.
  */
-export default function CentrePage({ config }: { config: CentreConfig }) {
+export default function CentrePage({ config, live = false, fees }: { config: CentreConfig; live?: boolean; fees?: CentreFees }) {
   const pageUrl = `${MARKETING_BASE_URL}${centreHref(config.slug)}`;
   const hubUrl = `${MARKETING_BASE_URL}/${centreHub.slug}`;
   const batches = centreBatchCount(config);
@@ -230,6 +235,7 @@ export default function CentrePage({ config }: { config: CentreConfig }) {
             <p className="mt-3 text-sm leading-7 text-brand-900/70">
               {batches} batches a week across {config.schedule.length} days. Students attend two classes a week, so pick any two slots that fit
               around school - a coach confirms the batch after the demo class.
+              {live ? " Seats shown are live. If a batch you want is full, join its waitlist and we will message you the moment a seat frees up." : null}
             </p>
           </div>
 
@@ -242,7 +248,17 @@ export default function CentrePage({ config }: { config: CentreConfig }) {
                     {entry.slots.map((slot) => (
                       <li key={`${slot.from}-${slot.to}`} className="flex items-baseline justify-between gap-3 py-2">
                         <time className="text-sm font-bold tabular-nums text-brand-900/85">{slotLabel(slot)}</time>
-                        {slot.note ? (
+                        {typeof slot.seatsLeft === "number" ? (
+                          slot.seatsLeft > 0 ? (
+                            <span className="shrink-0 rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-black text-emerald-700 ring-1 ring-emerald-200">
+                              {slot.seatsLeft} {slot.seatsLeft === 1 ? "seat" : "seats"} left
+                            </span>
+                          ) : slot.id ? (
+                            <JoinWaitlist slotId={slot.id} slotText={`${entry.day} ${slotLabel(slot)}`} />
+                          ) : (
+                            <span className="shrink-0 rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-black text-slate-500 ring-1 ring-slate-200">Full</span>
+                          )
+                        ) : slot.note ? (
                           <span className="rounded-full bg-accent px-2 py-0.5 text-[10px] font-black uppercase tracking-[0.1em] text-brand-900">{slot.note}</span>
                         ) : null}
                       </li>
@@ -252,6 +268,8 @@ export default function CentrePage({ config }: { config: CentreConfig }) {
               ))}
             </div>
 
+            <div className="flex flex-col gap-6">
+            {fees ? <CentreFeesCard fees={fees} centreName={config.name} /> : null}
             <div className="overflow-hidden rounded-2xl border border-brand/10 bg-white shadow-lg shadow-brand-900/5">
               <figure className="m-0">
                 <iframe
@@ -271,6 +289,7 @@ export default function CentrePage({ config }: { config: CentreConfig }) {
                   </a>
                 </figcaption>
               </figure>
+            </div>
             </div>
           </div>
         </div>
@@ -445,5 +464,42 @@ export default function CentrePage({ config }: { config: CentreConfig }) {
 
       <MarketingFooter />
     </main>
+  );
+}
+
+/** Monthly fees by classes a week, plus any admission fee and multi-month discounts the centre has set. */
+function CentreFeesCard({ fees, centreName }: { fees: CentreFees; centreName: string }) {
+  const discounts = fees.planDiscounts
+    ? (Object.keys(PLAN_NAMES) as (keyof typeof PLAN_NAMES)[]).filter((key) => (fees.planDiscounts?.[key] || 0) > 0)
+    : [];
+  return (
+    <article className="marketing-card rounded-2xl border border-brand/10 bg-white p-5 shadow-lg shadow-brand-900/5">
+      <h3 className="text-sm font-black uppercase tracking-[0.12em] text-brand">Fees at the {centreName} centre</h3>
+      <ul className="mt-3 divide-y divide-brand/10">
+        {fees.monthly.map((row) => (
+          <li key={row.classesPerWeek} className="flex items-baseline justify-between gap-3 py-2">
+            <span className="text-sm font-bold text-brand-900/85">
+              {row.classesPerWeek} {row.classesPerWeek === 1 ? "class" : "classes"} a week
+            </span>
+            <span className="text-sm font-black tabular-nums text-brand-900">
+              {rupees(row.rupees)}
+              <span className="font-semibold text-brand-900/60"> / month</span>
+            </span>
+          </li>
+        ))}
+        {fees.admissionFee ? (
+          <li className="flex items-baseline justify-between gap-3 py-2">
+            <span className="text-sm font-bold text-brand-900/85">Admission fee (one time)</span>
+            <span className="text-sm font-black tabular-nums text-brand-900">{rupees(fees.admissionFee)}</span>
+          </li>
+        ) : null}
+      </ul>
+      {discounts.length ? (
+        <p className="mt-3 text-sm leading-6 text-brand-900/70">
+          Pay ahead and save: {discounts.map((key) => `${fees.planDiscounts![key]}% off for ${PLAN_NAMES[key]}`).join(", ")}.
+        </p>
+      ) : null}
+      <p className="mt-3 text-xs leading-5 text-brand-900/60">The demo class is free. Fees are paid monthly, at the centre or by UPI.</p>
+    </article>
   );
 }

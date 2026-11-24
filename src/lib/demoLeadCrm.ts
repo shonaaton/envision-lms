@@ -22,7 +22,7 @@ import {
   manualLeadSourceLabel,
   type DemoLeadStage,
 } from "@/lib/demoRequest";
-import { CONTACT_INTEREST_VALUES, ONLINE_INTEREST, contactDisplayPhone } from "@/lib/contactEnquiries";
+import { CONTACT_INTEREST_VALUES, ONLINE_INTEREST, contactDisplayPhone, contactInterestLabel } from "@/lib/contactEnquiries";
 import { exactNationalNumber, exactPhoneNumberProblem } from "@/lib/phoneCountryCodes";
 import { demoSlotLabel, demoSlotStart } from "@/lib/demoRequestSlots";
 import { describeLeadDetailChanges, normalizeLeadDetails, type LeadDetails, type LeadDetailsInput } from "@/lib/demoLeadDetails";
@@ -194,6 +194,10 @@ export type DemoLeadRow = {
   stage: DemoLeadStage;
   /** Converted leads: the invoice and its total, e.g. "INV-0042 · ₹5,900.00". */
   invoiceLabel: string;
+  /** The centre of an "Offline lead". */
+  offlineBranch: string;
+  /** The centre head's follow-up on an offline lead, e.g. "Sent to Sayan · day-5 reminder sent". */
+  offlineProgress: string;
   ownerId: string;
   ownerName: string;
   createdAt: string;
@@ -213,6 +217,86 @@ export type DemoLeadRow = {
 };
 
 /** The Source column for a lead added by hand: how the family reached us, and who typed it in. */
+/** Where a centre head is with an offline lead, in a few words for the row. */
+function offlineProgress(entry: any): string {
+  if (!entry) return "";
+  const head = entry.centreContactName || "centre head";
+  if (entry.status === "converted") return `${head}: admission taken`;
+  if (entry.status === "lost") return `${head}: lead lost`;
+  if (entry.day10SentAt) return `Sent to ${head} · day-10 reminder sent`;
+  if (entry.day5SentAt) return `Sent to ${head} · day-5 reminder sent`;
+  if (entry.assignmentSentAt) return `Sent to ${head} on WhatsApp · waiting for reply`;
+  if (entry.assignmentError) return `WhatsApp to ${head} failed`;
+  return `Sending to ${head}`;
+}
+
+function contactFormSummary(doc: any): LeadSourceSummary {
+  const centre = contactInterestLabel(doc.interest);
+  return {
+    channel: "contact_form",
+    headline: `Contact form · ${centre}`,
+    details: [
+      { label: "Centre asked about", value: centre },
+      { label: "Page", value: String(doc.sourcePath || "") },
+    ].filter((item) => item.value),
+  };
+}
+
+/**
+ * The website's contact form with a Kolkata centre chosen (2026-11-24): the
+ * enquiry joins the Demo Leads CRM like any lead (rotation, owner task) so
+ * sales can call it and transfer it with "Move to Offline Leads". No welcome
+ * WhatsApp (that one carries the online fee PDFs) and no Meta stage events.
+ * A number that is already a lead gets a note on that lead instead. Never throws.
+ */
+export async function addCentreEnquiryToDemoLeads(contact: any) {
+  // (Lands in the "Offline lead" stage with its centre; see setDemoLeadOffline.)
+  try {
+    await dbConnect();
+    const centre = contactInterestLabel(contact.interest);
+    const now = new Date();
+    const existing: any = await ContactMessage.findOne({
+      _id: { $ne: contact._id },
+      kind: DEMO_REQUEST_KIND,
+      countryCode: contact.countryCode,
+      phone: contact.phone,
+      ...SUBMITTED_DEMO_REQUEST,
+    })
+      .sort({ createdAt: -1 })
+      .select("_id")
+      .lean();
+    if (existing) {
+      await ContactMessage.updateOne(
+        { _id: existing._id },
+        { $push: { leadLog: { kind: "note", text: `Wrote in again on the contact form, asking about ${centre}${contact.message ? `: ${contact.message}` : "."}`, byName: "System", at: now } } },
+      );
+      return;
+    }
+    await ContactMessage.updateOne(
+      { _id: contact._id },
+      {
+        $set: {
+          kind: DEMO_REQUEST_KIND,
+          awaitingCode: false,
+          announcedAt: now,
+          leadChannel: "contact_form",
+          leadEntry: "contact_form",
+          leadStage: "offline",
+          leadStageAt: now,
+          offlineBranch: contact.interest,
+          salesOwner: null,
+        },
+        $push: { leadLog: { kind: "note", text: `From the website contact form, asking about ${centre}.${contact.message ? ` Message: ${contact.message}` : ""}`, byName: "System", at: now } },
+      },
+    );
+    const assigned: any = await assignDemoLeadOwner(String(contact._id));
+    if (assigned?.salesOwner) await raiseDemoRequestTask(assigned);
+    if (contact.interest !== "bowbazar") await sendToCentreHead(String(contact._id), contact.interest, { id: "", name: "Website contact form" });
+  } catch (error) {
+    console.error("[demo leads] centre enquiry not added", error);
+  }
+}
+
 function manualLeadSummary(doc: any): LeadSourceSummary {
   const how = manualLeadSourceLabel(doc.manualSource);
   return {
@@ -228,6 +312,7 @@ function manualLeadSummary(doc: any): LeadSourceSummary {
 /** What the viewer may see, before any filter they chose. */
 function scopeFor(viewer: DemoLeadViewer): Record<string, unknown> {
   // A request still waiting for its WhatsApp code was never submitted.
+  // Offline leads stay here (the "Offline lead" stage); `offlineLead` only links the centre-head follow-up.
   const scope: Record<string, unknown> = { kind: DEMO_REQUEST_KIND, ...SUBMITTED_DEMO_REQUEST };
   if (!viewer.seesAll) scope.salesOwner = new Types.ObjectId(viewer.id);
   return scope;
@@ -269,6 +354,14 @@ export async function getDemoLeads(viewer: DemoLeadViewer, filters: DemoLeadFilt
     viewer.seesAll ? demoLeadRotation() : Promise.resolve([]),
   ]);
 
+  // Centre-head follow-up for "Offline lead" rows (other centres than Bowbazar).
+  const offlineIds = (docs as any[]).map((doc) => doc.offlineLead).filter(Boolean);
+  const offlineById = new Map<string, any>();
+  if (offlineIds.length) {
+    const { OfflineLead } = await import("@/models/OfflineLead");
+    for (const entry of (await OfflineLead.find({ _id: { $in: offlineIds } }).lean()) as any[]) offlineById.set(String(entry._id), entry);
+  }
+
   const stageCounts = Object.fromEntries([["all", 0], ...DEMO_LEAD_STAGE_VALUES.map((stage) => [stage, 0])]) as Record<DemoLeadStage | "all", number>;
   for (const entry of grouped as Array<{ _id: string; count: number }>) {
     stageCounts[demoLeadStage(entry._id)] += entry.count;
@@ -299,7 +392,7 @@ export async function getDemoLeads(viewer: DemoLeadViewer, filters: DemoLeadFilt
   const rows: DemoLeadRow[] = (docs as any[]).map((doc) => ({
     id: String(doc._id),
     name: String(doc.name || ""),
-    source: doc.leadEntry === "manual" ? manualLeadSummary(doc) : summarizeLeadSource(doc.leadSource),
+    source: doc.leadEntry === "manual" ? manualLeadSummary(doc) : doc.leadEntry === "contact_form" ? contactFormSummary(doc) : summarizeLeadSource(doc.leadSource),
     manual: doc.leadEntry === "manual",
     email: String(doc.email || ""),
     countryCode: String(doc.countryCode || ""),
@@ -320,6 +413,8 @@ export async function getDemoLeads(viewer: DemoLeadViewer, filters: DemoLeadFilt
     otpFailed: Boolean(doc.otpFailedAt),
     stage: demoLeadStage(doc.leadStage),
     invoiceLabel: doc.convertedInvoiceNumber ? `${doc.convertedInvoiceNumber} · ${formatINR(Number(doc.convertedValue) || 0)}` : "",
+    offlineBranch: String(doc.offlineBranch || ""),
+    offlineProgress: offlineProgress(offlineById.get(String(doc.offlineLead || ""))),
     ownerId: doc.salesOwner ? String(doc.salesOwner) : "",
     ownerName: String(doc.salesOwnerName || ""),
     createdAt: new Date(doc.createdAt).toISOString(),
@@ -358,8 +453,8 @@ function ownLead(viewer: DemoLeadViewer, leadId: string) {
 
 export async function setDemoLeadStage(viewer: DemoLeadViewer, leadId: string, stage: string) {
   const match = ownLead(viewer, leadId);
-  // Converted needs its invoice: see convertDemoLead.
-  if (!match || stage === "converted" || !(DEMO_LEAD_STAGE_VALUES as readonly string[]).includes(stage)) return false;
+  // Converted needs its invoice (convertDemoLead), Offline lead its centre (setDemoLeadOffline).
+  if (!match || stage === "converted" || stage === "offline" || !(DEMO_LEAD_STAGE_VALUES as readonly string[]).includes(stage)) return false;
   await dbConnect();
   const now = new Date();
   const result = await ContactMessage.updateOne(
@@ -373,6 +468,53 @@ export async function setDemoLeadStage(viewer: DemoLeadViewer, leadId: string, s
   if (stage !== "new") await resolveDemoLeadCallTask(leadId, viewer.id);
   queueDemoLeadStageEvent(leadId, stage as DemoLeadStage);
   return true;
+}
+
+export type OfflineLeadResult = { ok: true } | { ok: false; error: string };
+
+/**
+ * Moves a lead to the "Offline lead" stage for a Kolkata centre. It stays in
+ * Demo Leads; a Bowbazar lead also goes to the Bowbazar Lead Center, where the
+ * family is sent the live slots and fees (once - an enquiry already there is reused).
+ */
+export async function setDemoLeadOffline(viewer: DemoLeadViewer, leadId: string, branch: string): Promise<OfflineLeadResult> {
+  const match = ownLead(viewer, leadId);
+  if (!match) return { ok: false, error: "This lead is not yours to move." };
+  if (branch === ONLINE_INTEREST || !CONTACT_INTEREST_VALUES.includes(branch)) return { ok: false, error: "Choose a centre." };
+  await dbConnect();
+  const now = new Date();
+  const lead: any = await ContactMessage.findOneAndUpdate(
+    match,
+    {
+      $set: { leadStage: "offline", leadStageAt: now, offlineBranch: branch },
+      $push: { leadLog: { kind: "stage", text: `Moved to Offline lead: ${contactInterestLabel(branch)}`, by: viewer.id, byName: viewer.name, at: now } },
+    },
+    { new: true },
+  ).lean();
+  if (!lead) return { ok: false, error: "This lead is not yours to move." };
+  await resolveDemoLeadCallTask(leadId, viewer.id);
+  if (branch === "bowbazar") {
+    const { leadFromContactForm } = await import("@/lib/branch/leads");
+    await leadFromContactForm("bowbazar", lead, { via: `Sent from Demo Leads by ${viewer.name}` });
+  } else {
+    await sendToCentreHead(leadId, branch, { id: viewer.id, name: viewer.name });
+  }
+  return { ok: true };
+}
+
+/**
+ * Other centres: the centre head gets the lead on WhatsApp with "Admission
+ * taken" / "Lead lost" buttons, then day-5 and day-10 reminders until they
+ * answer (lib/offlineLeads.ts, run by the scheduler). Once per lead. Never throws.
+ */
+async function sendToCentreHead(leadId: string, branch: string, actor: { id: string; name: string }) {
+  try {
+    const { moveDemoLeadOffline } = await import("@/lib/offlineLeads");
+    const result = await moveDemoLeadOffline(leadId, branch, { ...actor, seesAll: true });
+    if (!result.ok) console.warn("[demo leads] centre head not messaged", leadId, result.error);
+  } catch (error) {
+    console.error("[demo leads] centre head message failed", error);
+  }
 }
 
 export type ConvertLeadResult = { ok: true } | { ok: false; error: string };
@@ -444,7 +586,8 @@ export async function sendDemoLeadStageEvent(leadId: string, stage: DemoLeadStag
   await dbConnect();
   const claimedAt = new Date();
   const lead: any = await ContactMessage.findOneAndUpdate(
-    { _id: new Types.ObjectId(leadId), kind: DEMO_REQUEST_KIND, leadEntry: { $ne: "manual" }, [`metaStageSent.${stage}`]: null },
+    // Only form leads came through the pixel; hand-added and centre contact-form leads have no ad to credit.
+    { _id: new Types.ObjectId(leadId), kind: DEMO_REQUEST_KIND, leadEntry: { $nin: ["manual", "contact_form"] }, [`metaStageSent.${stage}`]: null },
     { $set: { [`metaStageSent.${stage}`]: claimedAt } },
     { new: true },
   ).lean();

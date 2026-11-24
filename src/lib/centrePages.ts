@@ -25,6 +25,10 @@ export type CentreSlot = {
   to: string;
   /** Shown beside the time, e.g. "Special batch". */
   note?: string;
+  /** Free seats right now, when the timetable comes live from the branch portal. */
+  seatsLeft?: number;
+  /** The branch portal's slot id, so a family can join a full slot's waitlist. */
+  id?: string;
 };
 
 export type CentreDay = {
@@ -93,7 +97,7 @@ export const kolkataCentres: CentreConfig[] = [
       "chess academy near me",
     ],
     intro:
-      "Our Bowbazar branch is separately registered as Shatranjana Chess Foundation, distinct from Envisions Chess Academy LLP, at 20 Dr Jagabandhu Lane, Kolkata 700 012. Beginners start from the board itself; competitive players prepare for district, state and national events in the same room.",
+      "Small offline batches in the heart of Bowbazar, a short walk from Sealdah and College Street. Beginners start from the board itself; competitive players prepare for district, state and national events in the same room.",
     streetAddress: "20, Dr Jagabandhu Lane",
     postalCode: "700012",
     address: "20, Dr Jagabandhu Lane, Bowbazar, Kolkata 700012",

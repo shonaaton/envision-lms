@@ -10,6 +10,7 @@ import { Popup } from "@/models/Popup";
 import { User } from "@/models/User";
 import { BranchAnnouncement, BranchHoliday, BranchSlot, BranchStudent } from "@/models/Branch";
 import { BranchError } from "./errors";
+import { classClosedReason } from "./classSessions";
 import { BRANCH_LABELS, type BranchKey } from "./scope";
 import { dayOfDateKey, isDateKey, slotLabel, todayKey } from "./rules";
 
@@ -220,7 +221,9 @@ export async function holidayFor(branch: BranchKey, slotId: unknown, date: strin
   })
     .select("reason")
     .lean();
-  return holiday ? (holiday.reason as string) : "";
+  if (holiday) return holiday.reason as string;
+  // An online class cancelled or moved away for that one date is closed too.
+  return classClosedReason(slotId, date);
 }
 
 /** Holidays still to come that close one of these classes, for a family's page. */

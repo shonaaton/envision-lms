@@ -38,6 +38,7 @@ export async function register() {
   const { canAccessFeature } = await import("@/lib/featureAccess");
   const { processDueDemoLeadReminders } = await import("@/lib/demoLeadReminders");
   const { processDueDemoLeadWhatsApp } = await import("@/lib/demoLeadWhatsApp");
+  const { processDueOfflineLeadReminders } = await import("@/lib/offlineLeads");
 
   installRuntimeProcessLogging();
   installRuntimeStderrCapture();
@@ -150,6 +151,12 @@ export async function register() {
       name: "demo_lead_whatsapp",
       intervalMs: 60_000,
       run: () => processDueDemoLeadWhatsApp(),
+    },
+    {
+      /** Day-5 and day-10 WhatsApp follow-ups for unresolved offline leads. */
+      name: "offline_lead_follow_ups",
+      intervalMs: 60 * 60_000,
+      run: () => processDueOfflineLeadReminders(),
     },
     {
       name: "homework_email_reminders",

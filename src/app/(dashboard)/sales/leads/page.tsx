@@ -24,6 +24,7 @@ import {
   reassignDemoLead,
   sendDemoLeadWhatsApp,
   setDemoLeadReminder,
+  setDemoLeadOffline,
   setDemoLeadStage,
   updateDemoLeadDetails,
 } from "@/lib/demoLeadCrm";
@@ -220,6 +221,20 @@ async function deleteLead(formData: FormData) {
   revalidatePath("/sales/leads");
 }
 
+/** "Offline lead" asks for the centre; Bowbazar leads also reach its Lead Center. */
+async function moveOffline(previous: ReminderFormState, formData: FormData): Promise<ReminderFormState> {
+  "use server";
+  const viewer = await crmViewer();
+  if (!viewer?.canManage) return { ...previous, error: "You do not have permission to change stages." };
+  const lead = String(formData.get("lead") || "");
+  const branch = String(formData.get("branch") || "");
+  const result = await setDemoLeadOffline(viewer.lead, lead, branch);
+  if (!result.ok) return { ...previous, error: result.error };
+  logSalesAction(viewer.sales, `${viewer.sales.name} moved a demo lead to Offline lead (${contactInterestLabel(branch)})`, { lead, branch });
+  revalidatePath("/sales/leads");
+  return { error: "", saved: previous.saved + 1 };
+}
+
 /** The choice lists shared by the Add lead form and each lead's Edit details form. */
 const leadFormOptions = {
   dialCodes: DIAL_CODES.map((entry) => ({ value: entry.code, label: `+${entry.code}` })),
@@ -272,6 +287,11 @@ export default async function DemoLeadsPage({ searchParams }: { searchParams: Re
       demoSlot: row.demoSlot,
       stage: row.stage,
       invoiceLabel: row.invoiceLabel,
+      offlineLabel:
+        row.offlineBranch && (row.stage === "offline" || row.offlineProgress)
+          ? [contactInterestLabel(row.offlineBranch), row.offlineProgress].filter(Boolean).join(" · ")
+          : "",
+      interest: row.interest,
       ownerId: row.ownerId,
       ownerName: row.ownerName,
       noteCount: row.log.filter((entry) => entry.kind === "note").length,
@@ -459,6 +479,7 @@ export default async function DemoLeadsPage({ searchParams }: { searchParams: Re
               reminderPresets={presets}
               editLead={editLead}
               editOptions={leadFormOptions}
+              moveOffline={moveOffline}
               initialOpen={filters.lead || (sheetRows.length === 1 ? sheetRows[0].id : null)}
             />
           ) : null}

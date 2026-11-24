@@ -54,6 +54,8 @@ export const LEAD_CHANNELS = [
   { value: "direct", label: "Website (direct)" },
   /** Typed in by a salesperson in the Demo Leads CRM; never worked out from tags. */
   { value: "manual", label: "Added by hand" },
+  /** The website's contact form with a Kolkata centre chosen (lib/demoLeadCrm.ts addCentreEnquiryToDemoLeads). */
+  { value: "contact_form", label: "Contact form (centre)" },
   { value: "unknown", label: "Not recorded" },
 ] as const;
 

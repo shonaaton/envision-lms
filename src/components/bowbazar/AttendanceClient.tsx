@@ -65,6 +65,7 @@ type Register = {
   others: { studentId: string; name: string; regNo: string }[];
   away: { studentId: string; name: string; to: string; toDate: string }[];
   holiday: string;
+  closedKind?: "" | "cancelled" | "moved";
   homework: RegisterHomework[];
   topicSuggestions: string[];
   courseLevels: { levelId: string; label: string; topics: string[] }[];
@@ -407,7 +408,11 @@ function RegisterEditor({ slotId, date, onSaved }: { slotId: string; date: strin
       </div>
 
       {register.holiday ? (
-        <p className="px-4 py-6 text-sm text-sky-900">The centre is closed for this class that day ({register.holiday}). Cancel the holiday on the Messages page to take a register.</p>
+        register.closedKind ? (
+          <p className="px-4 py-6 text-sm text-sky-900">{register.holiday}. Restore it on the Online classes page to take a register.</p>
+        ) : (
+          <p className="px-4 py-6 text-sm text-sky-900">The centre is closed for this class that day ({register.holiday}). Cancel the holiday on the Messages page to take a register.</p>
+        )
       ) : future ? (
         <p className="px-4 py-6 text-sm text-slate-500">This class hasn&apos;t happened yet. Come back on the day to take the register.</p>
       ) : (

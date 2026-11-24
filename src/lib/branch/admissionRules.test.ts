@@ -57,6 +57,8 @@ describe("readAdmissionForm", () => {
     expect(readAdmissionForm({ ...good, fatherName: "" })).toEqual({ error: "Enter at least one parent's name." });
     expect(readAdmissionForm({ ...good, phone: "12345" })).toEqual({ error: "Enter a 10-digit mobile number." });
     expect(readAdmissionForm({ ...good, email: "amit@" })).toEqual({ error: "Enter a valid email address." });
+    expect(readAdmissionForm({ ...good, email: "  " })).toEqual({ error: "Enter an email address." });
+    expect(readAdmissionForm({ ...good, email: "arko@students.invalid" })).toEqual({ error: "Enter an email address." });
     // The address is no longer asked for (2026-11-24); a form without one is fine.
     expect(readAdmissionForm({ ...good, address: " " })).toMatchObject({ form: { address: "" } });
   });

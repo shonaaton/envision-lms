@@ -1,12 +1,12 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { FileSpreadsheet, History, KeyRound, Loader2, MessageCircle, Pencil, Plus, Search, Send, UserCheck, UserX } from "lucide-react";
+import { FileSpreadsheet, FileText, History, IndianRupee, KeyRound, Loader2, MessageCircle, Pencil, Phone, Plus, Search, Send, UserCheck, Users, UserX } from "lucide-react";
 import { toast } from "sonner";
 import { FEE_PLANS, FEE_PLAN_LABEL, monthLabel } from "@/lib/branch/rules";
 import { cn } from "@/lib/utils";
-import { BranchHeader, CredentialsNote, Drawer, Field, ModeBadge, SlotPicker, api, rupees, slotFee } from "./shared";
+import { Badge, BranchHeader, CredentialsNote, Drawer, EmptyState, Field, Modal, ModeBadge, MoreMenu, SlotPicker, Stat, api, rupees, slotFee, useConfirm } from "./shared";
 import type { Slot } from "./SlotsClient";
 import { ClassLogList, HomeworkLogList, type ClassLogEntry, type ClassLogHomework } from "./ClassLog";
 import { CourseProgress, type CourseProgressData } from "./CourseProgress";
@@ -47,7 +47,10 @@ type Student = {
 
 type Credentials = { username: string; password: string; note?: string };
 
-export default function StudentsClient({ can }: { can: string[] }) {
+/** Quick filters the Overview links to: `?filter=owing|nologin|nodetails`. */
+export type StudentQuickFilter = "" | "owing" | "nologin" | "nodetails";
+
+export default function StudentsClient({ can, initialFilter = "", startNew = false }: { can: string[]; initialFilter?: StudentQuickFilter; startNew?: boolean }) {
   const [students, setStudents] = useState<Student[]>([]);
   const [slots, setSlots] = useState<Slot[]>([]);
   const [canEdit, setCanEdit] = useState(false);
@@ -56,7 +59,7 @@ export default function StudentsClient({ can }: { can: string[] }) {
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState<"active" | "inactive" | "all">("active");
   const [slotFilter, setSlotFilter] = useState("");
-  const [onlyPending, setOnlyPending] = useState(false);
+  const [onlyPending, setOnlyPending] = useState(initialFilter === "owing");
   const [editing, setEditing] = useState<Partial<Student> | null>(null);
   const [leaving, setLeaving] = useState<Student | null>(null);
   const [history, setHistory] = useState<Student | null>(null);
@@ -64,12 +67,15 @@ export default function StudentsClient({ can }: { can: string[] }) {
   const [courses, setCourses] = useState<BranchCourse[]>([]);
   const [courseFilter, setCourseFilter] = useState("");
   const [picked, setPicked] = useState<Set<string>>(new Set());
-  const [onlyNoDetails, setOnlyNoDetails] = useState(false);
+  const [onlyNoDetails, setOnlyNoDetails] = useState(initialFilter === "nodetails");
   const [detailsResult, setDetailsResult] = useState<DetailsResult | null>(null);
   const [sendingDetails, setSendingDetails] = useState(false);
-  const [onlyNoWelcome, setOnlyNoWelcome] = useState(false);
+  const [onlyNoWelcome, setOnlyNoWelcome] = useState(initialFilter === "nologin");
   const [welcomeResult, setWelcomeResult] = useState<WelcomeResult | null>(null);
   const [sendingWelcome, setSendingWelcome] = useState(false);
+  const [confirm, confirmDialog] = useConfirm();
+  const [showFilters, setShowFilters] = useState(false);
+  const askedForNew = useRef(startNew);
 
   useEffect(() => {
     api<{ courses: BranchCourse[] }>("/api/bowbazar/courses")
@@ -87,6 +93,9 @@ export default function StudentsClient({ can }: { can: string[] }) {
       setCanEdit(studentData.canEdit);
       setSeesFees(studentData.seesFees);
       setSlots(slotData.slots);
+      // "Add a student" on the Overview opens the form once the slots are in.
+      if (askedForNew.current && studentData.canEdit) setEditing({ slots: [], monthlyFee: 0 });
+      askedForNew.current = false;
     } catch (error: any) {
       toast.error(error.message);
     } finally {
@@ -122,10 +131,23 @@ export default function StudentsClient({ can }: { can: string[] }) {
       return next;
     });
 
+  const active = students.filter((student) => student.status === "active");
   const counts = {
-    active: students.filter((student) => student.status === "active").length,
-    inactive: students.filter((student) => student.status === "inactive").length,
+    active: active.length,
+    inactive: students.length - active.length,
+    owing: students.filter((student) => student.pendingAmount > 0).length,
+    noLogin: active.filter((student) => !student.welcomeSentAt).length,
+    noDetails: active.filter((student) => !student.admissionId).length,
   };
+  const anyQuick = onlyPending || onlyNoWelcome || onlyNoDetails;
+  /** The cards at the top work as one-tap filters; tapping the chosen one again clears it. */
+  function quick(filter: StudentQuickFilter) {
+    const already = (filter === "owing" && onlyPending) || (filter === "nologin" && onlyNoWelcome) || (filter === "nodetails" && onlyNoDetails);
+    setOnlyPending(!already && filter === "owing");
+    setOnlyNoWelcome(!already && filter === "nologin");
+    setOnlyNoDetails(!already && filter === "nodetails");
+    if (filter === "") setStatus("active");
+  }
 
   async function reactivate(student: Student) {
     try {
@@ -141,7 +163,14 @@ export default function StudentsClient({ can }: { can: string[] }) {
   async function sendDetails(list: Student[]) {
     if (!list.length) return;
     const who = list.length === 1 ? `${list[0].name}'s family` : `the families of ${list.length} students`;
-    if (!window.confirm(`Send the details form to ${who} on WhatsApp${list.length === 1 ? "" : " (and email where known)"}? They add a photo, an ID document and anything missing.`)) return;
+    if (
+      !(await confirm({
+        title: `Send the details form to ${who}?`,
+        message: `It goes on WhatsApp${list.length === 1 ? "" : " (and email where known)"}. They add a photo, an ID document and anything missing.`,
+        confirmLabel: "Send form",
+      }))
+    )
+      return;
     setSendingDetails(true);
     try {
       const data = await api<DetailsResult>("/api/bowbazar/admissions", { method: "POST", json: { action: "details", studentIds: list.map((student) => student.id) } });
@@ -158,7 +187,14 @@ export default function StudentsClient({ can }: { can: string[] }) {
   async function sendWelcome(list: Student[]) {
     if (!list.length) return;
     const who = list.length === 1 ? `${list[0].name}'s family` : `${list.length} families, each in their own message`;
-    if (!window.confirm(`Send the welcome message with the username and a set-password link to ${who}? A link sent earlier stops working; the current password keeps working until they set a new one.`)) return;
+    if (
+      !(await confirm({
+        title: `Send the welcome + login to ${who}?`,
+        message: "The message carries the username and a set-password link. A link sent earlier stops working; the current password keeps working until they set a new one.",
+        confirmLabel: "Send welcome",
+      }))
+    )
+      return;
     setSendingWelcome(true);
     try {
       const data = await api<WelcomeResult>("/api/bowbazar/students/welcome", { method: "POST", json: { studentIds: list.map((student) => student.id) } });
@@ -173,7 +209,7 @@ export default function StudentsClient({ can }: { can: string[] }) {
   }
 
   async function resetPassword(student: Student) {
-    if (!window.confirm(`Give ${student.name} a new password? The old one stops working.`)) return;
+    if (!(await confirm({ title: `Give ${student.name} a new password?`, message: "The old one stops working straight away.", confirmLabel: "Make new password", danger: true }))) return;
     try {
       const data = await api<Credentials>(`/api/bowbazar/students/${student.id}`, { method: "PATCH", json: { action: "resetPassword" } });
       setCredentials({ ...data, name: student.name });
@@ -204,19 +240,74 @@ export default function StudentsClient({ can }: { can: string[] }) {
         }
       />
 
+      {confirmDialog}
       {credentials && (
-        <div className="space-y-1">
-          <div className="text-sm font-bold text-slate-700">{credentials.name}</div>
+        <Modal
+          title={credentials.name}
+          onClose={() => setCredentials(null)}
+          footer={<button type="button" className="btn-primary h-10" onClick={() => setCredentials(null)}>Done</button>}
+        >
+          <p>Shown once. Copy them now if the family needs them.</p>
           <CredentialsNote {...credentials} />
-          <button type="button" className="text-xs font-bold text-slate-500 underline" onClick={() => setCredentials(null)}>Done</button>
-        </div>
+        </Modal>
       )}
 
-      <div className="flex flex-col gap-2 rounded-lg border border-brand/10 bg-white p-3 shadow-sm lg:flex-row lg:items-center">
-        <div className="relative flex-1">
-          <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-          <input className="input pl-9" placeholder="Search name, parent, phone, school" value={query} onChange={(event) => setQuery(event.target.value)} />
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <Stat
+          label="Active"
+          value={loading ? "…" : counts.active}
+          hint={`${counts.inactive} inactive`}
+          icon={<Users size={16} />}
+          onClick={() => quick("")}
+          active={!anyQuick && status === "active"}
+        />
+        {seesFees && (
+          <Stat
+            label="Fees pending"
+            value={loading ? "…" : counts.owing}
+            tone={counts.owing ? "bad" : "good"}
+            hint="students owing"
+            icon={<IndianRupee size={16} />}
+            onClick={() => quick("owing")}
+            active={onlyPending}
+          />
+        )}
+        <Stat
+          label="Login not sent"
+          value={loading ? "…" : counts.noLogin}
+          tone={counts.noLogin ? "warn" : "good"}
+          hint="active families"
+          icon={<KeyRound size={16} />}
+          onClick={() => quick("nologin")}
+          active={onlyNoWelcome}
+        />
+        <Stat
+          label="Details missing"
+          value={loading ? "…" : counts.noDetails}
+          tone={counts.noDetails ? "warn" : "good"}
+          hint="no details form back"
+          icon={<FileText size={16} />}
+          onClick={() => quick("nodetails")}
+          active={onlyNoDetails}
+        />
+      </div>
+
+      <div className="flex flex-col gap-2 rounded-xl border border-slate-200/80 bg-white p-3 shadow-md shadow-brand-900/5 lg:flex-row lg:items-center">
+        <div className="flex gap-2 lg:flex-1">
+          <div className="relative flex-1">
+            <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+            <input className="input !pl-9" placeholder="Search name, parent, phone, school" value={query} onChange={(event) => setQuery(event.target.value)} />
+          </div>
+          <button
+            type="button"
+            className={cn("btn-outline h-10 shrink-0 px-3 lg:hidden", showFilters && "border-brand bg-brand-50")}
+            onClick={() => setShowFilters((value) => !value)}
+            aria-expanded={showFilters}
+          >
+            Filters{(status !== "active" || slotFilter || courseFilter) && " •"}
+          </button>
         </div>
+        <div className={cn("grid grid-cols-1 gap-2 sm:grid-cols-3 lg:flex lg:items-center", !showFilters && "hidden lg:flex")}>
         <select className="input lg:w-40" value={status} onChange={(event) => setStatus(event.target.value as typeof status)}>
           <option value="active">Active</option>
           <option value="inactive">Inactive</option>
@@ -236,32 +327,17 @@ export default function StudentsClient({ can }: { can: string[] }) {
             </optgroup>
           ))}
         </select>
-        {seesFees && (
-          <label className="flex items-center gap-2 whitespace-nowrap text-sm font-semibold text-slate-700">
-            <input type="checkbox" checked={onlyPending} onChange={(event) => setOnlyPending(event.target.checked)} />
-            Fees pending
-          </label>
-        )}
-        <label className="flex items-center gap-2 whitespace-nowrap text-sm font-semibold text-slate-700">
-          <input type="checkbox" checked={onlyNoDetails} onChange={(event) => setOnlyNoDetails(event.target.checked)} />
-          Details not received yet
-        </label>
-        <label className="flex items-center gap-2 whitespace-nowrap text-sm font-semibold text-slate-700">
-          <input type="checkbox" checked={onlyNoWelcome} onChange={(event) => setOnlyNoWelcome(event.target.checked)} />
-          Login not sent
-        </label>
+        </div>
       </div>
 
       {welcomeResult && (
-        <section className="rounded-lg border border-sky-200 bg-sky-50 p-3 text-sm text-sky-950">
-          <div className="flex items-start justify-between gap-2">
-            <div className="font-black">
-              Welcome + set-password link made for {welcomeResult.sent} {welcomeResult.sent === 1 ? "family" : "families"}
-              {welcomeResult.sent > 0 && ` · ${welcomeResult.viaWhatsApp} sent on WhatsApp`}
-              {welcomeResult.skipped > 0 && ` · ${welcomeResult.skipped} skipped`}
-            </div>
-            <button type="button" className="text-xs font-bold underline" onClick={() => setWelcomeResult(null)}>Done</button>
-          </div>
+        <Drawer
+          title="Welcome + login"
+          subtitle={`Set-password link made for ${welcomeResult.sent} ${welcomeResult.sent === 1 ? "family" : "families"}${welcomeResult.sent > 0 ? ` · ${welcomeResult.viaWhatsApp} sent on WhatsApp` : ""}${welcomeResult.skipped > 0 ? ` · ${welcomeResult.skipped} skipped` : ""}`}
+          onClose={() => setWelcomeResult(null)}
+          footer={<button type="button" className="btn-primary h-10" onClick={() => setWelcomeResult(null)}>Done</button>}
+        >
+        <section className="text-sm text-sky-950">
           {welcomeResult.sent > welcomeResult.viaWhatsApp && (
             <p className="mt-1 text-xs font-bold">
               WhatsApp couldn&apos;t send {welcomeResult.sent - welcomeResult.viaWhatsApp} automatically (the message may still be waiting for Meta&apos;s approval). Tap Open WhatsApp on each one: the message is typed for you, press send.
@@ -286,18 +362,18 @@ export default function StudentsClient({ can }: { can: string[] }) {
           </ul>
           <p className="mt-1 text-xs">Each link works for 7 days and only once. Sending again makes a new link.</p>
         </section>
+        </Drawer>
       )}
 
       {detailsResult && (
-        <section className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-950">
-          <div className="flex items-start justify-between gap-2">
-            <div className="font-black">
-              Details form sent to {detailsResult.sent} {detailsResult.sent === 1 ? "family" : "families"}
-              {detailsResult.skipped > 0 && `, ${detailsResult.skipped} skipped`}
-            </div>
-            <button type="button" className="text-xs font-bold underline" onClick={() => setDetailsResult(null)}>Done</button>
-          </div>
-          <ul className="mt-1 space-y-0.5 text-xs">
+        <Drawer
+          title="Details form"
+          subtitle={`Sent to ${detailsResult.sent} ${detailsResult.sent === 1 ? "family" : "families"}${detailsResult.skipped > 0 ? `, ${detailsResult.skipped} skipped` : ""}`}
+          onClose={() => setDetailsResult(null)}
+          footer={<button type="button" className="btn-primary h-10" onClick={() => setDetailsResult(null)}>Done</button>}
+        >
+        <section className="text-sm text-emerald-950">
+          <ul className="space-y-1.5 text-xs">
             {detailsResult.results.map((result) => (
               <li key={result.studentId}>
                 <span className="font-bold">{result.name || result.studentId}</span>:{" "}
@@ -311,8 +387,9 @@ export default function StudentsClient({ can }: { can: string[] }) {
               </li>
             ))}
           </ul>
-          <p className="mt-1 text-xs">Forms that come back wait under Admissions → To review. Saving one fills in the student&apos;s record and photo, with no new account.</p>
+          <p className="mt-3 text-xs">Forms that come back wait under Admissions → To review. Saving one fills in the student&apos;s record and photo, with no new account.</p>
         </section>
+        </Drawer>
       )}
 
       {canEdit && shown.length > 0 && (
@@ -332,100 +409,164 @@ export default function StudentsClient({ can }: { can: string[] }) {
         />
       )}
 
-      <section className="overflow-hidden rounded-lg border border-brand/10 bg-white shadow-sm">
-        {loading && <div className="p-5 text-sm text-slate-500">Loading students...</div>}
-        {!loading && !shown.length && <div className="p-8 text-center text-sm text-slate-500">No students match.</div>}
+      <section className="overflow-hidden rounded-xl border border-slate-200/80 bg-white shadow-md shadow-brand-900/5">
+        {loading && (
+          <div className="flex items-center gap-2 p-5 text-sm text-slate-500">
+            <Loader2 size={16} className="animate-spin" /> Loading students...
+          </div>
+        )}
+        {!loading && !shown.length && (
+          <EmptyState
+            icon={<Users size={20} />}
+            title={students.length ? "No students match" : "No students yet"}
+            hint={students.length ? "Try another search or clear the filters." : "Add a student or import the centre's list."}
+            action={
+              students.length > 0 && (
+                <button
+                  type="button"
+                  className="btn-outline h-9 px-3 text-xs"
+                  onClick={() => {
+                    setQuery("");
+                    setSlotFilter("");
+                    setCourseFilter("");
+                    quick("");
+                  }}
+                >
+                  Clear filters
+                </button>
+              )
+            }
+          />
+        )}
         <div className="divide-y divide-slate-100">
           {shown.map((student) => (
-            <article key={student.id} className="flex flex-col gap-2 p-4 md:flex-row md:items-center md:justify-between">
+            <article key={student.id} className={cn("flex flex-col gap-3 p-4 md:flex-row md:items-center md:justify-between", picked.has(student.id) && "bg-brand-50/50")}>
               <div className="flex min-w-0 gap-3">
-              {canEdit && (
-                <input
-                  type="checkbox"
-                  className="mt-1.5 h-4 w-4 shrink-0"
-                  aria-label={`Select ${student.name}`}
-                  checked={picked.has(student.id)}
-                  onChange={() => togglePick(student.id)}
-                />
-              )}
-              <div className="min-w-0 space-y-1">
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="text-base font-black text-slate-950">{student.name}</span>
-                  <span className="font-mono text-xs text-slate-500">{[student.regNo, student.username].filter(Boolean).join(" · ")}</span>
-                  {student.status === "inactive" && <span className="rounded-full bg-slate-200 px-2 py-0.5 text-xs font-bold text-slate-700">Inactive</span>}
-                  {!student.admissionId && student.status === "active" && (
-                    <span className="rounded-full bg-amber-50 px-2 py-0.5 text-xs font-bold text-amber-800">Details not received yet</span>
+                {canEdit && (
+                  <input
+                    type="checkbox"
+                    className="mt-3 h-4 w-4 shrink-0 accent-brand"
+                    aria-label={`Select ${student.name}`}
+                    checked={picked.has(student.id)}
+                    onChange={() => togglePick(student.id)}
+                  />
+                )}
+                <div
+                  className={cn(
+                    "flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-sm font-black",
+                    student.status === "active" ? "bg-brand-50 text-brand" : "bg-slate-100 text-slate-400"
                   )}
-                  {student.status === "active" &&
-                    (student.welcomeSentAt ? (
-                      <span className="rounded-full bg-sky-50 px-2 py-0.5 text-xs font-bold text-sky-800" title={`Welcome sent ${new Date(student.welcomeSentAt).toLocaleString("en-IN")}`}>
-                        Login sent {new Date(student.welcomeSentAt).toLocaleDateString("en-IN", { day: "numeric", month: "short" })}
+                  aria-hidden
+                >
+                  {initials(student.name)}
+                </div>
+                <div className="min-w-0 space-y-1">
+                  <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                    <button type="button" className="text-left text-base font-black text-slate-950 hover:text-brand" onClick={() => setHistory(student)}>
+                      {student.name}
+                    </button>
+                    <span className="font-mono text-xs text-slate-500">{[student.regNo, student.username].filter(Boolean).join(" · ")}</span>
+                  </div>
+                  <div className="flex flex-wrap gap-1">
+                    {student.status === "inactive" && <Badge tone="muted">Inactive</Badge>}
+                    {seesFees &&
+                      student.status === "active" &&
+                      (student.pendingAmount > 0 ? (
+                        <Badge tone="bad" dot>
+                          <span title={student.pendingMonths.map(monthLabel).join(", ")}>
+                            {rupees(student.pendingAmount)} due · {student.pendingMonths.length} mo
+                          </span>
+                        </Badge>
+                      ) : (
+                        <Badge tone="good">Paid up</Badge>
+                      ))}
+                    {!student.admissionId && student.status === "active" && <Badge tone="warn">Details not received</Badge>}
+                    {student.status === "active" &&
+                      (student.welcomeSentAt ? (
+                        <Badge tone="info">
+                          <span title={`Welcome sent ${new Date(student.welcomeSentAt).toLocaleString("en-IN")}`}>
+                            Login sent {new Date(student.welcomeSentAt).toLocaleDateString("en-IN", { day: "numeric", month: "short" })}
+                          </span>
+                        </Badge>
+                      ) : (
+                        <Badge tone="muted">Login not sent</Badge>
+                      ))}
+                  </div>
+                  <div className="flex flex-wrap items-center gap-x-2 text-sm text-slate-600">
+                    <span>{[student.parentName, student.school].filter(Boolean).join(" · ") || (student.phone ? "" : "No contact details")}</span>
+                    {student.phone && (
+                      <a href={`tel:+91${student.phone}`} className="inline-flex items-center gap-1 font-semibold text-brand hover:underline">
+                        <Phone size={13} /> {student.phone}
+                      </a>
+                    )}
+                  </div>
+                  <div className="flex flex-wrap gap-1">
+                    {student.slots.map((slot) => (
+                      <span key={slot.id} className="inline-flex items-center gap-1 rounded-full bg-brand-50 px-2 py-0.5 text-xs font-bold text-brand">
+                        {slot.label} {slot.mode === "online" && <ModeBadge mode="online" />}
+                      </span>
+                    ))}
+                    {!student.slots.length && student.status === "active" && <Badge tone="warn">No slot</Badge>}
+                    {student.course ? (
+                      <span className="rounded-full bg-violet-50 px-2 py-0.5 text-xs font-bold text-violet-800" title={student.course.next ? `Next: ${student.course.next}` : undefined}>
+                        {[student.course.courseName, student.course.levelName].filter(Boolean).join(" - ")}
+                        {student.course.total > 0 && ` · ${student.course.done}/${student.course.total}`}
                       </span>
                     ) : (
-                      <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-bold text-slate-600">Login not sent</span>
-                    ))}
-                </div>
-                <div className="text-sm text-slate-600">
-                  {[student.parentName, student.phone, student.school].filter(Boolean).join(" · ") || "No contact details"}
-                </div>
-                <div className="flex flex-wrap gap-1">
-                  {student.slots.map((slot) => (
-                    <span key={slot.id} className="inline-flex items-center gap-1 rounded-full bg-brand-50 px-2 py-0.5 text-xs font-bold text-brand">
-                      {slot.label} {slot.mode === "online" && <ModeBadge mode="online" />}
-                    </span>
-                  ))}
-                  {!student.slots.length && <span className="text-xs font-semibold text-amber-700">No slot</span>}
-                  {student.course ? (
-                    <span className="rounded-full bg-violet-50 px-2 py-0.5 text-xs font-bold text-violet-800" title={student.course.next ? `Next: ${student.course.next}` : undefined}>
-                      {[student.course.courseName, student.course.levelName].filter(Boolean).join(" - ")}
-                      {student.course.total > 0 && ` · ${student.course.done}/${student.course.total}`}
-                    </span>
-                  ) : (
-                    <span className="text-xs font-semibold text-slate-400">No course</span>
+                      <span className="text-xs font-semibold text-slate-400">No course</span>
+                    )}
+                  </div>
+                  {student.status === "inactive" && (
+                    <div className="text-xs text-slate-500">
+                      Left {student.inactiveSince ? new Date(student.inactiveSince).toLocaleDateString("en-IN") : ""} · {student.inactiveReason}
+                    </div>
                   )}
                 </div>
-                {student.status === "inactive" && (
-                  <div className="text-xs text-slate-500">
-                    Left {student.inactiveSince ? new Date(student.inactiveSince).toLocaleDateString("en-IN") : ""} · {student.inactiveReason}
-                  </div>
-                )}
               </div>
-              </div>
-              <div className="flex shrink-0 flex-wrap items-center gap-2">
+              <div className="flex shrink-0 items-center justify-between gap-2 border-t border-slate-100 pt-3 md:justify-end md:border-0 md:pt-0">
                 {seesFees && (
-                  <div className="mr-2 text-right">
+                  <div className="md:mr-2 md:text-right">
                     <div className="text-sm font-bold text-slate-700">
                       {rupees(student.monthlyFee)}/month
-                      {student.feePlan && student.feePlan !== "monthly" && <span className="ml-1 text-xs font-semibold text-brand">· {FEE_PLAN_LABEL[student.feePlan as keyof typeof FEE_PLAN_LABEL]?.split(" ")[0]}</span>}
+                      {student.feePlan && student.feePlan !== "monthly" && (
+                        <span className="ml-1 text-xs font-semibold text-brand">· {FEE_PLAN_LABEL[student.feePlan as keyof typeof FEE_PLAN_LABEL]?.split(" ")[0]}</span>
+                      )}
                     </div>
                     {student.discount && (
                       <div className="text-xs text-slate-500">
                         {student.discount.kind === "percent" ? `${student.discount.value}%` : rupees(student.discount.value)} off{student.discount.reason ? ` · ${student.discount.reason}` : ""}
                       </div>
                     )}
-                    {student.pendingAmount > 0 ? (
-                      <div className="text-xs font-bold text-red-700" title={student.pendingMonths.map(monthLabel).join(", ")}>
-                        {rupees(student.pendingAmount)} pending ({student.pendingMonths.length} mo)
-                      </div>
-                    ) : (
-                      <div className="text-xs font-semibold text-emerald-700">No dues</div>
-                    )}
                   </div>
                 )}
-                <IconButton label="Classes and homework" onClick={() => setHistory(student)}><History size={15} /></IconButton>
-                {canEdit && (
-                  <>
-                    <IconButton label="Edit" onClick={() => setEditing(student)}><Pencil size={15} /></IconButton>
-                    <IconButton label="Send details form" onClick={() => void sendDetails([student])}><Send size={15} /></IconButton>
-                    <IconButton label="Send welcome + login" onClick={() => void sendWelcome([student])}><MessageCircle size={15} /></IconButton>
-                    <IconButton label="New password" onClick={() => resetPassword(student)}><KeyRound size={15} /></IconButton>
-                    {student.status === "active" ? (
-                      <IconButton label="Mark inactive" tone="bad" onClick={() => setLeaving(student)}><UserX size={15} /></IconButton>
-                    ) : (
-                      <IconButton label="Reactivate" tone="good" onClick={() => reactivate(student)}><UserCheck size={15} /></IconButton>
-                    )}
-                  </>
-                )}
+                <div className="flex items-center gap-2">
+                  <button type="button" className="btn-outline h-9 px-3 text-xs" onClick={() => setHistory(student)}>
+                    <History size={14} /> Classes
+                  </button>
+                  {canEdit && (
+                    <>
+                      <button type="button" className="btn-outline h-9 px-3 text-xs" onClick={() => setEditing(student)}>
+                        <Pencil size={14} /> Edit
+                      </button>
+                      <MoreMenu
+                        label={`More for ${student.name}`}
+                        items={[
+                          { label: "Send details form", icon: <Send size={15} />, onClick: () => void sendDetails([student]) },
+                          { label: "Send welcome + login", icon: <MessageCircle size={15} />, onClick: () => void sendWelcome([student]) },
+                          Boolean(student.phone) && {
+                            label: "WhatsApp the family",
+                            icon: <MessageCircle size={15} />,
+                            onClick: () => window.open(`https://wa.me/91${student.phone}`, "_blank", "noopener"),
+                          },
+                          { label: "New password", icon: <KeyRound size={15} />, onClick: () => void resetPassword(student) },
+                          student.status === "active"
+                            ? { label: "Mark inactive", icon: <UserX size={15} />, danger: true, onClick: () => setLeaving(student) }
+                            : { label: "Reactivate", icon: <UserCheck size={15} />, onClick: () => void reactivate(student) },
+                        ]}
+                      />
+                    </>
+                  )}
+                </div>
               </div>
             </article>
           ))}
@@ -520,21 +661,10 @@ function HistoryDrawer({ student, canEdit, onClose, onChanged }: { student: Stud
   );
 }
 
-function IconButton({ label, onClick, children, tone }: { label: string; onClick: () => void; children: React.ReactNode; tone?: "good" | "bad" }) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      title={label}
-      aria-label={label}
-      className={cn(
-        "inline-flex h-9 w-9 items-center justify-center rounded-lg border",
-        tone === "bad" ? "border-red-200 text-red-700 hover:bg-red-50" : tone === "good" ? "border-emerald-200 text-emerald-700 hover:bg-emerald-50" : "border-slate-200 text-slate-600 hover:bg-slate-50"
-      )}
-    >
-      {children}
-    </button>
-  );
+/** Up to two letters for the round name badge on a row. */
+function initials(name: string) {
+  const parts = (name || "").trim().split(/\s+/).filter(Boolean);
+  return ((parts[0]?.[0] || "") + (parts.length > 1 ? parts[parts.length - 1][0] : "")).toUpperCase() || "?";
 }
 
 function StudentDrawer({

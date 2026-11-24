@@ -1,17 +1,23 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
-import { ExternalLink, Loader2, MessageCircle, Search, Send } from "lucide-react";
+import { Fragment, useCallback, useEffect, useRef, useState } from "react";
+import { ExternalLink, Loader2, MessageCircle, Paperclip, Search, Send } from "lucide-react";
 import { toast } from "sonner";
+import AttachmentDialog from "@/components/admin/whatsapp/AttachmentDialog";
+import { MessageMedia, MessageStatus, MessageText } from "@/components/admin/whatsapp/MessageContent";
+import type { WaMessage } from "@/components/admin/whatsapp/types";
 import { cn } from "@/lib/utils";
 import { BranchHeader, api } from "./shared";
 
 type Conversation = { phone: string; students: string[]; parentName: string; active: boolean; lastText: string; lastDirection: string; lastAt: string; windowOpen: boolean; messages: number };
-type Thread = { phone: string; students: string[]; parentName: string; windowOpen: boolean; messages: { id: string; direction: string; text: string; status: string; at: string }[] };
+// Messages come in the online inbox's own shape, so its ticks, media and link rendering apply as they are.
+type Thread = { phone: string; students: string[]; parentName: string; windowOpen: boolean; messages: WaMessage[] };
+const POLL_MS = 10_000;
+const dayKey = (value: string) => new Date(value).toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
 
 const when = (value: string) => new Date(value).toLocaleString("en-IN", { day: "numeric", month: "short", hour: "numeric", minute: "2-digit", timeZone: "Asia/Kolkata" });
 
-export default function WhatsAppClient({ can }: { can: string[] }) {
+export default function WhatsAppClient({ can, actorId }: { can: string[]; actorId: string }) {
   const [conversations, setConversations] = useState<Conversation[] | null>(null);
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState<string>("");
@@ -63,24 +69,45 @@ export default function WhatsAppClient({ can }: { can: string[] }) {
           </div>
         </section>
         <section className="min-h-[24rem] rounded-lg border border-brand/10 bg-white shadow-sm">
-          {open ? <ThreadView key={open} phone={open} onSent={load} /> : <div className="flex h-full items-center justify-center p-8 text-sm text-slate-500"><MessageCircle size={18} className="mr-2" /> Pick a conversation.</div>}
+          {open ? <ThreadView key={open} phone={open} actorId={actorId} onSent={load} /> : <div className="flex h-full items-center justify-center p-8 text-sm text-slate-500"><MessageCircle size={18} className="mr-2" /> Pick a conversation.</div>}
         </section>
       </div>
     </div>
   );
 }
 
-function ThreadView({ phone, onSent }: { phone: string; onSent: () => void }) {
+function ThreadView({ phone, actorId, onSent }: { phone: string; actorId: string; onSent: () => void }) {
   const [thread, setThread] = useState<Thread | null>(null);
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
+  const [attaching, setAttaching] = useState(false);
   const end = useRef<HTMLDivElement>(null);
+  const lastId = useRef("");
 
-  const load = useCallback(() => {
-    api<Thread>(`/api/bowbazar/whatsapp/${encodeURIComponent(phone)}`).then(setThread).catch((error) => toast.error(error.message));
-  }, [phone]);
-  useEffect(load, [load]);
-  useEffect(() => end.current?.scrollIntoView({ block: "end" }), [thread]);
+  const load = useCallback(
+    (quiet = false) => {
+      api<Thread>(`/api/bowbazar/whatsapp/${encodeURIComponent(phone)}`)
+        .then(setThread)
+        .catch((error) => {
+          if (!quiet) toast.error(error.message);
+        });
+    },
+    [phone]
+  );
+  useEffect(() => load(), [load]);
+  // Ticks move from sent to delivered to read, and replies arrive: check again every few seconds.
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      if (document.visibilityState === "visible") load(true);
+    }, POLL_MS);
+    return () => window.clearInterval(timer);
+  }, [load]);
+  // Scroll only when a new message arrives, not on every tick update.
+  useEffect(() => {
+    const newest = thread?.messages.at(-1)?.id || "";
+    if (newest && newest !== lastId.current) end.current?.scrollIntoView({ block: "end" });
+    lastId.current = newest;
+  }, [thread]);
 
   async function send() {
     setSending(true);
@@ -110,26 +137,81 @@ function ThreadView({ phone, onSent }: { phone: string; onSent: () => void }) {
         </a>
       </div>
       <div className="flex-1 space-y-2 overflow-y-auto bg-slate-50 px-4 py-3">
-        {thread.messages.map((message) => (
-          <div key={message.id} className={cn("max-w-[80%] rounded-lg px-3 py-2 text-sm shadow-sm", message.direction === "outbound" ? "ml-auto bg-emerald-100 text-emerald-950" : "bg-white text-slate-900")}>
-            <div className="whitespace-pre-wrap">{message.text}</div>
-            <div className="mt-0.5 text-right text-[10px] text-slate-500">{when(message.at)}{message.direction === "outbound" && message.status ? ` · ${message.status}` : ""}</div>
-          </div>
+        {!thread.messages.length && <p className="py-8 text-center text-sm text-slate-500">No messages yet.</p>}
+        {thread.messages.map((message, index) => (
+          <Fragment key={message.id}>
+            {(index === 0 || dayKey(message.createdAt) !== dayKey(thread.messages[index - 1].createdAt)) && (
+              <div className="flex justify-center">
+                <span className="rounded-full bg-white px-3 py-1 text-[11px] text-slate-500 shadow-sm">
+                  {new Date(message.createdAt).toLocaleDateString("en-IN", { timeZone: "Asia/Kolkata", day: "numeric", month: "short", year: "numeric" })}
+                </span>
+              </div>
+            )}
+            <div className={cn("flex", message.direction === "outbound" ? "justify-end" : "justify-start")}>
+              <div className={cn("min-w-0 max-w-[85%] rounded-lg px-3 py-2 text-sm shadow-sm", message.direction === "outbound" ? "bg-emerald-100 text-emerald-950" : "bg-white text-slate-900")}>
+                <MessageMedia message={message} />
+                <MessageText text={message.text || ""} />
+                {message.templateButtons?.length ? (
+                  <div className="-mx-3 mt-2 divide-y divide-emerald-200 border-t border-emerald-200">
+                    {message.templateButtons.map((label) => (
+                      <div key={label} className="px-3 py-1.5 text-center text-sm font-semibold text-sky-700">{label}</div>
+                    ))}
+                  </div>
+                ) : null}
+                <div className="mt-1 flex flex-wrap items-center justify-end gap-2 text-[10px] text-slate-500">
+                  <time dateTime={message.createdAt} title={new Date(message.createdAt).toLocaleString("en-IN", { timeZone: "Asia/Kolkata" })}>
+                    {new Date(message.createdAt).toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata", hour: "2-digit", minute: "2-digit" })}
+                  </time>
+                  {message.direction === "outbound" ? <MessageStatus message={message} /> : null}
+                </div>
+                {message.reactions?.length ? (
+                  <div className="mt-1 flex gap-1">
+                    {message.reactions.map((reaction, i) => (
+                      <span key={i} className="rounded-full bg-white px-2 shadow-sm">{reaction.emoji}</span>
+                    ))}
+                  </div>
+                ) : null}
+                {message.status === "failed" || message.uncertain ? (
+                  <div className="mt-1 text-xs text-rose-800">
+                    {message.error || "Message could not be sent."}
+                    {message.uncertain ? " Check delivery before sending again." : ""}
+                  </div>
+                ) : null}
+              </div>
+            </div>
+          </Fragment>
         ))}
         <div ref={end} />
       </div>
       <div className="border-t border-slate-100 p-3">
         {thread.windowOpen ? (
           <div className="flex gap-2">
+            <button type="button" className="btn-outline h-11 px-3" title="Send a photo or document" aria-label="Send a photo or document" onClick={() => setAttaching(true)}>
+              <Paperclip size={16} />
+            </button>
             <textarea className="input min-h-[44px] flex-1" rows={2} value={text} onChange={(event) => setText(event.target.value)} placeholder="Type a reply" />
             <button type="button" className="btn-primary h-11 px-4" disabled={sending || !text.trim()} onClick={() => void send()}>
               {sending ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}
             </button>
           </div>
         ) : (
-          <p className="text-xs text-slate-500">WhatsApp allows a typed reply only within 24 hours of the family&apos;s last message. Use &quot;Open in WhatsApp&quot; to message them from your phone.</p>
+          <p className="text-xs text-slate-500">
+            WhatsApp allows a typed reply or a file only within 24 hours of the family&apos;s last message. Use &quot;Open in WhatsApp&quot; to message them from your phone.
+          </p>
         )}
       </div>
+      {attaching && (
+        <AttachmentDialog
+          phone={thread.phone}
+          actorId={actorId}
+          endpoint="/api/bowbazar/whatsapp/media/send"
+          onClose={() => setAttaching(false)}
+          onSent={() => {
+            load();
+            onSent();
+          }}
+        />
+      )}
     </div>
   );
 }

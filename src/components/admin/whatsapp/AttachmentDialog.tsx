@@ -2,7 +2,8 @@
 import { useEffect, useRef, useState } from "react";
 import WorkspaceDialog from "./WorkspaceDialog";
 
-export default function AttachmentDialog({ phone, actorId, onClose, onSent }: { phone: string; actorId: string; onClose: () => void; onSent: (phone: string) => void }) {
+// `endpoint`: the Bowbazar WhatsApp screen posts to its own route, which checks the number is one of its families.
+export default function AttachmentDialog({ phone, actorId, onClose, onSent, endpoint = "/api/admin/whatsapp/media/send" }: { phone: string; actorId: string; onClose: () => void; onSent: (phone: string) => void; endpoint?: string }) {
   const [file, setFile] = useState<File | null>(null), [caption, setCaption] = useState(""), [error, setError] = useState("");
   const [busy, setBusy] = useState(false), [unknown, setUnknown] = useState(false);
   const lock = useRef(false), previous = useRef<any>(null);
@@ -20,7 +21,7 @@ export default function AttachmentDialog({ phone, actorId, onClose, onSent }: { 
       const request = previous.current || { requestId: crypto.randomUUID(), hash, filename: file.name, caption };
       previous.current = request; try { sessionStorage.setItem(storageKey, JSON.stringify(request)); } catch { /* The in-memory reservation remains. */ }
       const form = new FormData(); form.set("file", file); form.set("phoneNumber", phone); form.set("caption", caption); form.set("requestId", request.requestId);
-      const response = await fetch("/api/admin/whatsapp/media/send", { method: "POST", body: form, signal: AbortSignal.timeout(70_000) });
+      const response = await fetch(endpoint, { method: "POST", body: form, signal: AbortSignal.timeout(70_000) });
       const payload = await response.json();
       if (!response.ok || payload.ok !== true) { setUnknown(Boolean(payload.uncertain || payload.retryable === false)); if (!payload.uncertain && payload.retryable !== false) clearCheck(); throw new Error(payload.error || "Could not send attachment."); }
       clearCheck(); onSent(phone); onClose();

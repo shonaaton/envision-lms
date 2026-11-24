@@ -1,0 +1,68 @@
+import { NextResponse } from "next/server";
+import { WhatsAppMessage } from "@/models/WhatsApp";
+
+/**
+ * Streams a WhatsApp media file from Meta. Shared by the online inbox and the
+ * Bowbazar WhatsApp screen; each route checks its own access first.
+ */
+function cleanEnv(value?: string) {
+  return String(value || "").trim().replace(/^["']|["']$/g, "");
+}
+
+function graphVersion() {
+  const value = cleanEnv(process.env.WHATSAPP_GRAPH_VERSION || "v25.0");
+  return value.startsWith("v") ? value : `v${value}`;
+}
+
+// Media ids only become fetchable once they belong to a stored message, so a signed-in admin
+// cannot use this route to pull arbitrary assets out of the business account.
+export async function findMediaMessage(mediaId: string) {
+  return WhatsAppMessage.findOne({
+    $or: [
+      { mediaId },
+      { "rawPayload.image.id": mediaId },
+      { "rawPayload.video.id": mediaId },
+      { "rawPayload.audio.id": mediaId },
+      { "rawPayload.voice.id": mediaId },
+      { "rawPayload.document.id": mediaId },
+      { "rawPayload.sticker.id": mediaId },
+    ],
+  })
+    .select("phoneNumber mediaId mediaMimeType mediaFilename messageType")
+    .lean();
+}
+
+
+export async function whatsappMediaResponse(mediaId: string, message: any) {
+  const accessToken = cleanEnv(process.env.WHATSAPP_ACCESS_TOKEN || process.env.META_ACCESS_TOKEN);
+  if (!accessToken) return NextResponse.json({ error: "WHATSAPP_ACCESS_TOKEN is not configured" }, { status: 503 });
+
+  const lookup = await fetch(`https://graph.facebook.com/${graphVersion()}/${mediaId}`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+    cache: "no-store",
+  });
+  const lookupPayload = await lookup.json().catch(() => ({}));
+  const mediaUrl = String(lookupPayload?.url || "");
+  if (!lookup.ok || !mediaUrl) {
+    return NextResponse.json(
+      { error: "Could not resolve WhatsApp media", detail: lookupPayload?.error?.message || "" },
+      { status: 502 }
+    );
+  }
+
+  // Meta serves the bytes from a lookaside host that still requires the bearer token.
+  const download = await fetch(mediaUrl, { headers: { Authorization: `Bearer ${accessToken}` }, cache: "no-store" });
+  if (!download.ok || !download.body) return NextResponse.json({ error: "Could not download WhatsApp media" }, { status: 502 });
+
+  const contentType = download.headers.get("content-type") || message.mediaMimeType || lookupPayload?.mime_type || "application/octet-stream";
+  const headers: Record<string, string> = {
+    "Content-Type": contentType,
+    // The bytes behind a media id never change, so cache them in the admin's browser.
+    "Cache-Control": "private, max-age=86400, immutable",
+  };
+  const contentLength = download.headers.get("content-length");
+  if (contentLength) headers["Content-Length"] = contentLength;
+  if (message.mediaFilename) headers["Content-Disposition"] = `inline; filename="${message.mediaFilename.replace(/"/g, "")}"`;
+
+  return new Response(download.body, { status: 200, headers });
+}

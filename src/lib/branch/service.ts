@@ -755,7 +755,7 @@ export async function studentBills(branch: BranchKey, studentId: string) {
 
 export async function branchOverview(branch: BranchKey) {
   await dbConnect();
-  const [slots, active, inactive, report, admissionsToReview, changesToReview, missing] = await Promise.all([
+  const [slots, active, inactive, report, admissionsToReview, changesToReview, missing, loginsNotSent, detailsMissing] = await Promise.all([
     listSlots(branch, { includeInactive: false }),
     BranchStudent.countDocuments({ branch, status: "active" }),
     BranchStudent.countDocuments({ branch, status: "inactive" }),
@@ -763,11 +763,16 @@ export async function branchOverview(branch: BranchKey) {
     BranchAdmission.countDocuments({ branch, status: "submitted" }),
     BranchSlotChange.countDocuments({ branch, status: "pending" }),
     absentStreaks(branch, academyDateKey(new Date())),
+    // The Students page's "Login not sent" and "Details not received yet" filters.
+    BranchStudent.countDocuments({ branch, status: "active", welcomeSentAt: null }),
+    BranchStudent.countDocuments({ branch, status: "active", admission: null }),
   ]);
   return {
     missingClasses: missing.slice(0, 20),
     admissionsToReview,
     changesToReview,
+    loginsNotSent,
+    detailsMissing,
     activeStudents: active,
     inactiveStudents: inactive,
     slots: slots.length,

@@ -22,5 +22,6 @@ export async function requireBranchPage(capability: BranchCapability) {
     branchLabel: BRANCH_LABELS[access.branch],
     can: [...access.can],
     userName: String(user.name || ""),
+    userId: String(user.id || ""),
   };
 }

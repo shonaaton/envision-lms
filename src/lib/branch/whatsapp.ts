@@ -2,6 +2,7 @@ import "server-only";
 import { dbConnect } from "@/lib/db";
 import { normalizeWhatsAppNumber, normalizeWhatsAppRecipient, sendWhatsAppTextMessage } from "@/lib/whatsappAutomation";
 import { WhatsAppMessage } from "@/models/WhatsApp";
+import { MESSAGE_FIELDS, buildThread, isReaction, previewText } from "@/lib/whatsappMessageView";
 import { BranchStudent } from "@/models/Branch";
 import { BranchError } from "./errors";
 import type { BranchKey } from "./scope";
@@ -14,6 +15,9 @@ import { tenDigitPhone } from "./admissionRules";
  */
 
 const WINDOW_MS = 24 * 60 * 60 * 1000;
+/** Where this screen serves media from: its own route, which checks the number is a family here. */
+export const BRANCH_MEDIA_BASE = "/api/bowbazar/whatsapp/media";
+const PREVIEW_FIELDS = Object.fromEntries(MESSAGE_FIELDS.split(" ").map((field) => [field, 1]));
 
 /** Each family number at the branch, in the spellings the inbox may have stored, with the children on it. */
 async function familyNumbers(branch: BranchKey) {
@@ -51,11 +55,12 @@ export async function branchConversations(branch: BranchKey) {
   const groups: any[] = await WhatsAppMessage.aggregate([
     { $match: { phoneNumber: { $in: [...spellings.keys()] } } },
     { $sort: { createdAt: -1 } },
+    // Only what the preview needs: rawPayload holds whole webhook bodies.
+    { $project: PREVIEW_FIELDS },
     {
       $group: {
         _id: "$phoneNumber",
-        lastText: { $first: "$text" },
-        lastDirection: { $first: "$direction" },
+        latest: { $first: "$$ROOT" },
         lastAt: { $first: "$createdAt" },
         lastInboundAt: { $max: { $cond: [{ $eq: ["$direction", "inbound"] }, { $ifNull: ["$receivedAt", "$createdAt"] }, null] } },
         count: { $sum: 1 },
@@ -77,8 +82,8 @@ export async function branchConversations(branch: BranchKey) {
         students: family.names,
         parentName: family.parentName,
         active: family.active,
-        lastText: group.lastText || "",
-        lastDirection: group.lastDirection as string,
+        lastText: previewText(group.latest || {}) || "",
+        lastDirection: String(group.latest?.direction || ""),
         lastAt: group.lastAt,
         windowOpen: Boolean(group.lastInboundAt && Date.now() - new Date(group.lastInboundAt).getTime() < WINDOW_MS),
         messages: group.count as number,
@@ -90,22 +95,31 @@ export async function branchConversations(branch: BranchKey) {
 export async function branchConversation(branch: BranchKey, phone: string) {
   await dbConnect();
   const { canonical, family, stored } = await canonicalFor(branch, phone);
-  const messages: any[] = await WhatsAppMessage.find({ phoneNumber: { $in: stored } }).sort({ createdAt: -1 }).limit(150).lean();
-  const lastInbound = messages.find((message) => message.direction === "inbound");
+  const messages: any[] = await WhatsAppMessage.find({ phoneNumber: { $in: stored } }).select(MESSAGE_FIELDS).sort({ createdAt: -1 }).limit(150).lean();
+  const lastInbound = messages.find((message) => message.direction === "inbound" && !isReaction(message));
   const lastInboundAt = lastInbound ? new Date(lastInbound.receivedAt || lastInbound.createdAt) : null;
   return {
     phone: canonical,
     students: family.names,
     parentName: family.parentName,
     windowOpen: Boolean(lastInboundAt && Date.now() - lastInboundAt.getTime() < WINDOW_MS),
-    messages: messages.reverse().map((message) => ({
-      id: String(message._id),
-      direction: message.direction as string,
-      text: message.text || (message.templateName ? `[Template: ${message.templateName}]` : `[${message.messageType || "message"}]`),
-      status: message.status || "",
-      at: message.receivedAt || message.sentAt || message.createdAt,
-    })),
+    // The online inbox's own view of each message: template text, media, reactions, ticks.
+    messages: buildThread(messages.reverse(), BRANCH_MEDIA_BASE),
   };
+}
+
+/** Whether a stored message's number is one of this branch's families (media downloads). */
+export async function isBranchFamilyNumber(branch: BranchKey, storedPhone: string) {
+  const { spellings } = await familyNumbers(branch);
+  return spellings.has(String(storedPhone || ""));
+}
+
+/** The spelling the inbox stored this family's messages under, for the attachment sender's window check. */
+export async function storedFamilyNumber(branch: BranchKey, phone: string) {
+  await dbConnect();
+  const { canonical, stored } = await canonicalFor(branch, phone);
+  const lastInbound: any = await WhatsAppMessage.findOne({ phoneNumber: { $in: stored }, direction: "inbound" }).sort({ createdAt: -1 }).select("phoneNumber").lean();
+  return String(lastInbound?.phoneNumber || canonical);
 }
 
 /** A free-text reply, allowed by WhatsApp only within 24 hours of the family's last message. */

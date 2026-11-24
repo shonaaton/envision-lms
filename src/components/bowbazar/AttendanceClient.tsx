@@ -112,7 +112,7 @@ function countsLine(counts: Counts) {
   return parts.join(" · ");
 }
 
-export default function AttendanceClient({ can, today }: { can: string[]; today: string }) {
+export default function AttendanceClient({ can, today, initialSlot = "" }: { can: string[]; today: string; initialSlot?: string }) {
   const [view, setView] = useState<"register" | "homework">("register");
   return (
     <div className="space-y-4">
@@ -133,7 +133,7 @@ export default function AttendanceClient({ can, today }: { can: string[]; today:
           </button>
         ))}
       </div>
-      {view === "register" ? <RegisterView today={today} /> : <HomeworkView />}
+      {view === "register" ? <RegisterView today={today} initialSlot={initialSlot} /> : <HomeworkView />}
     </div>
   );
 }
@@ -142,7 +142,7 @@ export default function AttendanceClient({ can, today }: { can: string[]; today:
 // A day's classes and the open register
 // ---------------------------------------------------------------------------
 
-function RegisterView({ today }: { today: string }) {
+function RegisterView({ today, initialSlot }: { today: string; initialSlot: string }) {
   const [date, setDate] = useState(today);
   const [classes, setClasses] = useState<DayClass[] | null>(null);
   const [selected, setSelected] = useState<string>("");
@@ -161,9 +161,12 @@ function RegisterView({ today }: { today: string }) {
     }
   }, []);
 
+  // A link from the Overview names the class to open, on the first load only.
+  const firstSlot = useRef(initialSlot);
   useEffect(() => {
     setClasses(null);
-    void loadDay(date, "");
+    void loadDay(date, firstSlot.current);
+    firstSlot.current = "";
   }, [date, loadDay]);
 
   const weekday = DAY_NAMES[new Date(`${date}T00:00:00`).getDay()];

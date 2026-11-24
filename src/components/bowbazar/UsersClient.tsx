@@ -2,10 +2,10 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { Copy, Download, Eye, KeyRound, Loader2, MoreVertical, Pencil, Plus, Search, Trash2, UserCheck, UserX } from "lucide-react";
+import { Copy, Download, Eye, KeyRound, Loader2, MoreVertical, Pencil, Plus, Search, Trash2, UserCheck, Users, UserX } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
-import { BranchHeader, CredentialsNote, Drawer, Field, api } from "./shared";
+import { Badge, BranchHeader, CredentialsNote, Drawer, EmptyState, Field, Modal, MoreMenu, Stat, api, useConfirm } from "./shared";
 
 type BranchUser = {
   id: string;
@@ -41,6 +41,26 @@ function passwordStatus(user: BranchUser) {
   return `${user.passwordChangeSource === "self_reset" ? "Updated by user" : "Updated"} ${when(user.passwordChangedAt)}`;
 }
 
+/** A temporary password is a button that copies the login; anything else is a quiet label. */
+function PasswordBadge({ user }: { user: BranchUser }) {
+  if (user.tempPassword) {
+    return (
+      <button
+        type="button"
+        className="inline-flex items-center gap-1 whitespace-nowrap rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-bold text-amber-900 ring-1 ring-amber-200 hover:bg-amber-100"
+        onClick={(event) => {
+          event.stopPropagation();
+          copyLogin(user);
+        }}
+        title="Copy the login details"
+      >
+        Temporary password <Copy size={11} />
+      </button>
+    );
+  }
+  return <Badge tone="good">{passwordStatus(user)}</Badge>;
+}
+
 function copyLogin(user: BranchUser) {
   void navigator.clipboard?.writeText(`User ID: ${user.username}\nPassword: ${user.tempPassword}\nLogin: ${window.location.origin}/login`);
   toast.success("Login details copied.");
@@ -51,7 +71,8 @@ export default function UsersClient({ can }: { can: string[] }) {
   const [users, setUsers] = useState<BranchUser[] | null>(null);
   const [me, setMe] = useState("");
   const [query, setQuery] = useState("");
-  const [status, setStatus] = useState<"all" | "active" | "inactive">("all");
+  const [status, setStatus] = useState<"all" | "active" | "inactive" | "never">("all");
+  const [confirm, confirmDialog] = useConfirm();
   // Placed against the viewport: the table scrolls sideways and would clip a menu inside it.
   const [menu, setMenu] = useState<{ id: string; top: number; right: number } | null>(null);
   const [details, setDetails] = useState<BranchUser | null>(null);
@@ -81,15 +102,23 @@ export default function UsersClient({ can }: { can: string[] }) {
     return (users || []).filter((user) => {
       if (status === "active" && !user.isActive) return false;
       if (status === "inactive" && user.isActive) return false;
+      if (status === "never" && (!user.isActive || user.lastLoginAt)) return false;
       if (!q) return true;
       return [user.name, user.username, user.email, user.phone, user.regNo, user.parentName].some((value) => value.toLowerCase().includes(q));
     });
   }, [users, query, status]);
 
-  const counts = useMemo(() => ({ active: (users || []).filter((user) => user.isActive).length, inactive: (users || []).filter((user) => !user.isActive).length }), [users]);
+  const counts = useMemo(() => {
+    const list = users || [];
+    return {
+      active: list.filter((user) => user.isActive).length,
+      inactive: list.filter((user) => !user.isActive).length,
+      never: list.filter((user) => user.isActive && !user.lastLoginAt).length,
+    };
+  }, [users]);
 
   async function resetPassword(user: BranchUser) {
-    if (!window.confirm(`Make a new password for ${user.name}? The old one stops working.`)) return;
+    if (!(await confirm({ title: `Make a new password for ${user.name}?`, message: "The old one stops working straight away.", confirmLabel: "Make new password", danger: true }))) return;
     try {
       const data = await api<{ username: string; password: string }>(`/api/bowbazar/users/${user.id}`, { method: "PATCH", json: { action: "resetPassword" } });
       setCredentials({ name: user.name, ...data });
@@ -110,7 +139,7 @@ export default function UsersClient({ can }: { can: string[] }) {
   }
 
   async function deactivateStaff(user: BranchUser) {
-    if (!window.confirm(`Switch off ${user.name}'s login?`)) return;
+    if (!(await confirm({ title: `Switch off ${user.name}'s login?`, message: "They can't sign in until you reactivate them.", confirmLabel: "Deactivate", danger: true }))) return;
     try {
       await api(`/api/bowbazar/users/${user.id}`, { method: "PATCH", json: { action: "setActive", active: false } });
       toast.success(`${user.name} can no longer sign in.`);
@@ -177,109 +206,154 @@ export default function UsersClient({ can }: { can: string[] }) {
         }
       />
 
-      <div className="flex flex-wrap items-center gap-2">
-        <div className="inline-flex rounded-lg border border-slate-200 bg-white p-1 text-sm font-bold">
+      {confirmDialog}
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <Stat label={kind === "students" ? "Student logins" : "Staff logins"} value={users ? users.length : "…"} icon={<Users size={16} />} onClick={() => setStatus("all")} active={status === "all"} />
+        <Stat label="Active" value={users ? counts.active : "…"} tone="good" icon={<UserCheck size={16} />} onClick={() => setStatus("active")} active={status === "active"} />
+        <Stat label="Inactive" value={users ? counts.inactive : "…"} tone={counts.inactive ? "warn" : "default"} icon={<UserX size={16} />} onClick={() => setStatus("inactive")} active={status === "inactive"} />
+        <Stat
+          label="Never signed in"
+          value={users ? counts.never : "…"}
+          tone={counts.never ? "warn" : "good"}
+          hint="active, no login yet"
+          icon={<KeyRound size={16} />}
+          onClick={() => setStatus("never")}
+          active={status === "never"}
+        />
+      </div>
+
+      <div className="flex flex-col gap-2 rounded-xl border border-slate-200/80 bg-white p-2 shadow-md shadow-brand-900/5 sm:flex-row sm:items-center">
+        <div className="grid grid-cols-2 rounded-lg bg-slate-100 p-1 text-sm font-bold sm:inline-flex">
           {(["students", "staff"] as const).map((value) => (
             <button
               key={value}
               type="button"
               onClick={() => setKind(value)}
-              className={cn("rounded-md px-3 py-1.5", kind === value ? "bg-brand text-white" : "text-slate-600 hover:bg-slate-100")}
+              className={cn("rounded-md px-3 py-1.5 transition", kind === value ? "bg-white text-brand shadow-sm" : "text-slate-600 hover:text-brand")}
             >
               {value === "students" ? "Students" : "Staff"}
             </button>
           ))}
         </div>
-        <div className="relative min-w-[12rem] flex-1">
-          <Search size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-          <input className="input h-10 !pl-9" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search name, user ID, email, phone" />
+        <div className="flex flex-1 gap-2">
+          <div className="relative min-w-0 flex-1">
+            <Search size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+            <input className="input h-10 !pl-9" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search name, user ID, email, phone" />
+          </div>
+          <button type="button" className="btn-outline h-10 shrink-0 px-3" onClick={exportCsv} disabled={!shown.length} title="Download as CSV" aria-label="Download as CSV">
+            <Download size={16} />
+          </button>
         </div>
-        <select className="input h-10 w-auto" value={status} onChange={(event) => setStatus(event.target.value as typeof status)}>
-          <option value="all">All ({(users || []).length})</option>
-          <option value="active">Active ({counts.active})</option>
-          <option value="inactive">Inactive ({counts.inactive})</option>
-        </select>
-        <button type="button" className="btn-outline h-10 px-3" onClick={exportCsv} disabled={!shown.length} title="Download as CSV">
-          <Download size={16} />
-        </button>
       </div>
 
       {credentials && (
-        <div className="space-y-2">
-          <div className="text-sm font-bold text-slate-900">New password for {credentials.name}</div>
+        <Modal
+          title={`Login for ${credentials.name}`}
+          onClose={() => setCredentials(null)}
+          footer={<button type="button" className="btn-primary h-10" onClick={() => setCredentials(null)}>Done</button>}
+        >
           <CredentialsNote username={credentials.username} password={credentials.password} note="Shown only now. Share it with them; they can change it in Account Settings." />
-          <button type="button" className="text-xs font-bold text-slate-500 underline" onClick={() => setCredentials(null)}>Done</button>
-        </div>
+        </Modal>
       )}
 
-      <section className="rounded-lg border border-brand/10 bg-white shadow-sm">
+      <section className="overflow-hidden rounded-xl border border-slate-200/80 bg-white shadow-md shadow-brand-900/5">
         {!users ? (
           <div className="flex items-center gap-2 p-5 text-sm text-slate-500"><Loader2 size={16} className="animate-spin" /> Loading users...</div>
         ) : !shown.length ? (
-          <div className="p-8 text-center text-sm text-slate-500">No {kind} match.</div>
+          <EmptyState icon={<Users size={20} />} title={`No ${kind} match`} hint="Try another search or tap a different card above." />
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[880px] text-sm">
-              <thead className="bg-slate-50 text-left text-xs font-bold uppercase tracking-wide text-slate-500">
-                <tr>
-                  <th className="px-4 py-2">#</th>
-                  <th className="px-4 py-2">User ID</th>
-                  <th className="px-4 py-2">Password</th>
-                  <th className="px-4 py-2">Name</th>
-                  <th className="px-4 py-2">Email</th>
-                  <th className="px-4 py-2">Phone</th>
-                  <th className="px-4 py-2">Status</th>
-                  <th className="px-4 py-2 text-right">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {shown.map((user, index) => (
-                  <tr key={user.id} className="hover:bg-slate-50">
-                    <td className="px-4 py-2.5 text-slate-400">{index + 1}</td>
-                    <td className="px-4 py-2.5 font-mono text-xs font-bold text-slate-800">{user.username}</td>
-                    <td className="px-4 py-2.5">
-                      {user.tempPassword ? (
-                        <button type="button" className="inline-flex items-center gap-1 whitespace-nowrap rounded bg-amber-50 px-2 py-1 text-xs font-semibold text-amber-800" onClick={() => copyLogin(user)}>
-                          Temporary password <Copy size={12} />
-                        </button>
-                      ) : (
-                        <span className="whitespace-nowrap rounded bg-emerald-50 px-2 py-1 text-xs font-semibold text-emerald-700">{passwordStatus(user)}</span>
-                      )}
-                      {user.lockedUntil && <span className="ml-1 rounded bg-red-50 px-2 py-1 text-xs font-semibold text-red-700">Locked</span>}
-                    </td>
-                    <td className="px-4 py-2.5">
-                      <button type="button" className="whitespace-nowrap text-left font-semibold text-slate-950 hover:text-brand" onClick={() => setDetails(user)}>
-                        {user.name}
-                      </button>
-                      <div className="whitespace-nowrap text-xs text-slate-500">
-                        {kind === "students" ? [user.regNo, user.slots.join(", ")].filter(Boolean).join(" · ") : ROLE_LABEL[user.branchRole] || user.branchRole}
-                      </div>
-                    </td>
-                    <td className="px-4 py-2.5 text-slate-600">{user.email || <span className="text-slate-400">No email</span>}</td>
-                    <td className="px-4 py-2.5 text-slate-600">{user.phone}</td>
-                    <td className="px-4 py-2.5">
-                      <span className={cn("rounded-full px-2.5 py-1 text-xs font-semibold", user.isActive ? "bg-emerald-100 text-emerald-700" : "bg-red-100 text-red-700")}>
-                        {user.isActive ? "Active" : "Inactive"}
-                      </span>
-                    </td>
-                    <td className="px-4 py-2.5 text-right">
-                      <button
-                        type="button"
-                        className="rounded-lg p-1.5 text-slate-500 hover:bg-slate-100"
-                        aria-label={`Actions for ${user.name}`}
-                        onClick={(event) => {
-                          const box = event.currentTarget.getBoundingClientRect();
-                          setMenu(menu?.id === user.id ? null : { id: user.id, top: box.bottom + 4, right: window.innerWidth - box.right });
-                        }}
-                      >
-                        <MoreVertical size={16} />
-                      </button>
-                    </td>
+          <>
+            {/* Phone: one card per login. */}
+            <ul className="divide-y divide-slate-100 md:hidden">
+              {shown.map((user) => (
+                <li key={user.id} className="flex items-start gap-3 p-4">
+                  <button type="button" className="min-w-0 flex-1 text-left" onClick={() => setDetails(user)}>
+                    <span className="flex flex-wrap items-center gap-1.5">
+                      <span className="font-bold text-slate-950">{user.name}</span>
+                      <Badge tone={user.isActive ? "good" : "bad"}>{user.isActive ? "Active" : "Inactive"}</Badge>
+                    </span>
+                    <span className="block font-mono text-xs font-bold text-slate-700">{user.username}</span>
+                    <span className="block truncate text-xs text-slate-500">
+                      {kind === "students" ? [user.regNo, user.slots.join(", ")].filter(Boolean).join(" · ") : ROLE_LABEL[user.branchRole] || user.branchRole}
+                    </span>
+                    <span className="mt-1 flex flex-wrap gap-1">
+                      <PasswordBadge user={user} />
+                      {user.lockedUntil && <Badge tone="bad">Locked</Badge>}
+                      <Badge tone={user.lastLoginAt ? "muted" : "warn"}>{user.lastLoginAt ? `Last in ${when(user.lastLoginAt).split(",")[0]}` : "Never signed in"}</Badge>
+                    </span>
+                  </button>
+                  <MoreMenu
+                    label={`Actions for ${user.name}`}
+                    items={[
+                      Boolean(user.tempPassword) && { label: "Copy login details", icon: <Copy size={15} />, onClick: () => copyLogin(user) },
+                      ...actions(user).map((action) => ({ label: action.label, danger: "danger" in action && action.danger, icon: <action.icon size={15} />, onClick: action.onClick })),
+                    ]}
+                  />
+                </li>
+              ))}
+            </ul>
+
+            {/* Computer: the table. */}
+            <div className="hidden overflow-x-auto md:block">
+              <table className="w-full min-w-[880px] text-sm">
+                <thead className="bg-slate-50 text-left text-xs font-bold uppercase tracking-wide text-slate-500">
+                  <tr>
+                    <th className="px-4 py-2">#</th>
+                    <th className="px-4 py-2">User ID</th>
+                    <th className="px-4 py-2">Password</th>
+                    <th className="px-4 py-2">Name</th>
+                    <th className="px-4 py-2">Email</th>
+                    <th className="px-4 py-2">Phone</th>
+                    <th className="px-4 py-2">Status</th>
+                    <th className="px-4 py-2 text-right">Actions</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {shown.map((user, index) => (
+                    <tr key={user.id} className="transition hover:bg-slate-50/70">
+                      <td className="px-4 py-2.5 text-slate-400">{index + 1}</td>
+                      <td className="px-4 py-2.5 font-mono text-xs font-bold text-slate-800">{user.username}</td>
+                      <td className="px-4 py-2.5">
+                        <span className="inline-flex flex-wrap gap-1">
+                          <PasswordBadge user={user} />
+                          {user.lockedUntil && <Badge tone="bad">Locked</Badge>}
+                        </span>
+                      </td>
+                      <td className="px-4 py-2.5">
+                        <button type="button" className="whitespace-nowrap text-left font-semibold text-slate-950 hover:text-brand" onClick={() => setDetails(user)}>
+                          {user.name}
+                        </button>
+                        <div className="whitespace-nowrap text-xs text-slate-500">
+                          {kind === "students" ? [user.regNo, user.slots.join(", ")].filter(Boolean).join(" · ") : ROLE_LABEL[user.branchRole] || user.branchRole}
+                        </div>
+                      </td>
+                      <td className="px-4 py-2.5 text-slate-600">{user.email || <span className="text-slate-400">No email</span>}</td>
+                      <td className="px-4 py-2.5 text-slate-600">{user.phone}</td>
+                      <td className="px-4 py-2.5">
+                        <span className="inline-flex flex-col items-start gap-1">
+                          <Badge tone={user.isActive ? "good" : "bad"}>{user.isActive ? "Active" : "Inactive"}</Badge>
+                          {!user.lastLoginAt && user.isActive && <Badge tone="warn">Never signed in</Badge>}
+                        </span>
+                      </td>
+                      <td className="px-4 py-2.5 text-right">
+                        <button
+                          type="button"
+                          className="rounded-lg p-1.5 text-slate-500 hover:bg-slate-100"
+                          aria-label={`Actions for ${user.name}`}
+                          onClick={(event) => {
+                            const box = event.currentTarget.getBoundingClientRect();
+                            setMenu(menu?.id === user.id ? null : { id: user.id, top: box.bottom + 4, right: window.innerWidth - box.right });
+                          }}
+                        >
+                          <MoreVertical size={16} />
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </>
         )}
       </section>
 

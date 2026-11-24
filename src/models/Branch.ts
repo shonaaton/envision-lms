@@ -544,6 +544,40 @@ const BranchCashEntrySchema = new Schema(
 BranchCashEntrySchema.index({ branch: 1, date: -1 });
 BranchCashEntrySchema.index({ branch: 1, sourceKey: 1 }, { unique: true, partialFilterExpression: { sourceKey: { $type: "string" } } });
 
+/**
+ * The homework auto-share log: one line per student per register, saying what
+ * the topic sent them or why nothing went. Bowbazar's own, so the online
+ * automation log never shows branch classes. A line is re-written on every
+ * register save; `resolvedAt` marks a miss that staff fixed by hand.
+ */
+const BranchHomeworkLogSchema = new Schema(
+  {
+    branch: { type: String, enum: [...BRANCHES], required: true },
+    register: { type: Schema.Types.ObjectId, ref: "BranchAttendance", required: true },
+    slot: { type: Schema.Types.ObjectId, ref: "BranchSlot", required: true },
+    date: { type: String, required: true }, // class date, "YYYY-MM-DD"
+    slotLabel: String,
+    mode: { type: String, enum: ["online", "offline"] },
+    student: { type: Schema.Types.ObjectId, ref: "BranchStudent", required: true },
+    studentName: String,
+    topic: String,
+    levelName: String,
+    status: { type: String, enum: ["shared", "no_topic", "no_login", "no_template"], required: true },
+    reason: String,
+    template: { type: Schema.Types.ObjectId, ref: "AssignmentTemplate" },
+    templateTitle: String,
+    homework: { type: Schema.Types.ObjectId, ref: "Homework" },
+    resolvedAt: Date,
+    resolvedByName: String,
+    resolvedTemplateTitle: String,
+    clearedAt: Date,
+    clearedByName: String,
+  },
+  { timestamps: true }
+);
+BranchHomeworkLogSchema.index({ register: 1, student: 1 }, { unique: true });
+BranchHomeworkLogSchema.index({ branch: 1, date: -1 });
+
 export type BranchSlotDoc = InferSchemaType<typeof BranchSlotSchema> & { _id: any };
 export type BranchStudentDoc = InferSchemaType<typeof BranchStudentSchema> & { _id: any };
 export type BranchFeeBillDoc = InferSchemaType<typeof BranchFeeBillSchema> & { _id: any };
@@ -567,4 +601,5 @@ export const BranchAnnouncement = models.BranchAnnouncement || model("BranchAnno
 export const BranchHoliday = models.BranchHoliday || model("BranchHoliday", BranchHolidaySchema);
 export const BranchCashEntry = models.BranchCashEntry || model("BranchCashEntry", BranchCashEntrySchema);
 export const BranchAchievement = models.BranchAchievement || model("BranchAchievement", BranchAchievementSchema);
+export const BranchHomeworkLog = models.BranchHomeworkLog || model("BranchHomeworkLog", BranchHomeworkLogSchema);
 export const BranchClassSession = models.BranchClassSession || model("BranchClassSession", BranchClassSessionSchema);

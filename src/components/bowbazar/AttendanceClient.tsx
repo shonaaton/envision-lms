@@ -648,7 +648,10 @@ function AutoSharePanel({ result, onClose }: { result: AutoShare; onClose: () =>
   return (
     <div className="space-y-2 border-t border-slate-100 bg-slate-50 px-4 py-3 text-sm">
       <div className="flex items-center justify-between gap-2">
-        <h3 className="font-black text-slate-900">Homework auto-share</h3>
+        <h3 className="font-black text-slate-900">
+          Homework auto-share{" "}
+          <a href="/bowbazar/homework" className="ml-1 text-xs font-bold text-brand underline">See the log</a>
+        </h3>
         <button type="button" className="text-slate-400 hover:text-slate-700" onClick={onClose} aria-label="Close">
           <X size={16} />
         </button>

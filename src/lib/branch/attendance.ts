@@ -19,6 +19,7 @@ import { holidayFor } from "./comms";
 import { classOn, movedInSlotIds, occurrencesOn } from "./classSessions";
 import { shortDate } from "./classSessionRules";
 import { getBranchSettings } from "./settings";
+import { resolveHomeworkLog, writeHomeworkLog, type HomeworkLogEntry } from "./homeworkLog";
 import { courseProgressFor, studentCourse, type StudentCourse } from "./courses";
 import {
   DAY_NAMES,
@@ -487,6 +488,8 @@ export async function assignHomework(branch: BranchKey, slotId: string, date: st
   if (dueDate < todayKey()) throw new BranchError("The due date has already passed.");
 
   await giveHomework(branch, slot, date, register, template, userIds, academyDateTime(dueDate, "23:59"), actor, "branch_register");
+  const withLogin = studentIds.filter((studentId) => onRegister.get(studentId)?.user);
+  await resolveHomeworkLog(register._id, withLogin, actor.name || "", template.title || "");
   return getRegister(branch, slotId, date);
 }
 
@@ -594,7 +597,10 @@ export async function autoShareHomework(branch: BranchKey, slot: any, date: stri
 
   const taught = ((register.records || []) as any[]).filter((record) => record.status === "present" || record.status === "late");
   const result: AutoShareResult = { shared: [], missed: [] };
-  if (!taught.length) return result;
+  if (!taught.length) {
+    await writeHomeworkLog(branch, register, []).catch((error) => console.error("Branch homework log failed", error));
+    return result;
+  }
   const students: any[] = await BranchStudent.find({ _id: { $in: taught.map((record) => record.student) }, branch })
     .select("name user course courseName courseLevelName")
     .lean();
@@ -602,18 +608,24 @@ export async function autoShareHomework(branch: BranchKey, slot: any, date: stri
   const done = new Set<string>(register.autoShared || []);
   const matches = new Map<string, Promise<{ template: any; reason: string }>>();
   const groups = new Map<string, { template: any; userIds: string[]; names: string[]; pairs: string[] }>();
+  const log: HomeworkLogEntry[] = [];
 
   for (const record of taught) {
     const student = studentById.get(id(record.student));
     const name = student?.name || record.name || "Student";
     const topic = text(record.topic, 200);
+    const userId = id(record.user || student?.user);
+    const entry = { studentId: id(record.student), studentName: name, userId, topic, levelName: student?.courseLevelName || "" };
     if (!topic) {
-      result.missed.push({ name, topic: "", reason: "No topic written, so no homework could be matched." });
+      const reason = "No topic written, so no homework could be matched.";
+      result.missed.push({ name, topic: "", reason });
+      log.push({ ...entry, status: "no_topic", reason });
       continue;
     }
-    const userId = id(record.user || student?.user);
     if (!userId) {
-      result.missed.push({ name, topic, reason: "Has no login yet." });
+      const reason = "Has no login yet.";
+      result.missed.push({ name, topic, reason });
+      log.push({ ...entry, status: "no_login", reason });
       continue;
     }
     const place = {
@@ -626,9 +638,11 @@ export async function autoShareHomework(branch: BranchKey, slot: any, date: stri
     const { template, reason } = await matches.get(cacheKey)!;
     if (!template) {
       result.missed.push({ name, topic, reason });
+      log.push({ ...entry, status: "no_template", reason });
       continue;
     }
     const pair = `${id(record.student)}:${id(template._id)}`;
+    log.push({ ...entry, status: "shared", reason: "", templateId: id(template._id), templateTitle: template.title || "" });
     if (done.has(pair)) continue;
     const group = groups.get(id(template._id)) || { template, userIds: [], names: [], pairs: [] };
     group.userIds.push(userId);
@@ -646,6 +660,8 @@ export async function autoShareHomework(branch: BranchKey, slot: any, date: stri
     const names = group.names.filter((_, index) => added.has(group.userIds[index]));
     if (names.length) result.shared.push({ title: group.template.title, names });
   }
+  // The log never blocks the share: the homework is out by now.
+  await writeHomeworkLog(branch, register, log).catch((error) => console.error("Branch homework log failed", error));
   return result;
 }
 

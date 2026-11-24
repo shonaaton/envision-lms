@@ -355,6 +355,7 @@ function branchSections(role: Role, branchCan: string[]): NavSection[] {
     { href: "/bowbazar", label: "Overview", icon: LayoutDashboard, need: "view" },
     { href: "/bowbazar/attendance", label: "Attendance", icon: ClipboardCheck, need: "attendance" },
     { href: "/bowbazar/online", label: "Online Classes", icon: Video, need: "attendance" },
+    { href: "/bowbazar/homework", label: "HW Templates", icon: BookOpenCheck, need: "attendance" },
     { href: "/bowbazar/slots", label: "Slots", icon: CalendarDays, need: "view" },
     { href: "/bowbazar/students", label: "Students", icon: Users, need: "view" },
     { href: "/bowbazar/leads", label: "Lead Center", icon: Inbox, need: "students" },

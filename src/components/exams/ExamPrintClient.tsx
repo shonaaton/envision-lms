@@ -35,7 +35,7 @@ export default function ExamPrintClient({ tier, level, answers }: { tier: string
         .exam-print-bar .on { background: #5a1372; border-color: #5a1372; color: #fff; }
         .exam-print-bar .hint { color: #64748b; font-size: 12px; }
         .exam-print-msg { text-align: center; font: 14px system-ui, sans-serif; color: #475569; padding: 40px; }
-        @media print { .exam-print-page { background: none; padding: 0; min-height: 0; } .exam-print-bar { display: none; } body > *:not(:has(.exam-print-page)) { display: none !important; } }
+        @media print { .exam-print-page { background: none; padding: 0; min-height: 0; } .exam-print-bar { display: none; } body > *:not(.exam-print-page):not(:has(.exam-print-page)) { display: none !important; } }
       `}</style>
       <div className="exam-print-bar">
         <a href="/admin/exams">← Back to Exams</a>

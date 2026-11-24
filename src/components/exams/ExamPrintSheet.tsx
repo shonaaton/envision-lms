@@ -1,5 +1,5 @@
 import { BoardSvg, ChessDiagramDefs } from "@/components/blog/ChessDiagram";
-import { ACADEMY_DEFAULTS } from "@/lib/branding";
+import { ACADEMY_DEFAULTS, academyLogoUrl } from "@/lib/branding";
 import { MCQ_COUNT, POSITION_COUNT } from "@/lib/exams/examRules";
 
 /** The parts of a staff paper the printed sheet needs. */
@@ -40,7 +40,8 @@ export default function ExamPrintSheet({ paper, answers = false }: { paper: Prin
 
       <header className="eps-head">
         <div className="eps-brand">
-          <div className="eps-academy">{ACADEMY_DEFAULTS.academyName}</div>
+          {/* eslint-disable-next-line @next/next/no-img-element -- printed sheet; next/image adds nothing here */}
+          <img className="eps-logo" src={academyLogoUrl(600)} alt={ACADEMY_DEFAULTS.academyName} />
           <h1>{paper.levelLabel} · Level exam</h1>
           <div className="eps-meta">
             Paper v{paper.version}
@@ -139,7 +140,8 @@ const SHEET_CSS = `
 .eps h2 small { margin-left: 2mm; font-size: 8pt; font-weight: 600; color: #475569; text-transform: none; letter-spacing: 0; }
 .eps-head { display: flex; gap: 6mm; align-items: flex-end; margin-bottom: 4mm; padding-bottom: 3mm; border-bottom: 0.6mm solid #0f172a; }
 .eps-brand { flex: 1; min-width: 0; }
-.eps-academy { font-size: 8pt; font-weight: 800; color: #5a1372; text-transform: uppercase; letter-spacing: 0.08em; }
+/* The logo is yellow: on its brand-purple badge it stays legible on a black-and-white printer too. */
+.eps-logo { display: block; height: 11mm; width: auto; margin-bottom: 1.5mm; padding: 1mm 3mm; border-radius: 1.5mm; background: #5a1372; }
 .eps-meta { margin-top: 1mm; font-size: 8.5pt; color: #334155; }
 .eps-key { color: #b91c1c; }
 .eps-fields { display: grid; gap: 2.2mm; width: 72mm; font-size: 8.5pt; font-weight: 700; }

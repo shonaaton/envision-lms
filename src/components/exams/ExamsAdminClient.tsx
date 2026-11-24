@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { CheckCircle2, ClipboardCheck, Eye, Loader2, Pencil, RefreshCw, Send, Shuffle, UserPlus, X } from "lucide-react";
+import { CheckCircle2, ClipboardCheck, Eye, Loader2, Pencil, Printer, RefreshCw, Send, Shuffle, UserPlus, X } from "lucide-react";
 import { toast } from "sonner";
 import { MCQ_COUNT, POSITION_COUNT } from "@/lib/exams/examRules";
 import { cn } from "@/lib/utils";
@@ -231,6 +231,11 @@ function PaperView({ tier, level, onChanged }: { tier: string; level: number; on
           <Link href={`/admin/exams/preview?tier=${tier}&level=${level}`} className="btn btn-outline" title="Open this paper exactly as a student sees it. Nothing is saved.">
             <Eye size={16} /> Sit it as a student
           </Link>
+        )}
+        {paper && (
+          <a href={`/admin/exams/print?tier=${tier}&level=${level}`} target="_blank" rel="noopener" className="btn btn-outline" title="Open this paper laid out for A4 paper, with or without the answer key.">
+            <Printer size={16} /> Print
+          </a>
         )}
         <button type="button" className="btn btn-outline" onClick={regenerate} disabled={Boolean(busy)}>
           {busy === "generate" ? <Loader2 size={16} className="animate-spin" /> : <RefreshCw size={16} />} {paper ? "Regenerate all" : "Generate paper"}

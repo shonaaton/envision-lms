@@ -85,6 +85,8 @@ function actionLabelFromKind(kind?: unknown) {
     invoice_overdue_escalation: "View Invoice",
     invoice_reminder: "View Invoice",
     welcome: "Sign In",
+    career_application_received: "View Openings",
+    career_application_admin: "Review Application",
   };
   return labels[String(kind || "")] || "Open in LMS";
 }

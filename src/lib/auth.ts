@@ -11,6 +11,7 @@ import { requestCache as cache } from "./requestCache";
 import { getAccessUser, resolveAccessRole } from "./accessRoles";
 import { namedRoleApiFeature, namedRoleApiPermissions } from "./accessRoleRequests";
 import { isBranchAllowedPath } from "./branch/paths";
+import { isCareersReviewer } from "./careers/careersReviewerIds";
 
 const LOGIN_IP_WINDOW_MS = 5 * 60 * 1000;
 const LOGIN_ID_WINDOW_MS = 15 * 60 * 1000;
@@ -264,7 +265,9 @@ export const auth = cache(async () => {
     const assigned = await resolveAccessRole(userId);
     if (assigned) {
       Object.assign(session!.user, assigned, { isSuperAdmin: false });
-      if (isApiRequest && pathname !== "/api/branding") {
+      // The careers reviewers keep Careers whatever named role they hold; the
+      // routes check them by identity (lib/careers/careersAccess.ts).
+      if (isApiRequest && pathname !== "/api/branding" && !(isActive && pathname.startsWith("/api/admin/careers") && isCareersReviewer(session!.user as any))) {
         if ((!isActive || !assigned.roleEnabled) && !pathname.startsWith("/api/profile")) return null;
         const feature = pathname === "/api/admin/roles" ? "userManagement" : namedRoleApiFeature(pathname);
         if (!feature) return null;

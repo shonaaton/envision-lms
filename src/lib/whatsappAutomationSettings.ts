@@ -12,6 +12,12 @@ export const OFF_UNTIL_ENABLED_TEMPLATES: ReadonlySet<string> = new Set<string>(
   // New-lead welcome + fee PDFs (2026-11-20): nothing is sent until Meta approves both and an admin switches them on.
   "demo_lead_welcome",
   "demo_lead_brochure",
+  // Careers (2026-11-24): off until Meta approves them; email goes out meanwhile.
+  "career_application_received",
+  "career_shortlisted",
+  "career_interview_scheduled",
+  "career_application_update",
+  "career_hired",
 ]);
 
 export function defaultTemplateEnabled(templateName: string) {

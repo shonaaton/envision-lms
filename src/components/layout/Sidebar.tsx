@@ -14,6 +14,7 @@ import {
   Bell,
   BookOpen,
   BookOpenCheck,
+  Briefcase,
   CalendarDays,
   CalendarOff,
   CalendarX,
@@ -221,7 +222,17 @@ const sections: NavSection[] = [
     items: [
       { href: "/admin/users", label: "Users", icon: Users, featureKey: "userManagement" },
       { href: "/admin/paused-students", label: "Paused Students", icon: PauseCircle, featureKey: "studentPause" },
-      { href: "/admin/coach-applications", label: "Coach Applications", icon: UserPlus, featureKey: "onboarding" },
+    ],
+  },
+  {
+    // Admins and the careers reviewers (Sayan Bose, Dhritabrata Kundu) only:
+    // the layout switches the feature off for every other sub-admin.
+    id: "careers",
+    title: "Careers",
+    roles: ["admin", "sub-admin"],
+    items: [
+      { href: "/admin/careers", label: "Job Openings", icon: Briefcase, featureKey: "careers" },
+      { href: "/admin/careers/applications", label: "Applications", icon: ClipboardList, featureKey: "careers" },
     ],
   },
   {

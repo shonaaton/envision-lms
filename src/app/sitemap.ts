@@ -46,6 +46,8 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     { url: url("/register"), lastModified: SITE_CONTENT_UPDATED, changeFrequency: "monthly", priority: 0.8 },
     { url: url("/success-stories"), lastModified: SITE_CONTENT_UPDATED, changeFrequency: "weekly", priority: 0.7 },
     { url: url("/contact-us"), lastModified: SITE_CONTENT_UPDATED, changeFrequency: "monthly", priority: 0.7 },
+    // Openings come and go, so only the list page is listed; it links each one.
+    { url: url("/careers"), lastModified: new Date("2026-11-24"), changeFrequency: "weekly", priority: 0.5 },
     // The parent-facing page for children's classes. It is kept out of the
     // header nav, so the sitemap and the footer are how it gets found.
     { url: url("/online-chess-classes-for-kids"), lastModified: SITE_CONTENT_UPDATED, changeFrequency: "monthly", priority: 0.9 },

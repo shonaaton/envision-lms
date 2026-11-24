@@ -41,8 +41,8 @@ describe("registerSchema phone", () => {
     expect(registerSchema.parse({ ...baseRegistration, phone: "+91 91234 56789" }).phone).toBe("+91 91234 56789");
   });
 
-  it("applies to coach applications too, matching the shared signup form", () => {
-    expect(() => registerSchema.parse({ ...baseRegistration, role: "instructor", phone: "" })).toThrow();
+  it("no longer takes coach applications - staff apply through /careers", () => {
+    expect(() => registerSchema.parse({ ...baseRegistration, role: "instructor" })).toThrow();
   });
 });
 

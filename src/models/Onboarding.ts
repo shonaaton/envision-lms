@@ -8,30 +8,6 @@ import {
   scaleEnum,
 } from "@/lib/demoAssessmentScales";
 
-const CoachApplicationSchema = new Schema(
-  {
-    name: { type: String, required: true, index: true },
-    email: { type: String, required: true, lowercase: true, index: true },
-    phone: { type: String },
-    countryCode: { type: String },
-    city: { type: String },
-    country: { type: String },
-    experience: { type: String },
-    playingLevel: { type: String },
-    fideId: { type: String },
-    rating: { type: Number, default: 0 },
-    preferredStudents: { type: String },
-    availabilityNote: { type: String },
-    documentsUrl: { type: String },
-    message: { type: String },
-    status: { type: String, enum: ["pending", "shortlisted", "approved", "rejected"], default: "pending", index: true },
-    reviewedBy: { type: Schema.Types.ObjectId, ref: "User" },
-    reviewedAt: Date,
-    convertedUser: { type: Schema.Types.ObjectId, ref: "User" },
-  },
-  { timestamps: true }
-);
-
 const DemoBookingSchema = new Schema(
   {
     student: { type: Schema.Types.ObjectId, ref: "User", index: true },
@@ -126,10 +102,8 @@ const DemoFeedbackSchema = new Schema(
 
 DemoFeedbackSchema.index({ booking: 1, classroom: 1 }, { unique: true });
 
-export type CoachApplicationDoc = InferSchemaType<typeof CoachApplicationSchema> & { _id: any };
 export type DemoBookingDoc = InferSchemaType<typeof DemoBookingSchema> & { _id: any };
 export type DemoFeedbackDoc = InferSchemaType<typeof DemoFeedbackSchema> & { _id: any };
 
-export const CoachApplication = models.CoachApplication || model("CoachApplication", CoachApplicationSchema);
 export const DemoBooking = models.DemoBooking || model("DemoBooking", DemoBookingSchema);
 export const DemoFeedback = models.DemoFeedback || model("DemoFeedback", DemoFeedbackSchema);

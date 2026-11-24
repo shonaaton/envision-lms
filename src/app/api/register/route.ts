@@ -3,14 +3,12 @@ import bcrypt from "bcryptjs";
 import { ZodError } from "zod";
 import { dbConnect } from "@/lib/db";
 import { User, createUserWithUsername } from "@/models/User";
-import { CoachApplication } from "@/models/Onboarding";
 import { registerSchema } from "@/lib/validation";
 import { sendWelcomeEmail } from "@/lib/welcomeEmail";
 import { consumeRateLimit, getClientIp, jsonRateLimitHeaders } from "@/lib/requestSecurity";
 import { notifyDemoAccountCreated } from "@/lib/demoWorkflow";
 import { flagDuplicateAccount } from "@/lib/duplicateAccounts";
 import { canonicalEmail } from "@/lib/identityMatch";
-import { raiseCoachApplicationTask } from "@/lib/tasks/taskTriggers";
 
 export const dynamic = "force-dynamic";
 
@@ -40,28 +38,6 @@ export async function POST(req: Request) {
     // flagged for the Demo Center instead - see src/lib/duplicateAccounts.ts.
     if (!data.acceptedPrivacy || !data.acceptedTerms || !data.acceptedRefund) {
       return NextResponse.json({ error: "Please accept the academy policies to continue." }, { status: 400 });
-    }
-
-    if (data.role === "instructor") {
-      const existingApplication = await CoachApplication.findOne({ email: data.email.toLowerCase(), status: { $in: ["pending", "shortlisted"] } });
-      if (existingApplication) return NextResponse.json({ error: "A coach application is already pending for this email." }, { status: 409 });
-      const application = await CoachApplication.create({
-        name: data.name,
-        email: data.email.toLowerCase(),
-        phone: data.phone,
-        countryCode: data.countryCode,
-        city: data.city,
-        country: data.country,
-        experience: data.coachExperience,
-        playingLevel: data.playingLevel,
-        fideId: data.fideId,
-        rating: data.rating,
-        preferredStudents: data.preferredStudents,
-        availabilityNote: data.availabilityNote,
-        message: data.message,
-      });
-      await raiseCoachApplicationTask(application, { name: data.name });
-      return NextResponse.json({ id: application._id.toString(), type: "coach_application" });
     }
 
     const passwordHash = await bcrypt.hash(data.password, 10);

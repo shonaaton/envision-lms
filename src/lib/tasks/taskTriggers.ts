@@ -572,17 +572,23 @@ export function cancelPayProposalTask(proposalId: unknown) {
   return withdraw("CoachPayProposal", proposalId, "The coach withdrew the proposal.");
 }
 
-export function raiseCoachApplicationTask(application: any, applicant: any) {
+/** A verified application from /careers, for the careers reviewer (Sayan Bose); the admin queue if nobody is found. */
+export function raiseJobApplicationTask(application: any, reviewerId?: string | null) {
   return raise({
-    kind: "coach_application",
-    referenceType: "CoachApplication",
+    kind: "job_application",
+    referenceType: "JobApplication",
     referenceId: idOf(application),
-    title: `Review coach application: ${nameOf(applicant, "new applicant")}`,
-    details: "A coach has applied through the portal. Review their profile and shortlist or reject.",
-    pool: "admins",
-    actionHref: "/admin/coach-applications",
-    metadata: { applicationId: idOf(application), userId: idOf(applicant) },
+    title: `Review application: ${nameOf(application, "new applicant")} for ${String(application?.postingTitle || "an opening")}`,
+    details: "Someone applied through the Careers page. Shortlist, schedule an interview or reject.",
+    ...(reviewerId ? { assignedTo: reviewerId, pool: null } : { pool: "admins" as const }),
+    actionHref: `/admin/careers/applications?id=${idOf(application)}`,
+    metadata: { applicationId: idOf(application) },
   });
+}
+
+/** Any decision on the application closes the review task. */
+export function resolveJobApplicationTask(applicationId: unknown, by?: unknown, note?: string) {
+  return settle("JobApplication", applicationId, by, note || "Application reviewed.");
 }
 
 // ---------------------------------------------------------------------------

@@ -2776,6 +2776,63 @@ export const WHATSAPP_TEMPLATE_DEFINITIONS = [
     ]
   },
   {
+    "name": "career_application_received",
+    "language": "en",
+    "category": "UTILITY",
+    "sourceAutomation": "careersMessages",
+    "body": "Hello {{1}}, thank you for applying for the {{2}} role at Envision Chess Academy. We have received your application and our team will review it. We will contact you here on WhatsApp or by email about the next step.\n\nTeam Envision Chess Academy",
+    "variables": [
+      { "position": 1, "key": "applicant_name", "sample": "Priya" },
+      { "position": 2, "key": "role_title", "sample": "Online Chess Coach" }
+    ]
+  },
+  {
+    "name": "career_shortlisted",
+    "language": "en",
+    "category": "UTILITY",
+    "sourceAutomation": "careersMessages",
+    "body": "Hello {{1}}, good news! Your application for the {{2}} role at Envision Chess Academy has been shortlisted. Our team will contact you soon to schedule the next step.\n\nTeam Envision Chess Academy",
+    "variables": [
+      { "position": 1, "key": "applicant_name", "sample": "Priya" },
+      { "position": 2, "key": "role_title", "sample": "Online Chess Coach" }
+    ]
+  },
+  {
+    "name": "career_interview_scheduled",
+    "language": "en",
+    "category": "UTILITY",
+    "sourceAutomation": "careersMessages",
+    "body": "Hello {{1}}, your interview for the {{2}} role at Envision Chess Academy is scheduled for {{3}}.\n\nJoining details: {{4}}\n\nPlease reply here if you need to change the time.\n\nTeam Envision Chess Academy",
+    "variables": [
+      { "position": 1, "key": "applicant_name", "sample": "Priya" },
+      { "position": 2, "key": "role_title", "sample": "Online Chess Coach" },
+      { "position": 3, "key": "interview_time", "sample": "Mon, 30 Nov 2026, 4:00 PM IST" },
+      { "position": 4, "key": "interview_details", "sample": "https://meet.google.com/abc-defg-hij" }
+    ]
+  },
+  {
+    "name": "career_application_update",
+    "language": "en",
+    "category": "UTILITY",
+    "sourceAutomation": "careersMessages",
+    "body": "Hello {{1}}, thank you for your interest in the {{2}} role at Envision Chess Academy. After careful review, we will not be moving forward with your application at this time. We will keep your details on file for future openings.\n\nTeam Envision Chess Academy",
+    "variables": [
+      { "position": 1, "key": "applicant_name", "sample": "Priya" },
+      { "position": 2, "key": "role_title", "sample": "Online Chess Coach" }
+    ]
+  },
+  {
+    "name": "career_hired",
+    "language": "en",
+    "category": "UTILITY",
+    "sourceAutomation": "careersMessages",
+    "body": "Hello {{1}}, congratulations! You have been selected for the {{2}} role at Envision Chess Academy. Our team will share your onboarding details shortly.\n\nTeam Envision Chess Academy",
+    "variables": [
+      { "position": 1, "key": "applicant_name", "sample": "Priya" },
+      { "position": 2, "key": "role_title", "sample": "Online Chess Coach" }
+    ]
+  },
+  {
     "name": WHATSAPP_OTP_TEMPLATE_NAME,
     "language": "en",
     "category": "AUTHENTICATION",

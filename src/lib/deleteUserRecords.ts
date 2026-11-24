@@ -19,7 +19,8 @@ import { FeatureAccess, PermissionAudit, PermissionTemplate } from "@/models/Fea
 import { GoogleBusinessIntegration } from "@/models/GoogleBusinessIntegration";
 import { GoogleAnalyticsIntegration } from "@/models/GoogleAnalyticsIntegration";
 import { Homework, Submission } from "@/models/Homework";
-import { CoachApplication, DemoBooking } from "@/models/Onboarding";
+import { DemoBooking } from "@/models/Onboarding";
+import { JobApplication } from "@/models/Careers";
 import { Payment } from "@/models/Payment";
 import { PGN } from "@/models/PGN";
 import { PgnFolder } from "@/models/PgnFolder";
@@ -184,7 +185,6 @@ export async function deleteUserRecords(userIdValue: string): Promise<CleanupSum
     remove(PermissionAudit.deleteMany({ $or: [{ actor: userId }, { targetType: "user", targetId: userIdValue }] })),
     remove(Activity.deleteMany({ $or: [{ actor: userId }, { targetUser: userId }, { entityType: "User", entityId: userId }] })),
     remove(DemoBooking.deleteMany({ student: userId })),
-    remove(CoachApplication.deleteMany({ convertedUser: userId })),
   ]);
 
   await Promise.all([
@@ -240,7 +240,8 @@ export async function deleteUserRecords(userIdValue: string): Promise<CleanupSum
     detach(PermissionTemplate.updateMany({ updatedBy: userId }, { $unset: { updatedBy: 1 } })),
     detach(GoogleBusinessIntegration.updateMany({ connectedBy: userId }, { $unset: { connectedBy: 1 } })),
     detach(GoogleAnalyticsIntegration.updateMany({ connectedBy: userId }, { $unset: { connectedBy: 1 } })),
-    detach(CoachApplication.updateMany({ reviewedBy: userId }, { $unset: { reviewedBy: 1 } })),
+    // A hired applicant's application is a hiring record; it outlives the account.
+    detach(JobApplication.updateMany({ convertedUser: userId }, { $unset: { convertedUser: 1 } })),
     detach(DemoBooking.updateMany({ requestedCoach: userId }, { $unset: { requestedCoach: 1 } })),
     detach(DemoBooking.updateMany({ approvedCoach: userId }, { $unset: { approvedCoach: 1 } })),
     detach(DemoBooking.updateMany({ approvedBy: userId }, { $unset: { approvedBy: 1 } })),

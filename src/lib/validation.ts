@@ -11,7 +11,8 @@ export const registerSchema = z.object({
   parentName: optionalText(80),
   email: z.string().email(),
   password: z.string().min(8).max(72),
-  role: z.enum(["student", "instructor"]).default("student"),
+  // Student demo signup only; staff apply through /careers.
+  role: z.literal("student").default("student"),
   countryCode: optionalText(8),
   // Required: the signup form already enforces a phone number, and a lead
   // without one can neither be matched nor created in the CRM, so it would never
@@ -23,13 +24,6 @@ export const registerSchema = z.object({
   acceptedPrivacy: z.boolean().default(false),
   acceptedTerms: z.boolean().default(false),
   acceptedRefund: z.boolean().default(false),
-  coachExperience: optionalText(3000),
-  playingLevel: optionalText(120),
-  fideId: optionalText(80),
-  rating: z.number().int().min(0).max(3500).default(0),
-  preferredStudents: optionalText(1000),
-  availabilityNote: optionalText(1000),
-  message: optionalText(3000),
 }).superRefine((value, context) => {
   // Checked against the dialling code the form collected, because the two are
   // only meaningful together: "9162903499998" is a fine string and an impossible

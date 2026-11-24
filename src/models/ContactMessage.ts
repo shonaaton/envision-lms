@@ -4,7 +4,7 @@ import { CONTACT_STATUSES } from "@/lib/contactEnquiries";
 /**
  * One submission of the public contact form.
  *
- * Kept separate from `CoachApplication` and `DemoBooking` because it is not an
+ * Kept separate from `DemoBooking` because it is not an
  * application for anything: it is somebody asking a question, and the only
  * promise the site makes is that a human reads it. The sales inbox at
  * `/sales/enquiries` is the whole consumer.

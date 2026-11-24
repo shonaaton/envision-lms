@@ -69,6 +69,10 @@ export const authConfig = {
         nextUrl.pathname.startsWith("/pay/upi/") ||
         // The Bowbazar fee QR page, linked from the branch fee reminder. Same check.
         nextUrl.pathname.startsWith("/pay/bowbazar/") ||
+        // Careers: the public openings, their application form and its API.
+        nextUrl.pathname === "/careers" ||
+        nextUrl.pathname.startsWith("/careers/") ||
+        nextUrl.pathname.startsWith("/api/careers/") ||
         nextUrl.pathname.startsWith("/api/register") ||
         // The campaign page's free demo form and its WhatsApp code check.
         nextUrl.pathname.startsWith("/book-free-demo-class") ||

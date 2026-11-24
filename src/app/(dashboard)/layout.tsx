@@ -14,6 +14,7 @@ import { TIME_ZONE_COOKIE, stampTimeZone } from "@/lib/localTime/stampTimeZone";
 import { branchHomePath, isBranchAllowedPath } from "@/lib/branch/paths";
 import { resolveBranchAccess } from "@/lib/branch/access";
 import { isClassMonitorAudience } from "@/lib/classMonitor/classMonitorAccess";
+import { isCareersAudience } from "@/lib/careers/careersReviewerIds";
 import { User } from "@/models/User";
 import { needsStudentDetails, studentDetailsDefaults } from "@/lib/studentDetails";
 
@@ -28,6 +29,8 @@ export default async function DashboardLayout({ children }: { children: React.Re
   const featureState = await getNavigationFeatureState({ ...(session.user as any), isSuperAdmin });
   // Class Monitor is for admins, the monitor and the reviewers only, whatever the sub-admin grant says.
   if (featureState.classMonitor && !isClassMonitorAudience(session.user as any)) featureState.classMonitor = { ...featureState.classMonitor, visible: false };
+  // Careers: admins and the two named reviewers only; the reviewers see it whatever their grant says.
+  if (featureState.careers) featureState.careers = { ...featureState.careers, visible: isCareersAudience(session.user as any) && (featureState.careers.visible || (session.user as any).role === "sub-admin") };
   const pathname = headers().get("x-pathname") || "";
   const isActive = (session.user as any).isActive !== false;
   const isPaused = (session.user as any).isPaused === true;

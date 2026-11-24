@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import type { InputHTMLAttributes, ReactNode, SelectHTMLAttributes, TextareaHTMLAttributes } from "react";
+import type { InputHTMLAttributes, ReactNode, SelectHTMLAttributes } from "react";
 import { signIn } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
@@ -11,10 +11,8 @@ import {
   ArrowLeft,
   ArrowRight,
   BookOpen,
-  BriefcaseBusiness,
   CalendarDays,
   Check,
-  CheckCircle2,
   Eye,
   EyeOff,
   FileText,
@@ -25,7 +23,6 @@ import {
   ShieldCheck,
   Sparkles,
   Target,
-  Trophy,
   UserRound,
   UsersRound,
 } from "lucide-react";
@@ -57,13 +54,6 @@ const initialForm = {
   city: "",
   country: "",
   level: "",
-  coachExperience: "",
-  playingLevel: "",
-  fideId: "",
-  rating: "",
-  preferredStudents: "",
-  availabilityNote: "",
-  message: "",
   acceptedPrivacy: true,
   acceptedTerms: true,
   acceptedRefund: true,
@@ -72,7 +62,13 @@ const initialForm = {
 };
 
 type FormState = typeof initialForm;
-type Role = "student" | "instructor";
+
+const STEPS = [
+  { id: "account", title: "Account", subtitle: "Contact details", icon: UserRound },
+  { id: "profile", title: "Student Profile", subtitle: "Level and location", icon: GraduationCap },
+  { id: "security", title: "Security", subtitle: "Password", icon: ShieldCheck },
+  { id: "consent", title: "Review", subtitle: "Policies", icon: FileText },
+];
 
 const journeyNotes = [
   { title: "Free assessment", detail: "Demo account and trial request.", icon: CalendarDays },
@@ -83,32 +79,12 @@ const journeyNotes = [
 export default function RegisterForm() {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
-  const [role, setRole] = useState<Role>("student");
   const [stepIndex, setStepIndex] = useState(0);
-  const [applicationSent, setApplicationSent] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [form, setForm] = useState<FormState>(initialForm);
 
-  const steps = useMemo(() => {
-    const commonStart = [{ id: "account", title: "Account", subtitle: "Contact details", icon: UserRound }];
-    const commonEnd = [
-      { id: "security", title: "Security", subtitle: "Password", icon: ShieldCheck },
-      { id: "consent", title: "Review", subtitle: "Policies", icon: FileText },
-    ];
-    if (role === "student") {
-      return [
-        ...commonStart,
-        { id: "profile", title: "Student Profile", subtitle: "Level and location", icon: GraduationCap },
-        ...commonEnd,
-      ];
-    }
-    return [
-      ...commonStart,
-      { id: "coachProfile", title: "Coach Profile", subtitle: "Playing background", icon: Trophy },
-      { id: "teaching", title: "Teaching Fit", subtitle: "Experience", icon: BriefcaseBusiness },
-      ...commonEnd,
-    ];
-  }, [role]);
+  // Student demo signup only. Staff hiring moved to /careers (2026-11-24).
+  const steps = STEPS;
 
   const activeStep = steps[stepIndex];
   const progress = ((stepIndex + 1) / steps.length) * 100;
@@ -126,11 +102,6 @@ export default function RegisterForm() {
     setForm((current) => ({ ...current, [field]: value }));
   }
 
-  function switchRole(nextRole: Role) {
-    setRole(nextRole);
-    setStepIndex(0);
-  }
-
   function validateCurrentStep() {
     const requireText = (value: string, message: string) => {
       if (!value.trim()) {
@@ -141,8 +112,8 @@ export default function RegisterForm() {
     };
 
     if (activeStep.id === "account") {
-      if (!requireText(form.name, role === "student" ? "Please enter the student name." : "Please enter your full name.")) return false;
-      if (role === "student" && !requireText(form.parentName, "Please enter the parent or guardian name.")) return false;
+      if (!requireText(form.name, "Please enter the student name.")) return false;
+      if (!requireText(form.parentName, "Please enter the parent or guardian name.")) return false;
       if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim())) {
         toast.error("Please enter a valid email address.");
         return false;
@@ -156,14 +127,6 @@ export default function RegisterForm() {
       if (!requireText(form.country, "Please select the country.")) return false;
       if (!requireText(form.level, "Please select the current chess level.")) return false;
     }
-
-    if (activeStep.id === "coachProfile") {
-      if (!requireText(form.city, "Please enter the city.")) return false;
-      if (!requireText(form.country, "Please select the country.")) return false;
-      if (!requireText(form.playingLevel, "Please enter the playing or coaching level.")) return false;
-    }
-
-    if (activeStep.id === "teaching" && !requireText(form.coachExperience, "Please add coaching experience.")) return false;
 
     if (activeStep.id === "security") {
       if (form.password.length < 8) {
@@ -181,7 +144,7 @@ export default function RegisterForm() {
         toast.error("Please accept the academy policies to continue.");
         return false;
       }
-      if (role === "student" && !form.parentConsent) {
+      if (!form.parentConsent) {
         toast.error("Please confirm parent or guardian consent.");
         return false;
       }
@@ -209,7 +172,7 @@ export default function RegisterForm() {
       parentName: form.parentName.trim(),
       email: form.email.trim(),
       password: form.password,
-      role,
+      role: "student",
       countryCode: form.countryCode.trim(),
       phone: form.phone.trim(),
       city: form.city.trim(),
@@ -218,13 +181,6 @@ export default function RegisterForm() {
       acceptedPrivacy: form.acceptedPrivacy,
       acceptedTerms: form.acceptedTerms,
       acceptedRefund: form.acceptedRefund,
-      coachExperience: form.coachExperience.trim(),
-      playingLevel: form.playingLevel.trim(),
-      fideId: form.fideId.trim(),
-      rating: Number(form.rating || 0),
-      preferredStudents: form.preferredStudents.trim(),
-      availabilityNote: form.availabilityNote.trim(),
-      message: form.message.trim(),
     };
 
     const res = await fetch("/api/register", {
@@ -240,12 +196,6 @@ export default function RegisterForm() {
     }
 
     const result = await res.json();
-    if (result.type === "coach_application") {
-      setLoading(false);
-      setApplicationSent(true);
-      return;
-    }
-
     trackConversion("demo_registration");
     await signIn("credentials", { redirect: false, email: payload.email, password: payload.password });
     setLoading(false);
@@ -254,21 +204,6 @@ export default function RegisterForm() {
     // real call to action is a link to that page, so go straight there.
     router.push(result.type === "demo_student" ? "/booking" : "/dashboard");
     router.refresh();
-  }
-
-  if (applicationSent) {
-    return (
-      <main className="grid min-h-screen place-items-center bg-[#12031a] p-5 text-white">
-        <section className="w-full max-w-xl rounded-lg border border-white/10 bg-white/[0.06] p-8 text-center shadow-2xl shadow-black/30">
-          <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-lg bg-accent text-brand-900">
-            <CheckCircle2 size={28} />
-          </div>
-          <h1 className="mt-5 text-3xl font-black">Coach application received</h1>
-          <p className="mt-3 text-white/70">Thank you. The academy admin will review your application before teaching access is activated.</p>
-          <Link href="/login" className="btn-primary mt-6 inline-flex">Back to login</Link>
-        </section>
-      </main>
-    );
   }
 
   return (
@@ -289,7 +224,7 @@ export default function RegisterForm() {
                 </p>
                 <p className="mt-3 max-w-[12ch] text-[1.85rem] font-black leading-[1.02] xl:text-[2.15rem] 2xl:text-[2.3rem]">A cleaner start for every academy journey.</p>
                 <p className="mt-3 max-w-[34ch] text-xs leading-5 text-white/78">
-                  Students request a demo. Coaches submit a reviewed application. Every account begins with the right context.
+                  Students request a free demo, and every account begins with the right level and context.
                 </p>
               </div>
             </div>
@@ -318,22 +253,13 @@ export default function RegisterForm() {
                 <ShieldCheck size={22} />
               </div>
               <div className="min-w-0">
-                <p className="text-xs font-black uppercase text-brand">{role === "student" ? "Student demo onboarding" : "Coach application review"}</p>
-                <h1 className="text-xl font-black leading-tight sm:text-3xl">{role === "student" ? "Book a Free Demo Chess Class" : "Submit Coach Application"}</h1>
+                <p className="text-xs font-black uppercase text-brand">Student demo onboarding</p>
+                <h1 className="text-xl font-black leading-tight sm:text-3xl">Book a Free Demo Chess Class</h1>
               </div>
             </div>
             <Link href="/login" className="rounded-lg border border-brand/20 px-4 py-2 text-sm font-black text-brand transition hover:bg-brand-50">
               Sign in
             </Link>
-          </div>
-
-          <div className="mt-4 grid shrink-0 grid-cols-2 gap-2 rounded-lg bg-slate-100 p-1">
-            <button type="button" onClick={() => switchRole("student")} className={`rounded-lg px-3 py-3 text-sm font-black transition ${role === "student" ? "bg-white text-brand shadow" : "text-slate-600 hover:bg-white/70"}`}>
-              <UsersRound size={16} className="mr-2 inline" /> Student Demo
-            </button>
-            <button type="button" onClick={() => switchRole("instructor")} className={`rounded-lg px-3 py-3 text-sm font-black transition ${role === "instructor" ? "bg-white text-brand shadow" : "text-slate-600 hover:bg-white/70"}`}>
-              <BriefcaseBusiness size={16} className="mr-2 inline" /> Coach Application
-            </button>
           </div>
 
           <div className="mt-4 shrink-0">
@@ -380,15 +306,15 @@ export default function RegisterForm() {
             {activeStep.id === "account" && (
               <div className="mt-5 grid gap-4">
                 <div className="grid gap-4 sm:grid-cols-2">
-                  <TextField icon={<UserRound size={18} />} label={role === "student" ? "Student name" : "Full name"} value={form.name} onChange={(value) => setField("name", value)} autoComplete="name" />
-                  {role === "student" && <TextField icon={<UsersRound size={18} />} label="Parent or guardian name" value={form.parentName} onChange={(value) => setField("parentName", value)} />}
+                  <TextField icon={<UserRound size={18} />} label="Student name" value={form.name} onChange={(value) => setField("name", value)} autoComplete="name" />
+                  <TextField icon={<UsersRound size={18} />} label="Parent or guardian name" value={form.parentName} onChange={(value) => setField("parentName", value)} />
                   <TextField icon={<Mail size={18} />} label="Email address" value={form.email} onChange={(value) => setField("email", value)} type="email" autoComplete="email" />
                   <div className="grid grid-cols-[118px_minmax(0,1fr)] gap-3">
                     <TextField icon={<Phone size={18} />} label="Code" value={form.countryCode} onChange={(value) => setField("countryCode", value)} autoComplete="tel-country-code" inputMode="tel" placeholder="+91" />
                     <TextField icon={<Phone size={18} />} label="Phone number" value={form.phone} onChange={(value) => setField("phone", value)} autoComplete="tel-national" inputMode="tel" />
                   </div>
                 </div>
-                <PremiumNote>Demo requests and coach applications are reviewed with the same contact record, so the academy team can follow up cleanly.</PremiumNote>
+                <PremiumNote>Demo requests are reviewed with this contact record, so the academy team can follow up cleanly.</PremiumNote>
               </div>
             )}
 
@@ -414,33 +340,6 @@ export default function RegisterForm() {
                   <MiniMetric label="Portal access" value="Instant" />
                   <MiniMetric label="Review" value="Admin tracked" />
                 </div>
-              </div>
-            )}
-
-            {activeStep.id === "coachProfile" && (
-              <div className="mt-5 grid gap-4">
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <TextField icon={<MapPin size={18} />} label="City" value={form.city} onChange={(value) => setField("city", value)} />
-                  <SelectField label="Country" value={form.country} onChange={(value) => setField("country", value)}>
-                    <option value="">Select country</option>
-                    {countryOptions.map((country) => <option key={country} value={country}>{country}</option>)}
-                  </SelectField>
-                  <TextField icon={<Trophy size={18} />} label="Playing or coaching level" value={form.playingLevel} onChange={(value) => setField("playingLevel", value)} />
-                  <TextField icon={<ShieldCheck size={18} />} label="FIDE ID" value={form.fideId} onChange={(value) => setField("fideId", value)} />
-                  <TextField icon={<Target size={18} />} label="Rating" value={form.rating} onChange={(value) => setField("rating", value)} type="number" />
-                </div>
-                <PremiumNote>Applications are saved for admin review before teaching access is activated.</PremiumNote>
-              </div>
-            )}
-
-            {activeStep.id === "teaching" && (
-              <div className="mt-5 grid gap-4">
-                <TextareaField label="Coaching experience and certifications" value={form.coachExperience} onChange={(value) => setField("coachExperience", value)} rows={4} />
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <TextareaField label="Preferred student levels or age groups" value={form.preferredStudents} onChange={(value) => setField("preferredStudents", value)} rows={3} />
-                  <TextareaField label="General availability" value={form.availabilityNote} onChange={(value) => setField("availabilityNote", value)} rows={3} />
-                </div>
-                <TextareaField label="Message for admin" value={form.message} onChange={(value) => setField("message", value)} rows={3} />
               </div>
             )}
 
@@ -473,19 +372,19 @@ export default function RegisterForm() {
                 <div className="rounded-lg border border-slate-200 bg-white p-4">
                   <p className="text-sm font-black text-slate-900">Review before submission</p>
                   <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                    <ReviewItem label={role === "student" ? "Student" : "Applicant"} value={form.name || "Not added"} />
-                    {role === "student" && <ReviewItem label="Parent" value={form.parentName || "Not added"} />}
+                    <ReviewItem label="Student" value={form.name || "Not added"} />
+                    <ReviewItem label="Parent" value={form.parentName || "Not added"} />
                     <ReviewItem label="Email" value={form.email || "Not added"} />
                     <ReviewItem label="Phone" value={`${form.countryCode} ${form.phone}`.trim()} />
                     <ReviewItem label="Location" value={[form.city, form.country].filter(Boolean).join(", ") || "Not added"} />
-                    <ReviewItem label={role === "student" ? "Level" : "Profile"} value={role === "student" ? form.level || "Not selected" : form.playingLevel || "Not added"} />
+                    <ReviewItem label="Level" value={form.level || "Not selected"} />
                   </div>
                 </div>
                 <div className="space-y-3 rounded-lg border border-slate-200 bg-white p-4 text-sm">
                   <PolicyCheck checked={form.acceptedPrivacy} onChange={(value) => setField("acceptedPrivacy", value)} label="I accept the Privacy Policy" href={LEGAL_LINKS.privacy} />
                   <PolicyCheck checked={form.acceptedTerms} onChange={(value) => setField("acceptedTerms", value)} label="I accept the Terms and Conditions" href={LEGAL_LINKS.terms} />
                   <PolicyCheck checked={form.acceptedRefund} onChange={(value) => setField("acceptedRefund", value)} label="I accept the Refund Policy" href={LEGAL_LINKS.refund} />
-                  {role === "student" && <PlainCheck checked={form.parentConsent} onChange={(value) => setField("parentConsent", value)} label="Parent or guardian consent is confirmed." />}
+                  <PlainCheck checked={form.parentConsent} onChange={(value) => setField("parentConsent", value)} label="Parent or guardian consent is confirmed." />
                   <PlainCheck checked={form.academyUpdates} onChange={(value) => setField("academyUpdates", value)} label="Receive academy updates and event announcements." />
                 </div>
               </div>
@@ -502,7 +401,7 @@ export default function RegisterForm() {
               </button>
             ) : (
               <button className="btn-primary h-12 px-6" disabled={loading}>
-                {loading ? "Submitting..." : role === "student" ? "Create Demo Account" : "Submit Application"} <ArrowRight size={17} />
+                {loading ? "Submitting..." : "Create Demo Account"} <ArrowRight size={17} />
               </button>
             )}
           </div>
@@ -590,24 +489,6 @@ function SelectField({
       <select value={value} onChange={(event) => onChange(event.target.value)} className="h-12 w-full rounded-lg border border-brand/15 bg-white px-3 text-sm text-slate-950 shadow-sm outline-none transition focus:border-brand focus:ring-4 focus:ring-brand/10" {...props}>
         {children}
       </select>
-    </label>
-  );
-}
-
-function TextareaField({
-  label,
-  value,
-  onChange,
-  ...props
-}: Omit<TextareaHTMLAttributes<HTMLTextAreaElement>, "value" | "onChange"> & {
-  label: string;
-  value: string;
-  onChange: (value: string) => void;
-}) {
-  return (
-    <label className="block">
-      <span className="mb-2 block text-xs font-black uppercase text-slate-500">{label}</span>
-      <textarea value={value} onChange={(event) => onChange(event.target.value)} className="w-full resize-none rounded-lg border border-brand/15 bg-white px-3 py-3 text-sm text-slate-950 shadow-sm outline-none transition focus:border-brand focus:ring-4 focus:ring-brand/10" {...props} />
     </label>
   );
 }

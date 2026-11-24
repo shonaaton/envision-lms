@@ -49,9 +49,8 @@ const LEGACY_WIX_REDIRECTS = [
 
   // Contact, under a slug that lost its suffix in the move.
   ["/contact", "/contact-us"],
-  // No careers page on the new site; the contact form is where an applicant
-  // would land anyway.
-  ["/career-kolkata", "/contact-us"],
+  // The old Wix careers page.
+  ["/career-kolkata", "/careers"],
 
   // The coach's own page. The success stories are the nearest thing to it.
   ["/sayan-bose", "/success-stories"],

@@ -134,13 +134,13 @@ export default function ContactForm() {
         </Field>
 
         <Field label="WhatsApp number" icon={MessageCircle} htmlFor="contact-phone" hint="We reply on WhatsApp first.">
-          <div className="flex gap-2">
+          <div className="grid grid-cols-[8.5rem_minmax(0,1fr)] gap-2">
             <select
               aria-label="Country code"
               name="countryCode"
               value={form.countryCode}
               onChange={(event) => update("countryCode", event.target.value)}
-              className={`${fieldClass} w-[7.5rem] shrink-0`}
+              className={fieldClass}
             >
               {DIAL_CODES.map((entry) => (
                 <option key={entry.code} value={`+${entry.code}`}>
@@ -158,7 +158,7 @@ export default function ContactForm() {
               value={form.phone}
               onChange={(event) => update("phone", event.target.value)}
               placeholder="98312 48613"
-              className={`${fieldClass} flex-1`}
+              className={fieldClass}
             />
           </div>
         </Field>

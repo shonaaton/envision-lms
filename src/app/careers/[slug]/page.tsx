@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ArrowLeft, Briefcase, CalendarClock, Clock3, Globe2, MapPin } from "lucide-react";
 import JobDescription from "@/components/careers/JobDescription";
-import ApplyForm from "@/components/careers/ApplyForm";
+import ApplyForm, { ApplyNowButton } from "@/components/careers/ApplyForm";
 import { MarketingFooter, MarketingHeader } from "@/components/marketing/MarketingChrome";
 import { EMPLOYMENT_TYPES, JOB_DEPARTMENTS, WORK_MODES, labelOf } from "@/lib/careers/careersConfig";
 import { getPublicPosting } from "@/lib/careers/careersService";
@@ -50,12 +50,18 @@ export default async function CareerOpeningPage({ params }: { params: { slug: st
               </span>
             ) : null}
           </p>
+          {posting.accepting ? (
+            <ApplyNowButton className="btn-primary mt-6 inline-flex h-12 px-7">Apply now</ApplyNowButton>
+          ) : null}
         </div>
       </section>
 
       <section className="mx-auto grid max-w-6xl gap-8 px-4 py-10 sm:px-6 lg:grid-cols-[1fr_minmax(380px,460px)] lg:items-start">
         <div className="min-w-0">
           {posting.description ? <JobDescription text={posting.description} /> : <p className="text-sm text-brand-900/70">{posting.summary}</p>}
+          {posting.accepting ? (
+            <ApplyNowButton className="btn-primary mt-8 inline-flex h-12 px-7 lg:hidden">Apply for this role</ApplyNowButton>
+          ) : null}
         </div>
         <div id="apply" className="lg:sticky lg:top-24">
           {posting.accepting ? (

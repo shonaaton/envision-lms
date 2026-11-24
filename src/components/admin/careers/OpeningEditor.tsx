@@ -168,7 +168,7 @@ export default function OpeningEditor({ posting, accessRoles }: { posting: Posti
             <p className="mt-2 text-sm text-slate-600">{draft.summary}</p>
             <JobDescription text={draft.description} className="mt-4" />
           </div>
-          <ApplyForm posting={previewPosting} preview />
+          <ApplyForm posting={previewPosting} preview variant="inline" />
         </div>
       ) : (
         <div className="grid gap-5 xl:grid-cols-[1fr_1fr]">

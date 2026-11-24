@@ -3,7 +3,8 @@ import { auth } from "@/lib/auth";
 import { dbConnect } from "@/lib/db";
 import { Payment } from "@/models/Payment";
 import { orderSchema } from "@/lib/validation";
-import { rzp } from "@/lib/payments/razorpay";
+import { noteValue, rzp } from "@/lib/payments/razorpay";
+import { User } from "@/models/User";
 import { Invoice } from "@/models/Fee";
 import { recordActivity } from "@/lib/activity";
 import { collectsThroughRazorpay, NON_GST_RAZORPAY_MESSAGE } from "@/lib/payments/gstAccount";
@@ -19,6 +20,8 @@ export async function POST(req: Request) {
     await dbConnect();
     let amount = body.amount;
     let invoiceNumber: string | undefined;
+    // Whose fee this is: the invoice's student (an admin may pay it), else the payer.
+    let studentId: string = (session.user as any).id;
     if (body.purpose === "invoice") {
       if (!body.refId) return NextResponse.json({ error: "Invoice required" }, { status: 400 });
       const invoice: any = await Invoice.findById(body.refId).lean();
@@ -33,12 +36,14 @@ export async function POST(req: Request) {
       if (isExportInvoice(invoice)) return NextResponse.json({ error: "This invoice is billed in a foreign currency. Use its Pay link to pay in that currency." }, { status: 400 });
       amount = invoice.totalAmount;
       invoiceNumber = invoice.invoiceNumber;
+      if (invoice.student) studentId = String(invoice.student);
     }
+    const student: any = await User.findById(studentId).select("name").lean();
     const order = await rzp().orders.create({
       amount,
       currency: "INR",
       receipt: `eca_${Date.now()}`,
-      notes: { userId: (session.user as any).id, purpose: body.purpose, refId: body.refId || "" },
+      notes: { userId: (session.user as any).id, purpose: body.purpose, refId: body.refId || "", studentName: noteValue(student?.name), invoiceNumber: noteValue(invoiceNumber) },
     });
     const payment = await Payment.create({
       user: (session.user as any).id,

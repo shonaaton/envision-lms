@@ -206,8 +206,8 @@ function CreateLinkModal({ plans, onClose, onCreated }: { plans: Plan[]; onClose
           <Field label="Parent name">
             <input className="input" value={form.customerName} onChange={set("customerName")} required />
           </Field>
-          <Field label="Student name" hint="Optional">
-            <input className="input" value={form.studentName} onChange={set("studentName")} />
+          <Field label="Student name">
+            <input className="input" value={form.studentName} onChange={set("studentName")} required />
           </Field>
           <Field label="WhatsApp number">
             <div className="flex gap-2">

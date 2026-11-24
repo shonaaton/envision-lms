@@ -1,6 +1,6 @@
 import { Invoice } from "@/models/Fee";
 import { dbConnect } from "@/lib/db";
-import { cancelPaymentLink, createPaymentLink, razorpayConfigured } from "@/lib/payments/razorpay";
+import { cancelPaymentLink, createPaymentLink, noteValue, razorpayConfigured } from "@/lib/payments/razorpay";
 import { canonicalPhoneNumber } from "@/lib/phoneCountryCodes";
 import { collectsThroughRazorpay } from "@/lib/payments/gstAccount";
 import { upiPayPageUrl } from "@/lib/payments/upiPayment";
@@ -92,7 +92,7 @@ export async function invoicePaymentLink(invoiceId: string): Promise<InvoicePayL
         email: prefillEmail(student.parentEmail, student.email),
         contact: phone.length >= 10 && phone.length <= 15 ? `+${phone}` : undefined,
       },
-      notes: { kind: "invoice", invoiceId: String(invoice._id) },
+      notes: { kind: "invoice", invoiceId: String(invoice._id), studentName: noteValue(student.name), invoiceNumber: noteValue(invoice.invoiceNumber) },
     });
     await Invoice.findByIdAndUpdate(invoiceId, {
       razorpayLink: { id: link.id, shortUrl: link.shortUrl, amount: due.amount, currency: due.currency, referenceId, status: "active", createdAt: new Date() },

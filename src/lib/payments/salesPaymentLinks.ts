@@ -5,7 +5,7 @@ import { z } from "zod";
 import { dbConnect } from "@/lib/db";
 import { recordActivity } from "@/lib/activity";
 import { createInvoice, getAcademySettings, invoiceBreakup, markInvoicePaid } from "@/lib/fees";
-import { cancelPaymentLink, createPaymentLink, paymentMethodFromRazorpay, razorpayConfigured } from "@/lib/payments/razorpay";
+import { cancelPaymentLink, createPaymentLink, noteValue, paymentMethodFromRazorpay, razorpayConfigured } from "@/lib/payments/razorpay";
 import { canonicalPhoneNumber } from "@/lib/phoneCountryCodes";
 import { collectsThroughRazorpay } from "@/lib/payments/gstAccount";
 import { demoOwnerRestriction, leadOwnersForStudents, ownsDemoLead } from "@/lib/demoLeadOwner";
@@ -27,7 +27,7 @@ export type PaymentLinkActor = { id: string; name: string; seesAll: boolean };
 
 export const createSalesLinkSchema = z.object({
   customerName: z.string().trim().min(2, "Enter the parent's name.").max(120),
-  studentName: z.string().trim().max(120).optional().default(""),
+  studentName: z.string().trim().min(2, "Enter the student's name.").max(120),
   phone: z.string().trim().min(6, "Enter a WhatsApp number.").max(20),
   countryCode: z.string().trim().max(6).optional().default("+91"),
   email: z.string().trim().email("Enter a valid email.").max(160).optional().or(z.literal("")).default(""),
@@ -191,7 +191,7 @@ export async function createSalesPaymentLink(actor: PaymentLinkActor, raw: unkno
       description: `Envision Chess Academy - ${description}${input.studentName ? ` for ${input.studentName}` : ""}`,
       referenceId: link.referenceId,
       customer: { name: input.customerName, email: input.email || undefined, contact: `+${phone}` },
-      notes: { kind: "sales_link", salesLinkId: String(link._id) },
+      notes: { kind: "sales_link", salesLinkId: String(link._id), studentName: noteValue(input.studentName) },
     });
     link.razorpayLinkId = created.id;
     link.shortUrl = created.shortUrl;

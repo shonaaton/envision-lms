@@ -48,7 +48,18 @@ export function razorpayChargeFields(payment: { fee?: unknown; tax?: unknown } |
   return { razorpayFee: Math.round(fee), razorpayTax: Number.isFinite(tax) ? Math.round(tax) : 0 };
 }
 
-export type PaymentLinkNotes = { kind: "invoice"; invoiceId: string } | { kind: "sales_link"; salesLinkId: string };
+/**
+ * Razorpay shows notes on the payment in its dashboard and reports, so the
+ * student's name rides along for whoever reads the settlement (max 256 chars).
+ */
+export type PaymentLinkNotes =
+  | { kind: "invoice"; invoiceId: string; studentName?: string; invoiceNumber?: string }
+  | { kind: "sales_link"; salesLinkId: string; studentName?: string };
+
+/** A Razorpay note value: trimmed and under Razorpay's 256-character cap. */
+export function noteValue(value: unknown) {
+  return String(value || "").trim().slice(0, 250);
+}
 
 /**
  * A Razorpay payment link for a fixed amount in 1/100 units of `currency`

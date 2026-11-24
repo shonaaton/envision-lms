@@ -192,8 +192,9 @@ export type DetailsSendResult = { studentId: string; name: string; status: "sent
  * Sends the details form to students who are already at the centre (the
  * imported ones, mostly). It is the admission form, filled in with what the
  * centre already has; approving it completes that student's record and makes
- * no new account. A student with a form still open, or with no usable phone
- * number, is skipped and the reason given.
+ * no new account. A form still open is sent again with a fresh link (the old
+ * link stops working). A form already filled in, or a student with no usable
+ * phone number, is skipped and the reason given.
  */
 export async function sendDetailsForms(branch: BranchKey, studentIds: string[], actor: Actor, request?: Request) {
   await dbConnect();
@@ -206,14 +207,21 @@ export async function sendDetailsForms(branch: BranchKey, studentIds: string[], 
   ]);
   const users: any[] = await User.find({ _id: { $in: students.map((student) => student.user) } }).select("email parentEmail").setOptions({ allBranches: true }).lean();
   const userById = new Map(users.map((user) => [id(user), user]));
-  const openFor = new Map(open.filter((admission) => !isExpired(admission)).map((admission) => [id(admission.student), admission.status]));
+  const openFor = new Map(open.filter((admission) => !isExpired(admission)).map((admission) => [id(admission.student), admission]));
 
   const results: DetailsSendResult[] = [];
   for (const student of students.sort((a, b) => a.name.localeCompare(b.name))) {
     const base = { studentId: id(student), name: student.name as string };
-    const state = openFor.get(id(student));
-    if (state) {
-      results.push({ ...base, status: "skipped", reason: state === "submitted" ? "Already filled in; waiting for your review" : "A form is already open (use Send again on Admissions)" });
+    const existing = openFor.get(id(student));
+    if (existing?.status === "submitted") {
+      results.push({ ...base, status: "skipped", reason: "Already filled in; waiting for your review" });
+      continue;
+    }
+    if (existing) {
+      // Still open (an earlier send may never have arrived): send it again with a fresh link.
+      const again = await refreshAndDeliver(existing._id, request).catch(() => null);
+      if (again) results.push({ ...base, status: "sent", whatsapp: again.delivery.whatsapp, email: again.delivery.email });
+      else results.push({ ...base, status: "skipped", reason: "The open form changed while sending; try again" });
       continue;
     }
     const phone = tenDigitPhone(student.phone);
@@ -334,19 +342,24 @@ async function findAdmission(branch: BranchKey, admissionId: string) {
   return admission;
 }
 
+/** Gives a still-open form a fresh link (the old one stops working) and sends it. */
+async function refreshAndDeliver(admissionId: unknown, request?: Request) {
+  const { token, tokenHash, expiresAt } = newToken();
+  const updated: any = await BranchAdmission.findOneAndUpdate(
+    { _id: admissionId, status: "sent" },
+    { $set: { tokenHash, expiresAt, lastSentAt: new Date() }, $inc: { sends: 1 } },
+    { new: true }
+  ).lean();
+  if (!updated) throw new BranchError("This form has already been filled in or closed.");
+  return { updated, delivery: await deliverLink(updated, linkFor(token, request)) };
+}
+
 /** A fresh link (the old one stops working), sent again. */
 export async function resendAdmission(branch: BranchKey, admissionId: string, actor: Actor, request?: Request) {
   await dbConnect();
   const admission = await findAdmission(branch, admissionId);
   if (admission.status !== "sent") throw new BranchError("This form has already been filled in or closed.");
-  const { token, tokenHash, expiresAt } = newToken();
-  const updated: any = await BranchAdmission.findOneAndUpdate(
-    { _id: admission._id, status: "sent" },
-    { $set: { tokenHash, expiresAt, lastSentAt: new Date() }, $inc: { sends: 1 } },
-    { new: true }
-  ).lean();
-  if (!updated) throw new BranchError("This form has already been filled in or closed.");
-  const delivery = await deliverLink(updated, linkFor(token, request));
+  const { updated, delivery } = await refreshAndDeliver(admission._id, request);
   void recordActivity({
     actor: actor.id,
     type: "branch.admission_resent",

@@ -333,7 +333,7 @@ function branchSections(role: Role, branchCan: string[]): NavSection[] {
   if (role === "student") {
     return [{
       id: "bowbazar",
-      title: "Bowbazar · Shatranjana Chess Foundation (separately registered)",
+      title: "Bowbazar",
       items: [
         { href: "/bowbazar/me", label: "My Class", icon: LayoutDashboard },
         { href: "/homework", label: "Homework", icon: BookOpenCheck },
@@ -376,7 +376,7 @@ function branchSections(role: Role, branchCan: string[]): NavSection[] {
   ];
   return [{
     id: "bowbazar",
-    title: "Bowbazar · Shatranjana Chess Foundation (separately registered)",
+    title: "Bowbazar",
     items: staffItems.filter((item) => branchCan.includes(item.need)).map(({ need: _need, ...item }) => item),
   }];
 }

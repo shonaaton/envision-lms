@@ -45,6 +45,8 @@ export async function POST(req: Request) {
   const canCreate = role === "instructor" || (session ? await canAccessFeature("homework", session.user as any, "create") : false);
   const canAssign = role === "instructor" || (session ? await canAccessFeature("homework", session.user as any, "assign") : false);
   if (!session || !canCreate || !canAssign) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  // Branch staff set homework through /api/bowbazar/homework, never into an online classroom.
+  if ((session.user as any).branch) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   try {
     const body = homeworkSchema.parse(await req.json());
     await dbConnect();

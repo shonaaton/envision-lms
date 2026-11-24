@@ -3,8 +3,9 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
-import { BookOpenCheck, CheckCircle2, Download, Eraser, Loader2, RotateCcw, Search, Send, Sparkles, TriangleAlert } from "lucide-react";
-import { Badge, BranchHeader, EmptyState, Field, Modal, ModeBadge, Panel, Stat, api } from "./shared";
+import { BookOpenCheck, CheckCircle2, Download, Eraser, Loader2, Plus, RotateCcw, Search, Send, Sparkles, Trash2, TriangleAlert } from "lucide-react";
+import BranchTargetPicker, { type BranchTargets, type BranchTargetValue } from "./HomeworkTargetPicker";
+import { Badge, BranchHeader, EmptyState, Field, Modal, ModeBadge, Panel, Stat, api, useConfirm } from "./shared";
 import { cn } from "@/lib/utils";
 
 type TemplateRow = { id: string; title: string; topicName: string; courseName: string; levelName: string; autoAssign: boolean; linked: boolean; activities: string };
@@ -70,8 +71,17 @@ function shift(dateKey: string, days: number) {
   return date.toISOString().slice(0, 10);
 }
 
+type Tab = "homework" | "templates" | "log";
+const TABS: { key: Tab; label: string }[] = [
+  { key: "homework", label: "Homework set" },
+  { key: "templates", label: "Templates" },
+  { key: "log", label: "Auto-share log" },
+];
+
 export default function HomeworkTemplatesClient({ can, autoHomework }: { can: string[]; autoHomework: boolean }) {
-  const [tab, setTab] = useState<"log" | "templates">("log");
+  const [tab, setTab] = useState<Tab>("homework");
+  const [assigning, setAssigning] = useState<{ id: string; title: string } | null | "pick">(null);
+  const [homeworkKey, setHomeworkKey] = useState(0);
   const [log, setLog] = useState<LogData | null>(null);
   const [library, setLibrary] = useState<Library | null>(null);
 
@@ -87,9 +97,19 @@ export default function HomeworkTemplatesClient({ can, autoHomework }: { can: st
   return (
     <div className="space-y-4">
       <BranchHeader
-        title="Homework templates"
-        subtitle="The academy's own templates, the same ones the online classes use. After every centre register and online live class, each present student gets the template for their topic and their course level."
+        title="Homework"
+        subtitle="Set homework from the academy's templates (the same ones online uses) or build your own. After every centre register and online live class, each present student also gets the template for their topic and level automatically."
         can={can}
+        actions={
+          <>
+            <button type="button" className="btn-secondary inline-flex h-9 items-center gap-1.5 text-sm" onClick={() => setAssigning("pick")}>
+              <Send size={14} /> Assign from template
+            </button>
+            <Link href="/bowbazar/homework/new" className="btn-primary inline-flex h-9 items-center gap-1.5 text-sm">
+              <Plus size={14} /> Create homework
+            </Link>
+          </>
+        }
       />
 
       {!autoHomework && (
@@ -108,19 +128,33 @@ export default function HomeworkTemplatesClient({ can, autoHomework }: { can: st
       </div>
 
       <div className="flex gap-1 rounded-xl border border-brand/10 bg-white p-1 shadow-sm">
-        {(["log", "templates"] as const).map((key) => (
+        {TABS.map(({ key, label }) => (
           <button
             key={key}
             type="button"
             onClick={() => setTab(key)}
             className={cn("flex-1 rounded-lg px-3 py-1.5 text-sm font-bold transition", tab === key ? "bg-brand text-white" : "text-slate-600 hover:bg-brand-50")}
           >
-            {key === "log" ? "Auto-share log" : "Templates"}
+            {label}
           </button>
         ))}
       </div>
 
-      {tab === "log" ? <LogPanel onChanged={refreshCounts} /> : <TemplatesPanel initial={library} />}
+      {tab === "homework" && <HomeworkPanel key={homeworkKey} />}
+      {tab === "templates" && <TemplatesPanel initial={library} onAssign={(template) => setAssigning(template)} />}
+      {tab === "log" && <LogPanel onChanged={refreshCounts} />}
+
+      {assigning && (
+        <AssignTemplateModal
+          preset={assigning === "pick" ? null : assigning}
+          onClose={() => setAssigning(null)}
+          onDone={() => {
+            setAssigning(null);
+            setTab("homework");
+            setHomeworkKey((value) => value + 1);
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -434,7 +468,7 @@ function AssignModal({ row, onClose, onDone }: { row: LogRow; onClose: () => voi
 // Templates (read-only: the academy edits them online)
 // ---------------------------------------------------------------------------
 
-function TemplatesPanel({ initial }: { initial: Library | null }) {
+function TemplatesPanel({ initial, onAssign }: { initial: Library | null; onAssign: (template: { id: string; title: string }) => void }) {
   const [query, setQuery] = useState("");
   const [search, setSearch] = useState("");
   const [course, setCourse] = useState("");
@@ -497,6 +531,7 @@ function TemplatesPanel({ initial }: { initial: Library | null }) {
                   <th className="px-3 py-2">Course · level</th>
                   <th className="px-3 py-2">Activities</th>
                   <th className="px-3 py-2">Auto-assign</th>
+                  <th className="px-3 py-2" />
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
@@ -508,6 +543,11 @@ function TemplatesPanel({ initial }: { initial: Library | null }) {
                     <td className="px-3 py-2 text-xs text-slate-600">{row.activities}</td>
                     <td className="px-3 py-2">
                       <Badge tone={row.autoAssign ? "good" : "muted"} dot>{row.autoAssign ? "On" : "Off"}</Badge>
+                    </td>
+                    <td className="px-3 py-2 text-right">
+                      <button type="button" className="btn-primary inline-flex h-8 items-center gap-1.5 text-xs" onClick={() => onAssign({ id: row.id, title: row.title })}>
+                        <Send size={13} /> Assign
+                      </button>
                     </td>
                   </tr>
                 ))}
@@ -589,5 +629,218 @@ function TopicChecker({ courses }: { courses: CourseOption[] }) {
         </div>
       )}
     </Panel>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Homework set (register, templates, built by hand)
+// ---------------------------------------------------------------------------
+
+type HomeworkRow = {
+  id: string;
+  title: string;
+  date: string;
+  slotLabel: string;
+  source: "register" | "template" | "created";
+  createdAt: string | null;
+  dueAt: string | null;
+  assigned: number;
+  submitted: number;
+  needsReview: number;
+};
+
+const SOURCE: Record<HomeworkRow["source"], { label: string; tone: "info" | "brand" | "muted" }> = {
+  register: { label: "From a class", tone: "info" },
+  template: { label: "Template", tone: "brand" },
+  created: { label: "Built here", tone: "muted" },
+};
+
+function dueText(value: string | null) {
+  if (!value) return "No deadline";
+  return new Date(value).toLocaleDateString("en-IN", { day: "numeric", month: "short", timeZone: "Asia/Kolkata" });
+}
+
+function HomeworkPanel() {
+  const [rows, setRows] = useState<HomeworkRow[] | null>(null);
+  const [query, setQuery] = useState("");
+  const [source, setSource] = useState("");
+  const [confirm, confirmDialog] = useConfirm();
+
+  const load = useCallback(() => {
+    api<{ homework: HomeworkRow[] }>("/api/bowbazar/homework")
+      .then((data) => setRows(data.homework))
+      .catch((error) => toast.error(error.message));
+  }, []);
+  useEffect(load, [load]);
+
+  async function remove(row: HomeworkRow) {
+    const ok = await confirm({ title: `Remove "${row.title}"?`, message: `It is taken off all ${row.assigned} student${row.assigned === 1 ? "" : "s"}. Nobody has done it yet.`, confirmLabel: "Remove", danger: true });
+    if (!ok) return;
+    try {
+      await api(`/api/bowbazar/homework/${row.id}`, { method: "DELETE" });
+      toast.success("Homework removed.");
+      load();
+    } catch (error: any) {
+      toast.error(error.message);
+    }
+  }
+
+  const shown = (rows || []).filter(
+    (row) => (!source || row.source === source) && `${row.title} ${row.slotLabel}`.toLowerCase().includes(query.trim().toLowerCase())
+  );
+
+  return (
+    <Panel title="Homework set" subtitle="Everything given to Bowbazar students: from class registers, from templates and built here.">
+      {confirmDialog}
+      <div className="flex flex-wrap items-center gap-2 border-b border-slate-100 px-4 py-3">
+        <div className="relative min-w-[12rem] flex-1">
+          <Search size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+          <input className="input h-9 !pl-9" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search homework or class" />
+        </div>
+        <select className="input h-9 w-auto" value={source} onChange={(event) => setSource(event.target.value)} aria-label="Where it came from">
+          <option value="">All homework</option>
+          <option value="register">From a class</option>
+          <option value="template">From a template</option>
+          <option value="created">Built here</option>
+        </select>
+      </div>
+      {!rows ? (
+        <div className="flex items-center gap-2 p-5 text-sm text-slate-500"><Loader2 size={16} className="animate-spin" /> Loading...</div>
+      ) : !shown.length ? (
+        <EmptyState icon={<BookOpenCheck size={20} />} title={rows.length ? "Nothing matches" : "No homework set yet"} hint="Use Assign from template or Create homework above." />
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[720px] text-sm">
+            <thead className="bg-slate-50 text-left text-xs font-bold uppercase tracking-wide text-slate-500">
+              <tr>
+                <th className="px-3 py-2">Homework</th>
+                <th className="px-3 py-2">Set</th>
+                <th className="px-3 py-2">Due</th>
+                <th className="px-3 py-2">Done</th>
+                <th className="px-3 py-2" />
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {shown.map((row) => (
+                <tr key={row.id}>
+                  <td className="px-3 py-2">
+                    <div className="font-semibold text-slate-800">{row.title}</div>
+                    <Badge tone={SOURCE[row.source]?.tone || "muted"}>{SOURCE[row.source]?.label || row.source}</Badge>
+                  </td>
+                  <td className="px-3 py-2 text-xs text-slate-600">
+                    {row.date ? <>{dateText(row.date)} · {row.slotLabel}</> : row.createdAt ? when(row.createdAt) : ""}
+                  </td>
+                  <td className="px-3 py-2 text-slate-600">{dueText(row.dueAt)}</td>
+                  <td className="px-3 py-2">
+                    <span className={cn("font-bold", row.assigned && row.submitted >= row.assigned ? "text-emerald-700" : "text-slate-700")}>
+                      {row.submitted}/{row.assigned}
+                    </span>
+                    {row.needsReview > 0 && <Badge tone="warn" className="ml-2">{row.needsReview} to read</Badge>}
+                  </td>
+                  <td className="whitespace-nowrap px-3 py-2 text-right">
+                    {row.submitted > 0 ? (
+                      <Link href={`/homework/${row.id}/review`} className="text-xs font-bold text-brand hover:underline">See answers</Link>
+                    ) : (
+                      <button type="button" className="inline-flex items-center gap-1 text-xs font-bold text-red-700 hover:underline" onClick={() => remove(row)}>
+                        <Trash2 size={13} /> Remove
+                      </button>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </Panel>
+  );
+}
+
+function AssignTemplateModal({ preset, onClose, onDone }: { preset: { id: string; title: string } | null; onClose: () => void; onDone: () => void }) {
+  const [targets, setTargets] = useState<BranchTargets | null>(null);
+  const [pick, setPick] = useState<BranchTargetValue>({ slotIds: [], studentIds: [] });
+  const [templateId, setTemplateId] = useState(preset?.id || "");
+  const [query, setQuery] = useState("");
+  const [templates, setTemplates] = useState<PickTemplate[] | null>(null);
+  const [dueDate, setDueDate] = useState(() => shift(istToday(), 6));
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    api<BranchTargets>("/api/bowbazar/homework/targets").then(setTargets).catch((error) => toast.error(error.message));
+  }, []);
+  useEffect(() => {
+    if (preset) return;
+    const timer = window.setTimeout(() => {
+      api<{ templates: PickTemplate[] }>(`/api/bowbazar/homework/templates?q=${encodeURIComponent(query)}`)
+        .then((result) => setTemplates(result.templates))
+        .catch((error) => toast.error(error.message));
+    }, 250);
+    return () => window.clearTimeout(timer);
+  }, [query, preset]);
+
+  async function submit() {
+    if (!templateId) return toast.error("Pick the homework to set.");
+    setBusy(true);
+    try {
+      const result = await api<{ assigned: number; skipped: string[] }>("/api/bowbazar/homework/assign", { method: "POST", json: { templateId, dueDate, ...pick } });
+      toast.success(`Homework set for ${result.assigned} student${result.assigned === 1 ? "" : "s"}${result.skipped.length ? ` (${result.skipped.length} without a login skipped)` : ""}.`);
+      onDone();
+    } catch (error: any) {
+      toast.error(error.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Modal
+      title={preset ? `Assign "${preset.title}"` : "Assign from template"}
+      onClose={onClose}
+      footer={
+        <>
+          <button type="button" className="btn-secondary" onClick={onClose}>Cancel</button>
+          <button type="button" className="btn-primary inline-flex items-center gap-1.5" disabled={busy || !templateId} onClick={submit}>
+            {busy && <Loader2 size={14} className="animate-spin" />} Set homework
+          </button>
+        </>
+      }
+    >
+      <div className="space-y-3 text-sm">
+        {!preset && (
+          <>
+            <Field label="Template">
+              <div className="relative">
+                <Search size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                <input className="input h-9 !pl-9" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Topic, title, level" autoFocus />
+              </div>
+            </Field>
+            <div className="max-h-48 space-y-1 overflow-y-auto rounded-lg border border-slate-200 p-1">
+              {!templates ? (
+                <div className="flex items-center gap-2 p-3 text-slate-500"><Loader2 size={14} className="animate-spin" /> Searching...</div>
+              ) : !templates.length ? (
+                <div className="p-3 text-slate-500">No template matches.</div>
+              ) : (
+                templates.map((template) => (
+                  <label key={template.id} className={cn("flex cursor-pointer items-start gap-2 rounded-md px-2 py-1.5", templateId === template.id ? "bg-brand-50 ring-1 ring-brand/30" : "hover:bg-slate-50")}>
+                    <input type="radio" name="assign-template" className="mt-1" checked={templateId === template.id} onChange={() => setTemplateId(template.id)} />
+                    <span className="min-w-0">
+                      <span className="block font-semibold text-slate-800">{template.title}</span>
+                      <span className="block text-xs text-slate-500">{[template.courseName, template.levelName, template.topicName].filter(Boolean).join(" · ")}</span>
+                    </span>
+                  </label>
+                ))
+              )}
+            </div>
+          </>
+        )}
+        <div>
+          <div className="mb-1 text-xs font-bold text-slate-600">Give it to</div>
+          {targets ? <BranchTargetPicker targets={targets} value={pick} onChange={setPick} /> : <div className="flex items-center gap-2 text-slate-500"><Loader2 size={14} className="animate-spin" /> Loading classes...</div>}
+        </div>
+        <Field label="Due date">
+          <input type="date" className="input h-9" value={dueDate} min={istToday()} onChange={(event) => setDueDate(event.target.value)} />
+        </Field>
+      </div>
+    </Modal>
   );
 }

@@ -452,7 +452,7 @@ export async function searchTemplates(query: string) {
   }));
 }
 
-function homeworkType(activities: any[]) {
+export function homeworkType(activities: any[]) {
   if (activities.some((activity) => activity?.type === "study_pgn")) return "pgn_study";
   if (activities.some((activity) => activity?.type === "quiz" || activity?.type === "written_answer")) return "quiz";
   return "puzzle_set";
@@ -750,9 +750,9 @@ export async function myClassLog(userId: string) {
 export async function branchHomework(branch: BranchKey) {
   await dbConnect();
   const homework: any[] = await Homework.find({ branch })
-    .select("title assignedStudents dueAt branchAttendance createdAt")
+    .select("title assignedStudents dueAt branchAttendance sourceTemplate createdAt")
     .sort({ createdAt: -1 })
-    .limit(150)
+    .limit(300)
     .lean();
   const [registers, submissions]: [any[], any[]] = await Promise.all([
     BranchAttendance.find({ _id: { $in: homework.map((item) => item.branchAttendance).filter(Boolean) } }).select("date slotLabel").lean(),
@@ -774,6 +774,9 @@ export async function branchHomework(branch: BranchKey) {
       title: item.title as string,
       date: register?.date || "",
       slotLabel: register?.slotLabel || "",
+      // Register homework, or set from the Homework page (a template or built by hand).
+      source: item.branchAttendance ? "register" : item.sourceTemplate ? "template" : "created",
+      createdAt: item.createdAt || null,
       dueAt: item.dueAt || null,
       assigned: (item.assignedStudents || []).length,
       ...counts,

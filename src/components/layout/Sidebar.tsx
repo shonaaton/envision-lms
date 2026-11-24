@@ -351,38 +351,84 @@ function branchSections(role: Role, branchCan: string[]): NavSection[] {
     }];
   }
   // Each item opens only for staff who hold its capability (Feature Access).
-  const staffItems: (NavItem & { need: string })[] = [
-    { href: "/bowbazar", label: "Overview", icon: LayoutDashboard, need: "view" },
-    { href: "/bowbazar/attendance", label: "Attendance", icon: ClipboardCheck, need: "attendance" },
-    { href: "/bowbazar/online", label: "Online Classes", icon: Video, need: "attendance" },
-    { href: "/bowbazar/homework", label: "HW Templates", icon: BookOpenCheck, need: "attendance" },
-    { href: "/bowbazar/slots", label: "Slots", icon: CalendarDays, need: "view" },
-    { href: "/bowbazar/students", label: "Students", icon: Users, need: "view" },
-    { href: "/bowbazar/leads", label: "Lead Center", icon: Inbox, need: "students" },
-    { href: "/bowbazar/admissions", label: "Admissions", icon: UserPlus, need: "students" },
-    { href: "/bowbazar/waitlist", label: "Waitlist", icon: Hourglass, need: "view" },
-    { href: "/bowbazar/changes", label: "Time Changes", icon: Repeat, need: "students" },
-    { href: "/bowbazar/fees", label: "Fees", icon: BadgeIndianRupee, need: "fees" },
-    { href: "/bowbazar/accounts", label: "Accounts", icon: Landmark, need: "fees" },
-    { href: "/bowbazar/messages", label: "Messages & Holidays", icon: Megaphone, need: "messages" },
-    { href: "/bowbazar/exams", label: "Exams", icon: GraduationCap, need: "exams" },
-    { href: "/bowbazar/achievements", label: "Achievements", icon: Trophy, need: "achievements" },
-    { href: "/bowbazar/whatsapp", label: "WhatsApp", icon: MessageSquare, need: "whatsapp" },
-    { href: "/bowbazar/activity", label: "Activity Tracker", icon: ActivitySquare, need: "activity" },
-    { href: "/bowbazar/users", label: "Users", icon: UserCog, need: "staff" },
-    { href: "/bowbazar/access", label: "Feature Access", icon: ShieldCheck, need: "staff" },
-    { href: "/bowbazar/settings", label: "Branch Settings", icon: Settings, need: "fees" },
-    // The tools for teaching the branch's online class over a screen share.
-    { href: "/pgn", label: "PGN Library", icon: Library, need: "view" },
-    { href: "/analysis", label: "Analysis Board", icon: ListChecks, need: "view" },
-    { href: "/tournaments", label: "Tournaments", icon: Trophy, need: "view" },
-    { href: "/profile", label: "Account Settings", icon: UserRound, need: "view" },
+  // Grouped like the online menu; a group with nothing open is left out.
+  type BranchItem = NavItem & { need: string };
+  const groups: { id: string; title: string; items: BranchItem[] }[] = [
+    {
+      id: "bowbazar-classes",
+      title: "Bowbazar Classes",
+      items: [
+        { href: "/bowbazar", label: "Overview", icon: LayoutDashboard, need: "view" },
+        { href: "/bowbazar/attendance", label: "Attendance", icon: ClipboardCheck, need: "attendance" },
+        { href: "/bowbazar/online", label: "Online Classes", icon: Video, need: "attendance" },
+        { href: "/bowbazar/slots", label: "Slots", icon: CalendarDays, need: "view" },
+        { href: "/bowbazar/changes", label: "Time Changes", icon: Repeat, need: "students" },
+      ],
+    },
+    {
+      id: "bowbazar-students",
+      title: "Students & Admissions",
+      items: [
+        { href: "/bowbazar/students", label: "Students", icon: Users, need: "view" },
+        { href: "/bowbazar/leads", label: "Lead Center", icon: Inbox, need: "students" },
+        { href: "/bowbazar/admissions", label: "Admissions", icon: UserPlus, need: "students" },
+        { href: "/bowbazar/waitlist", label: "Waitlist", icon: Hourglass, need: "view" },
+      ],
+    },
+    {
+      id: "bowbazar-teaching",
+      title: "Teaching",
+      items: [
+        { href: "/bowbazar/homework", label: "Homework", icon: BookOpenCheck, need: "attendance" },
+        { href: "/bowbazar/exams", label: "Exams", icon: GraduationCap, need: "exams" },
+        { href: "/bowbazar/achievements", label: "Achievements", icon: Trophy, need: "achievements" },
+        { href: "/tournaments", label: "Tournaments", icon: Trophy, need: "view" },
+      ],
+    },
+    {
+      // The tools for teaching the branch's online class over a screen share.
+      id: "bowbazar-chess-tools",
+      title: "Chess Tools",
+      items: [
+        { href: "/pgn", label: "PGN Library", icon: Library, need: "view" },
+        { href: "/analysis", label: "Analysis Board", icon: ListChecks, need: "view" },
+      ],
+    },
+    {
+      id: "bowbazar-fees",
+      title: "Fees & Accounts",
+      items: [
+        { href: "/bowbazar/fees", label: "Fees", icon: BadgeIndianRupee, need: "fees" },
+        { href: "/bowbazar/accounts", label: "Accounts", icon: Landmark, need: "fees" },
+      ],
+    },
+    {
+      id: "bowbazar-comms",
+      title: "Communications",
+      items: [
+        { href: "/bowbazar/messages", label: "Messages & Holidays", icon: Megaphone, need: "messages" },
+        { href: "/bowbazar/whatsapp", label: "WhatsApp", icon: MessageSquare, need: "whatsapp" },
+      ],
+    },
+    {
+      id: "bowbazar-admin",
+      title: "Branch Admin",
+      items: [
+        { href: "/bowbazar/users", label: "Users", icon: UserCog, need: "staff" },
+        { href: "/bowbazar/access", label: "Feature Access", icon: ShieldCheck, need: "staff" },
+        { href: "/bowbazar/activity", label: "Activity Tracker", icon: ActivitySquare, need: "activity" },
+        { href: "/bowbazar/settings", label: "Branch Settings", icon: Settings, need: "fees" },
+        { href: "/profile", label: "Account Settings", icon: UserRound, need: "view" },
+      ],
+    },
   ];
-  return [{
-    id: "bowbazar",
-    title: "Bowbazar",
-    items: staffItems.filter((item) => branchCan.includes(item.need)).map(({ need: _need, ...item }) => item),
-  }];
+  return groups
+    .map((group) => ({
+      id: group.id,
+      title: group.title,
+      items: group.items.filter((item) => branchCan.includes(item.need)).map(({ need: _need, ...item }) => item),
+    }))
+    .filter((group) => group.items.length);
 }
 
 function canSee(role: Role, accountStatus: AccountStatus | undefined, isActive: boolean | undefined, isPaused: boolean | undefined, isSuperAdmin: boolean | undefined, featureState: FeatureState | undefined, item: { href?: string; roles?: Role[]; demoOnly?: boolean; hideForDemo?: boolean; featureKey?: string; permission?: string; superAdminOnly?: boolean }, hasScheduledClassroom = false) {
@@ -417,6 +463,8 @@ function matchesPath(pathname: string, href: string) {
 // longest matching link is highlighted.
 function isActive(pathname: string, item: NavItem) {
   if (!matchesPath(pathname, item.href)) return false;
+  // The branch Overview is the parent path of every branch page: only its own page lights it.
+  if (item.href === "/bowbazar") return pathname === "/bowbazar";
   return !sections.some((section) => section.items.some((other) => other.href.length > item.href.length && other.href.startsWith(`${item.href}/`) && matchesPath(pathname, other.href)));
 }
 

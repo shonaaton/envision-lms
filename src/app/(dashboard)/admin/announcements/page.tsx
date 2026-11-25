@@ -2,11 +2,11 @@
 
 import { useEffect, useMemo, useState } from "react";
 import type { LucideIcon } from "lucide-react";
-import { BellRing, CheckCircle2, Edit3, GraduationCap, Megaphone, Save, Search, Send, Sparkles, Users } from "lucide-react";
+import { BellRing, CheckCircle2, Edit3, Globe2, GraduationCap, Megaphone, Save, Search, Send, Sparkles, Users } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 
-type TargetType = "batch" | "all_students" | "student" | "all_coaches" | "coach";
+type TargetType = "batch" | "all_users" | "all_students" | "student" | "all_coaches" | "coach";
 
 type UserOption = {
   _id: string;
@@ -42,6 +42,7 @@ type Announcement = {
 
 const targetOptions: Array<{ type: TargetType; title: string; description: string; icon: LucideIcon; needsPick?: "batch" | "student" | "coach" }> = [
   { type: "batch", title: "Batch", description: "Students in one batch", icon: Users, needsPick: "batch" },
+  { type: "all_users", title: "All Users", description: "Every active account: students, coaches and staff", icon: Globe2 },
   { type: "all_students", title: "All Students", description: "Every active student", icon: GraduationCap },
   { type: "student", title: "Student", description: "One selected student", icon: CheckCircle2, needsPick: "student" },
   { type: "all_coaches", title: "All Coaches", description: "Every active coach", icon: Sparkles },
@@ -50,6 +51,7 @@ const targetOptions: Array<{ type: TargetType; title: string; description: strin
 
 const targetLabels: Record<TargetType | "everyone", string> = {
   batch: "Batch",
+  all_users: "All Users",
   all_students: "All Students",
   student: "Student",
   all_coaches: "All Coaches",
@@ -73,10 +75,11 @@ export default function AdminAnnouncementsPage() {
   const [saving, setSaving] = useState(false);
   const [editingId, setEditingId] = useState("");
   const [editDraft, setEditDraft] = useState({ title: "", message: "", priority: "normal" as "normal" | "high" });
-  const [targets, setTargets] = useState<{ batches: BatchOption[]; students: UserOption[]; coaches: UserOption[] }>({
+  const [targets, setTargets] = useState<{ batches: BatchOption[]; students: UserOption[]; coaches: UserOption[]; allUsersCount: number }>({
     batches: [],
     students: [],
     coaches: [],
+    allUsersCount: 0,
   });
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
 
@@ -126,6 +129,7 @@ export default function AdminAnnouncementsPage() {
   }, [announcements, historyQuery]);
 
   const estimatedRecipients = useMemo(() => {
+    if (targetType === "all_users") return targets.allUsersCount;
     if (targetType === "all_students") return targets.students.length;
     if (targetType === "all_coaches") return targets.coaches.length;
     if (targetType === "student" || targetType === "coach") return targetId ? 1 : 0;

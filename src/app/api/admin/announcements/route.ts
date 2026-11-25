@@ -12,6 +12,7 @@ export const dynamic = "force-dynamic";
 
 const targetLabels: Record<string, string> = {
   batch: "Batch",
+  all_users: "All users",
   all_students: "All students",
   student: "Student",
   all_coaches: "All coaches",
@@ -43,6 +44,12 @@ function announcementActionLabel(message: string) {
 }
 
 async function resolveRecipients(targetType: string, targetId?: string) {
+  if (targetType === "all_users") {
+    // Every active account: students, coaches, admins and sub-admins.
+    const users = await User.find({ isActive: { $ne: false } }, { _id: 1, email: 1, name: 1 }).lean();
+    return { recipients: uniqueIds(users.map((user: any) => user._id)), recipientUsers: users, targetBatch: undefined, targetUser: undefined };
+  }
+
   if (targetType === "all_students") {
     const users = await User.find({ role: "student", isActive: { $ne: false } }, { _id: 1, email: 1, name: 1 }).lean();
     return { recipients: uniqueIds(users.map((user: any) => user._id)), recipientUsers: users, targetBatch: undefined, targetUser: undefined };

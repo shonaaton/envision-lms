@@ -32,9 +32,10 @@ const post: BlogPost = {
   excerpt:
     "India's D. Gukesh defends his title against Uzbekistan's Javokhir Sindarov in Geneva from 24 November. Here is who they are, how the match works, when to watch in India and what to look for.",
   publishedAt: "2026-11-23",
-  updatedAt: "2026-11-23",
+  updatedAt: "2026-11-25",
   relatedCourses: ["beginner-chess-course", "intermediate-chess-course", "semi-pro-chess-course"],
   relatedPosts: [
+    "world-chess-championship-2026-game-1",
     "world-chess-championship-2026-predictions",
     "why-chennai-is-the-chess-capital-of-india",
     "online-chess-tournaments-for-students",
@@ -50,6 +51,10 @@ const post: BlogPost = {
     {
       type: "p",
       text: "This guide explains what the World Championship is, introduces both players, walks through the rules and the full schedule, and ends with simple ways to watch the games like a chess player rather than a spectator. You do not need to be a strong player to enjoy it. If you know [how the chess pieces move](/blog/how-chess-pieces-move), you can follow the match.",
+    },
+    {
+      type: "p",
+      text: "**Update, 25 November:** Game 1 ended in a 38-move draw in the Berlin, so the score is ½–½. Read our [World Chess Championship 2026 Game 1 review](/blog/world-chess-championship-2026-game-1) for the key moves and what students can learn from them.",
     },
     {
       type: "callout",

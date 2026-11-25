@@ -45,6 +45,7 @@ const post: BlogPost = {
   updatedAt: "2026-11-23",
   relatedCourses: ["intermediate-chess-course", "semi-pro-chess-course", "beginner-chess-course"],
   relatedPosts: [
+    "world-chess-championship-2026-game-1",
     "fide-world-chess-championship-2026",
     "why-chennai-is-the-chess-capital-of-india",
     "how-to-get-fide-rating-india",

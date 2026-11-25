@@ -3,7 +3,7 @@ import { dbConnect } from "@/lib/db";
 import { normalizeWhatsAppNumber, normalizeWhatsAppRecipient, sendWhatsAppTextMessage } from "@/lib/whatsappAutomation";
 import { WhatsAppMessage } from "@/models/WhatsApp";
 import { MESSAGE_FIELDS, buildThread, isReaction, previewText } from "@/lib/whatsappMessageView";
-import { BranchStudent } from "@/models/Branch";
+import { BranchLead, BranchStudent, BranchWaitlist } from "@/models/Branch";
 import { BranchError } from "./errors";
 import type { BranchKey } from "./scope";
 import { tenDigitPhone } from "./admissionRules";
@@ -19,18 +19,43 @@ const WINDOW_MS = 24 * 60 * 60 * 1000;
 export const BRANCH_MEDIA_BASE = "/api/bowbazar/whatsapp/media";
 const PREVIEW_FIELDS = Object.fromEntries(MESSAGE_FIELDS.split(" ").map((field) => [field, 1]));
 
-/** Each family number at the branch, in the spellings the inbox may have stored, with the children on it. */
+type FamilyEntry = { names: string[]; parentName: string; active: boolean; tag: "" | "Enquiry" | "Waitlist" };
+
+/**
+ * Each number the branch talks to, in the spellings the inbox may have stored:
+ * its students' families, plus Lead Center enquiries and waitlist families
+ * (they get the slots-and-fees and seat-free messages before they are students).
+ */
 async function familyNumbers(branch: BranchKey) {
-  const students: any[] = await BranchStudent.find({ branch }).select("name phone parentName status").lean();
-  const byNumber = new Map<string, { names: string[]; parentName: string; active: boolean }>();
+  const [students, leads, waitlist]: any[][] = await Promise.all([
+    BranchStudent.find({ branch }).select("name phone parentName status").lean(),
+    BranchLead.find({ branch, countryCode: { $in: [null, "", "+91"] } }).select("name phone").lean(),
+    BranchWaitlist.find({ branch, student: null }).select("name phone parentName").lean(),
+  ]);
+  const byNumber = new Map<string, FamilyEntry>();
+  const canonicalOf = (raw: unknown) => {
+    const phone = tenDigitPhone(raw);
+    return phone ? normalizeWhatsAppRecipient(phone, "+91") || `91${phone}` : "";
+  };
   for (const student of students) {
-    const phone = tenDigitPhone(student.phone);
-    if (!phone) continue;
-    const canonical = normalizeWhatsAppRecipient(phone, "+91") || `91${phone}`;
-    const entry = byNumber.get(canonical) || { names: [] as string[], parentName: student.parentName || "", active: false };
+    const canonical = canonicalOf(student.phone);
+    if (!canonical) continue;
+    const entry = byNumber.get(canonical) || { names: [] as string[], parentName: student.parentName || "", active: false, tag: "" as const };
     entry.names.push(student.name);
     entry.active = entry.active || student.status === "active";
     byNumber.set(canonical, entry);
+  }
+  // Prospects only fill numbers no student holds: a student's family keeps its own name.
+  for (const [rows, tag] of [[waitlist, "Waitlist"], [leads, "Enquiry"]] as const) {
+    for (const row of rows) {
+      const canonical = canonicalOf(row.phone);
+      if (!canonical) continue;
+      const current = byNumber.get(canonical);
+      if (current && !current.tag) continue;
+      const entry = current || { names: [] as string[], parentName: row.parentName || "", active: false, tag };
+      if (row.name && !entry.names.includes(row.name)) entry.names.push(row.name);
+      byNumber.set(canonical, entry);
+    }
   }
   const spellings = new Map<string, string>(); // stored spelling -> canonical
   for (const canonical of byNumber.keys()) {
@@ -82,6 +107,7 @@ export async function branchConversations(branch: BranchKey) {
         students: family.names,
         parentName: family.parentName,
         active: family.active,
+        tag: family.tag,
         lastText: previewText(group.latest || {}) || "",
         lastDirection: String(group.latest?.direction || ""),
         lastAt: group.lastAt,
@@ -102,6 +128,7 @@ export async function branchConversation(branch: BranchKey, phone: string) {
     phone: canonical,
     students: family.names,
     parentName: family.parentName,
+    tag: family.tag,
     windowOpen: Boolean(lastInboundAt && Date.now() - lastInboundAt.getTime() < WINDOW_MS),
     // The online inbox's own view of each message: template text, media, reactions, ticks.
     messages: buildThread(messages.reverse(), BRANCH_MEDIA_BASE),

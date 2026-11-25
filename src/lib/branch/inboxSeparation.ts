@@ -1,4 +1,4 @@
-import { BranchStudent } from "@/models/Branch";
+import { BranchLead, BranchStudent, BranchWaitlist } from "@/models/Branch";
 import { User } from "@/models/User";
 import { tenDigitPhone } from "./admissionRules";
 
@@ -7,8 +7,8 @@ import { tenDigitPhone } from "./admissionRules";
  * family's chat lands in the same place as an online family's. The branch admin
  * reads it through /bowbazar/whatsapp; the online inbox must not show it.
  *
- * A number is "branch only" when a Bowbazar student record holds it and no
- * online account does. A family with children in both branches stays visible
+ * A number is "branch only" when a Bowbazar student, enquiry or waitlist record
+ * holds it and no online account does. A family with children in both branches stays visible
  * online - the online team still has to answer them.
  */
 export function branchOnlyNationals(branchPhones: unknown[], onlinePhones: unknown[]) {
@@ -27,8 +27,14 @@ let cache: { at: number; nationals: Set<string> } | null = null;
 /** Branch-only family numbers (ten digits). Cached for a minute: the inbox polls. */
 export async function branchOnlyInboxNationals(now = Date.now()) {
   if (cache && now - cache.at < CACHE_MS) return cache.nationals;
-  const students: any[] = await BranchStudent.find({}).select("phone").lean();
-  const branchPhones = students.map((student) => student.phone);
+  // Enquiries and waitlist families get the centre's slots/fees and seat-free messages
+  // before they are students; those chats belong to the branch too.
+  const [students, leads, waitlist]: any[][] = await Promise.all([
+    BranchStudent.find({}).select("phone").lean(),
+    BranchLead.find({ countryCode: { $in: [null, "", "+91"] } }).select("phone").lean(),
+    BranchWaitlist.find({}).select("phone").lean(),
+  ]);
+  const branchPhones = [...students, ...leads, ...waitlist].map((row) => row.phone);
   const nationals = [...new Set(branchPhones.map(tenDigitPhone).filter(Boolean))];
   let onlinePhones: unknown[] = [];
   if (nationals.length) {

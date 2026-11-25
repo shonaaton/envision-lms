@@ -9,9 +9,9 @@ import type { WaMessage } from "@/components/admin/whatsapp/types";
 import { cn } from "@/lib/utils";
 import { BranchHeader, api } from "./shared";
 
-type Conversation = { phone: string; students: string[]; parentName: string; active: boolean; lastText: string; lastDirection: string; lastAt: string; windowOpen: boolean; messages: number };
+type Conversation = { phone: string; students: string[]; parentName: string; active: boolean; tag?: string; lastText: string; lastDirection: string; lastAt: string; windowOpen: boolean; messages: number };
 // Messages come in the online inbox's own shape, so its ticks, media and link rendering apply as they are.
-type Thread = { phone: string; students: string[]; parentName: string; windowOpen: boolean; messages: WaMessage[] };
+type Thread = { phone: string; students: string[]; parentName: string; tag?: string; windowOpen: boolean; messages: WaMessage[] };
 const POLL_MS = 10_000;
 const dayKey = (value: string) => new Date(value).toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
 
@@ -34,7 +34,7 @@ export default function WhatsAppClient({ can, actorId }: { can: string[]; actorI
 
   return (
     <div className="space-y-4">
-      <BranchHeader title="WhatsApp" subtitle="Messages with Bowbazar families on the academy's WhatsApp number. Only this centre's families are shown." can={can} />
+      <BranchHeader title="WhatsApp" subtitle="Messages with Bowbazar families on the academy's WhatsApp number. Shows this centre's families, enquiries and waitlist." can={can} />
       <div className="grid gap-4 lg:grid-cols-[minmax(0,22rem)_1fr]">
         <section className="space-y-2">
           <div className="relative">
@@ -55,7 +55,10 @@ export default function WhatsAppClient({ can, actorId }: { can: string[]; actorI
                   className={cn("block w-full px-3 py-2.5 text-left hover:bg-slate-50", open === conversation.phone && "bg-brand-50")}
                 >
                   <div className="flex items-center justify-between gap-2">
-                    <span className="truncate font-bold text-slate-900">{conversation.students.join(", ")}</span>
+                    <span className="flex min-w-0 items-center gap-1.5">
+                      <span className="truncate font-bold text-slate-900">{conversation.students.join(", ")}</span>
+                      {conversation.tag && <span className="shrink-0 rounded-full bg-amber-100 px-1.5 text-[10px] font-bold text-amber-800">{conversation.tag}</span>}
+                    </span>
                     <span className="shrink-0 text-[11px] text-slate-400">{when(conversation.lastAt)}</span>
                   </div>
                   <div className="truncate text-xs text-slate-500">
@@ -129,7 +132,10 @@ function ThreadView({ phone, actorId, onSent }: { phone: string; actorId: string
     <div className="flex h-full max-h-[70vh] flex-col">
       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 px-4 py-3">
         <div>
-          <div className="font-black text-slate-950">{thread.students.join(", ")}</div>
+          <div className="flex items-center gap-2 font-black text-slate-950">
+            {thread.students.join(", ")}
+            {thread.tag && <span className="rounded-full bg-amber-100 px-1.5 text-[10px] font-bold text-amber-800">{thread.tag}</span>}
+          </div>
           <div className="text-xs text-slate-500">{[thread.parentName, `+${thread.phone}`].filter(Boolean).join(" · ")}</div>
         </div>
         <a href={`https://wa.me/${thread.phone}`} target="_blank" rel="noreferrer" className="btn-outline h-8 px-2 text-xs">

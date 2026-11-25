@@ -34,7 +34,7 @@ export default function RichText({
             }
             if (part.startsWith("{") && part.endsWith("}")) {
               return (
-                <span key={partIndex} className="mx-0.5 inline-flex rounded-md bg-brand-50 px-1.5 py-px font-mono text-[0.92em] font-bold text-brand">
+                <span key={partIndex} className="mx-0.5 inline-flex rounded-md border border-brand-100 bg-white px-1.5 py-px font-mono text-[0.92em] font-bold text-brand">
                   {part.slice(1, -1)}
                 </span>
               );

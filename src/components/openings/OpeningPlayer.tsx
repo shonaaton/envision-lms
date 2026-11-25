@@ -12,6 +12,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Eye,
+  GraduationCap,
   Lightbulb,
   Lock,
   Pause,
@@ -290,7 +291,9 @@ export default function OpeningPlayer({
   );
 
   return (
-    <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(340px,420px)] lg:items-start">
+    // The board column is capped at the board's own width (640 + coordinates + card padding) and
+    // the pair is centred, so the side panel sits right beside the board instead of across a gap.
+    <div className="grid gap-4 lg:grid-cols-[minmax(0,700px)_minmax(320px,400px)] lg:items-start lg:justify-center">
       <div className="min-w-0">
         <div className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm shadow-brand/5 sm:p-4">
           <AssignmentChessboard
@@ -341,18 +344,20 @@ export default function OpeningPlayer({
 
         <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm shadow-brand/5" aria-live="polite">
           {quizOpen ? (
-            <div>
-              <p className="flex items-center gap-2 text-[11px] font-black uppercase tracking-[0.14em] text-amber-700">
-                <Target size={14} aria-hidden="true" /> Your move · {sideToMove === "w" ? "White" : "Black"} to play
-              </p>
-              <p className="mt-2 text-base font-bold leading-6 text-slate-950">{frame.quiz!.prompt}</p>
-              <p className="mt-1 text-xs text-slate-500">Drag the piece, or tap it and then tap its square.</p>
-              {quiz?.feedback ? (
-                <p className={`mt-3 rounded-lg px-3 py-2 text-sm font-semibold ${quiz.feedback.tone === "bad" ? "bg-rose-50 text-rose-700" : "bg-amber-50 text-amber-800"}`}>
-                  {quiz.feedback.text}
+            <div className="space-y-2.5">
+              <CoachBubble tone="quiz">
+                <p className="flex items-center gap-2 text-[11px] font-black uppercase tracking-[0.14em] text-amber-700">
+                  <Target size={14} aria-hidden="true" /> Your move · {sideToMove === "w" ? "White" : "Black"} to play
                 </p>
+                <p className="mt-1.5 text-base font-bold leading-6 text-slate-950">{frame.quiz!.prompt}</p>
+                <p className="mt-1 text-xs text-slate-500">Drag the piece, or tap it and then tap its square.</p>
+              </CoachBubble>
+              {quiz?.feedback ? (
+                <CoachBubble tone={quiz.feedback.tone === "bad" ? "bad" : "hint"} compact>
+                  <p className="text-sm font-semibold leading-6">{quiz.feedback.text}</p>
+                </CoachBubble>
               ) : null}
-              <div className="mt-3 flex flex-wrap gap-2">
+              <div className="flex flex-wrap gap-2 pl-[46px]">
                 {frame.quiz!.hint ? (
                   <button
                     type="button"
@@ -374,29 +379,31 @@ export default function OpeningPlayer({
               </div>
             </div>
           ) : (
-            <div>
+            <div className="space-y-2.5">
               {quiz?.feedback && frame.quiz ? (
-                <p
-                  className={`mb-3 flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-bold ${quiz.solved ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-800"}`}
-                >
-                  {quiz.solved ? <CheckCircle2 size={16} aria-hidden="true" /> : <Eye size={16} aria-hidden="true" />} {quiz.feedback.text}
-                </p>
+                <CoachBubble tone={quiz.solved ? "good" : "hint"} compact>
+                  <p className="flex items-center gap-2 text-sm font-bold leading-6">
+                    {quiz.solved ? <CheckCircle2 size={16} aria-hidden="true" /> : <Eye size={16} aria-hidden="true" />} {quiz.feedback.text}
+                  </p>
+                </CoachBubble>
               ) : null}
-              {frame.move && !frame.quiz && !frame.title ? (
-                <p className="mb-1 font-mono text-sm font-black text-brand">{frame.move.label}</p>
-              ) : null}
-              {frame.title ? <h3 className="text-base font-black leading-6 text-slate-950">{frame.title}</h3> : null}
-              <RichText text={frame.text} onSquareHover={setHoverSquare} className="mt-2 text-sm leading-6 text-slate-700" />
-              {frame.points?.length ? (
-                <ul className="mt-3 space-y-2">
-                  {frame.points.map((point) => (
-                    <li key={point} className="flex gap-2 text-sm leading-6 text-slate-700">
-                      <CheckCircle2 size={16} className="mt-1 shrink-0 text-emerald-600" aria-hidden="true" />
-                      <span>{point}</span>
-                    </li>
-                  ))}
-                </ul>
-              ) : null}
+              <CoachBubble tone="coach" hideAvatar={Boolean(quiz?.feedback && frame.quiz)}>
+                {frame.move && !frame.quiz && !frame.title ? (
+                  <p className="mb-1 inline-block rounded-md bg-white px-2 py-0.5 font-mono text-sm font-black text-brand shadow-sm">{frame.move.label}</p>
+                ) : null}
+                {frame.title ? <h3 className="text-base font-black leading-6 text-slate-950">{frame.title}</h3> : null}
+                <RichText text={frame.text} onSquareHover={setHoverSquare} className="mt-1.5 text-sm leading-6 text-slate-700" />
+                {frame.points?.length ? (
+                  <ul className="mt-3 space-y-2 rounded-xl bg-white/80 p-3">
+                    {frame.points.map((point) => (
+                      <li key={point} className="flex gap-2 text-sm leading-6 text-slate-700">
+                        <CheckCircle2 size={16} className="mt-1 shrink-0 text-emerald-600" aria-hidden="true" />
+                        <span>{point}</span>
+                      </li>
+                    ))}
+                  </ul>
+                ) : null}
+              </CoachBubble>
             </div>
           )}
 
@@ -466,6 +473,47 @@ export default function OpeningPlayer({
           </div>
         </div>
       </aside>
+    </div>
+  );
+}
+
+const BUBBLE_TONES = {
+  coach: "border-brand-100 bg-brand-50 text-slate-700",
+  quiz: "border-amber-200 bg-amber-50 text-slate-800",
+  hint: "border-amber-200 bg-amber-50 text-amber-800",
+  bad: "border-rose-200 bg-rose-50 text-rose-700",
+  good: "border-emerald-200 bg-emerald-50 text-emerald-700",
+} as const;
+
+// The coach "speaking" each explanation: an avatar with a speech bubble whose tail points at it.
+// Consecutive bubbles drop the repeated avatar, like a chat thread.
+function CoachBubble({
+  tone,
+  compact,
+  hideAvatar,
+  children,
+}: {
+  tone: keyof typeof BUBBLE_TONES;
+  compact?: boolean;
+  hideAvatar?: boolean;
+  children: React.ReactNode;
+}) {
+  const colors = BUBBLE_TONES[tone];
+  return (
+    <div className="flex items-start gap-2.5">
+      {hideAvatar ? (
+        <span className="w-9 shrink-0" aria-hidden="true" />
+      ) : (
+        <span className="mt-0.5 grid h-9 w-9 shrink-0 place-items-center rounded-full bg-brand text-white shadow-sm shadow-brand/30" aria-hidden="true">
+          <GraduationCap size={18} />
+        </span>
+      )}
+      <div className={`relative min-w-0 flex-1 rounded-2xl rounded-tl-md border ${compact ? "px-3 py-2" : "px-4 py-3"} ${colors}`}>
+        {hideAvatar ? null : (
+          <span aria-hidden="true" className={`absolute -left-[7px] top-3 h-3 w-3 rotate-45 border-b border-l ${colors}`} />
+        )}
+        <div className="relative">{children}</div>
+      </div>
     </div>
   );
 }

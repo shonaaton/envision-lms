@@ -23,7 +23,10 @@ import {
   Eraser,
   ExternalLink,
   Eye,
+  ArrowUpRight,
   FileQuestion,
+  Gauge,
+  Layers,
   Folder,
   Grid2X2,
   Highlighter,
@@ -623,18 +626,42 @@ function normalizeEngineFen(fen?: string) {
   }
 }
 
+type EngineScore = { type: "cp" | "mate"; value: number };
+type EngineLine = { multipv: number; score: EngineScore; depth: number; firstMove: string; moves: string };
+
+// UCI scores are from the side to move. Turn them into White's point of view
+// so +ve always means White is better, whoever is on move.
+function whitePovScore(type: "cp" | "mate", value: number, fen: string): EngineScore {
+  const blackToMove = fen.split(" ")[1] === "b";
+  return { type, value: blackToMove ? -value : value };
+}
+
+function formatEngineScore(score: EngineScore) {
+  if (score.type === "mate") {
+    if (score.value === 0) return "#";
+    return score.value > 0 ? `#${score.value}` : `-#${Math.abs(score.value)}`;
+  }
+  return formatEval(score.value);
+}
+
 function formatEnginePv(fen: string, pv: string) {
   const game = new Chess(normalizeEngineFen(fen));
-  const san: string[] = [];
-  pv.split(/\s+/).slice(0, 10).forEach((uci) => {
+  const parts: string[] = [];
+  let firstMove = "";
+  pv.split(/\s+/).filter(Boolean).slice(0, 14).forEach((uci, index) => {
     try {
+      const turn = game.turn();
+      const moveNumber = game.moveNumber();
       const move = game.move({ from: uci.slice(0, 2), to: uci.slice(2, 4), promotion: uci[4] || "q" });
-      if (move) san.push(move.san);
+      if (!move) return;
+      if (!firstMove) firstMove = move.san;
+      if (turn === "w") parts.push(`${moveNumber}. ${move.san}`);
+      else parts.push(index === 0 ? `${moveNumber}... ${move.san}` : move.san);
     } catch {
       // Stockfish can occasionally emit a continuation that no longer matches the current board.
     }
   });
-  return san.join(" ") || pv;
+  return { firstMove, moves: parts.join(" ") || pv };
 }
 
 function serializeDrawings(drawings: any[] = []) {
@@ -833,7 +860,8 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId, br
   const [setupPosition, setSetupPosition] = useState<BoardPosition>({});
   const [modifier, setModifier] = useState<ModifierKey>("default");
   const [engineText, setEngineText] = useState("Engine ready");
-  const [engineLines, setEngineLines] = useState<Array<{ multipv: number; eval: string; variation: string }>>([]);
+  const [engineLines, setEngineLines] = useState<EngineLine[]>([]);
+  const [engineDone, setEngineDone] = useState(false);
   const [boardWidth, setBoardWidth] = useState(620);
   const [sidePanelWidth, setSidePanelWidth] = useState(336);
   const [resizingSidePanel, setResizingSidePanel] = useState(false);
@@ -849,6 +877,10 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId, br
   const activeLoadedPgnRef = useRef<HTMLButtonElement | null>(null);
   const engineRef = useRef<Worker | null>(null);
   const engineFenRef = useRef("");
+  // A search still running when the board changes keeps printing lines for the
+  // old position; count those stale searches and drop their output.
+  const engineSearchingRef = useRef(false);
+  const engineStaleRef = useRef(0);
   const loadInFlightRef = useRef(false);
   const refreshQueuedRef = useRef(false);
   const refreshTimerRef = useRef<number | null>(null);
@@ -1403,9 +1435,16 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId, br
   }, [pgnOpen]);
 
   useEffect(() => {
+    const stopEngineSearch = () => {
+      if (!engineRef.current || !engineSearchingRef.current) return;
+      engineRef.current.postMessage("stop");
+      engineStaleRef.current += 1;
+      engineSearchingRef.current = false;
+    };
     if (!live?.engineEnabled || !live?.fen || activeTab !== "engine") {
-      if (engineRef.current) engineRef.current.postMessage("stop");
+      stopEngineSearch();
       setEngineLines([]);
+      setEngineDone(false);
       if (!live?.engineEnabled) setEngineText("Engine disabled");
       return;
     }
@@ -1414,35 +1453,51 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId, br
         engineRef.current = new Worker("/stockfish/stockfish.js");
         engineRef.current.onmessage = (event) => {
           const line = String(event.data || "");
-          const best = line.match(/^bestmove\s+(\S+)/);
+          if (/^bestmove\b/.test(line)) {
+            if (engineStaleRef.current > 0) {
+              engineStaleRef.current -= 1;
+              return;
+            }
+            engineSearchingRef.current = false;
+            setEngineDone(true);
+            return;
+          }
+          if (engineStaleRef.current > 0) return;
+          // Bound scores are mid-search guesses; wait for the exact score.
+          if (/\b(lowerbound|upperbound)\b/.test(line)) return;
           const scoreInfo = line.match(/\bscore\s+(cp|mate)\s+(-?\d+).*?\bpv\s+(.+)$/);
-          if (scoreInfo) {
-            const multipvMatch = line.match(/\bmultipv\s+(\d+)/);
-            const multipv = multipvMatch ? Number(multipvMatch[1]) : 1;
-            const evalText = scoreInfo[1] === "mate" ? `M${scoreInfo[2]}` : formatEval(Number(scoreInfo[2]));
-            const variation = formatEnginePv(engineFenRef.current, scoreInfo[3]);
-            setEngineLines((current) => {
-              const next = current.filter((item) => item.multipv !== multipv);
-              return [...next, { multipv, eval: evalText, variation }].sort((a, b) => a.multipv - b.multipv).slice(0, 3);
-            });
-          }
-          if (best) {
-            setEngineText(`Best line: ${formatEnginePv(engineFenRef.current, best[1])}`);
-          }
+          if (!scoreInfo) return;
+          const fen = engineFenRef.current;
+          const multipv = Number(line.match(/\bmultipv\s+(\d+)/)?.[1] || 1);
+          const depth = Number(line.match(/\bdepth\s+(\d+)/)?.[1] || 0);
+          const score = whitePovScore(scoreInfo[1] as "cp" | "mate", Number(scoreInfo[2]), fen);
+          const { firstMove, moves } = formatEnginePv(fen, scoreInfo[3]);
+          setEngineLines((current) => {
+            const next = current.filter((item) => item.multipv !== multipv);
+            return [...next, { multipv, score, depth, firstMove, moves }].sort((a, b) => a.multipv - b.multipv).slice(0, 3);
+          });
         };
         engineRef.current.postMessage("uci");
         engineRef.current.postMessage("setoption name MultiPV value 3");
       }
+      stopEngineSearch();
       const analysisFen = normalizeEngineFen(live.fen);
       engineFenRef.current = analysisFen;
       setEngineText("Analyzing...");
       setEngineLines([]);
+      setEngineDone(false);
       engineRef.current.postMessage(`position fen ${analysisFen}`);
-      engineRef.current.postMessage("go depth 8");
+      engineRef.current.postMessage("go depth 18");
+      engineSearchingRef.current = true;
     } catch {
       setEngineText("Engine unavailable in this browser session");
     }
   }, [activeTab, live?.engineEnabled, live?.fen]);
+
+  useEffect(() => () => {
+    engineRef.current?.terminate();
+    engineRef.current = null;
+  }, []);
 
   const patch = useCallback(async (update: any, options?: { optimistic?: boolean }) => {
     if (options?.optimistic !== false) {
@@ -3671,7 +3726,7 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId, br
 
             {coach && activeTab === "engine" && (
               <div className="space-y-3">
-                <div className="rounded-lg border border-slate-200 p-4">
+                <div className="rounded-xl border border-slate-200 p-4">
                   <div className="flex items-center justify-between gap-3">
                     <div>
                       <h3 className="inline-flex items-center gap-2 font-semibold text-slate-950"><Bot size={17} /> Stockfish Engine</h3>
@@ -3682,20 +3737,60 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId, br
                     </button>
                   </div>
                 </div>
-                <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
-                  {live?.engineEnabled && engineLines.length ? (
-                    <div className="space-y-2">
-                      {engineLines.map((line) => (
-                        <div key={line.multipv} className="rounded-md bg-white px-3 py-2 text-xs text-slate-700">
-                          <span className="mr-2 font-bold text-slate-950">{line.eval}</span>
-                          <span>{line.variation}</span>
+                {live?.engineEnabled ? (
+                  <>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="flex items-center gap-3 rounded-xl border border-slate-200 bg-white p-3">
+                        <span className="grid h-9 w-9 flex-none place-items-center rounded-lg border border-purple-100 bg-purple-50 text-purple-700"><Gauge size={17} /></span>
+                        <div className="min-w-0">
+                          <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">Evaluation</p>
+                          <p className="text-lg font-bold leading-tight text-slate-950">{engineLines[0] ? formatEngineScore(engineLines[0].score) : "–"}</p>
                         </div>
-                      ))}
+                      </div>
+                      <div className="flex items-center gap-3 rounded-xl border border-slate-200 bg-white p-3">
+                        <span className="grid h-9 w-9 flex-none place-items-center rounded-lg border border-purple-100 bg-purple-50 text-purple-700"><Layers size={17} /></span>
+                        <div className="min-w-0">
+                          <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">Depth</p>
+                          <p className="text-lg font-bold leading-tight text-slate-950">
+                            {engineLines[0]?.depth || "–"}
+                            {engineLines.length && !engineDone ? <span className="ml-1 text-xs font-medium text-slate-400">…</span> : null}
+                          </p>
+                        </div>
+                      </div>
                     </div>
-                  ) : (
-                    <p className="break-words text-xs text-slate-600">{live?.engineEnabled ? engineText : "Engine disabled"}</p>
-                  )}
-                </div>
+                    {engineLines.length ? (
+                      <div className="space-y-3">
+                        {engineLines.map((line, index) => (
+                          <div
+                            key={line.multipv}
+                            className={`overflow-hidden rounded-xl border ${index === 0 ? "border-purple-300 border-l-4 border-l-purple-600 bg-purple-50/40" : "border-slate-200 bg-white"}`}
+                          >
+                            <div className={`flex items-center justify-between gap-2 border-b px-3 py-2 ${index === 0 ? "border-purple-100 bg-purple-50/70" : "border-slate-100 bg-slate-50"}`}>
+                              <span className="text-xs font-semibold text-slate-700">
+                                Line {line.multipv}
+                                <span className="ml-2 font-bold text-slate-950">{formatEngineScore(line.score)}</span>
+                              </span>
+                              {line.firstMove ? (
+                                <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-bold ${index === 0 ? "bg-purple-700 text-white" : "bg-purple-100 text-purple-800"}`}>
+                                  <ArrowUpRight size={13} /> {line.firstMove}
+                                </span>
+                              ) : null}
+                            </div>
+                            <p className="break-words px-3 py-2.5 text-xs leading-relaxed text-slate-700">{line.moves}</p>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                        <p className="break-words text-xs text-slate-600">{engineDone ? "No moves to analyse in this position." : engineText}</p>
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                    <p className="text-xs text-slate-600">Engine disabled</p>
+                  </div>
+                )}
               </div>
             )}
 

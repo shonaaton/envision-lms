@@ -66,6 +66,18 @@ fi
 log "Building and starting envision-lms..."
 docker compose up -d --build
 
+# 5b. Reclaim disk. Every build leaves ~1.5 GB in the BuildKit cache (it
+# reached 43 GB by Nov 2026). On this containerd image store the layers are
+# "shared", so `--filter until=` and `--reserved-space` free nothing; only a
+# full prune does. Do that once the disk passes 40%, so most deploys keep their
+# cache and stay fast, and the occasional one after a prune rebuilds in full.
+docker image prune -f >/dev/null || true
+DISK_PCT="$(df --output=pcent / | tail -1 | tr -dc '0-9')"
+if [ "${DISK_PCT:-0}" -ge 40 ]; then
+  log "Disk at ${DISK_PCT}%: clearing Docker build cache..."
+  docker builder prune -af >/dev/null || true
+fi
+
 # 6. Tail logs briefly to confirm boot
 log "Tailing logs for 15s..."
 ( timeout 15 docker compose logs -f envision-lms || true )

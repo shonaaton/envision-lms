@@ -3,14 +3,17 @@
 import dynamic from "next/dynamic";
 import {
   ArrowDownToLine,
+  ArrowUpRight,
   BookOpen,
   ChevronLeft,
   ChevronRight,
   Clipboard,
   Copy,
   FileText,
+  Gauge,
   Grid3X3,
   Info,
+  Layers,
   Maximize2,
   Plus,
   RotateCcw,
@@ -85,10 +88,14 @@ type AnalysisVariationPreview = {
   firstNode?: LichessPgnNode;
 };
 
+type EngineScore = { type: "cp" | "mate"; value: number };
+
 type EngineLine = {
   multipv: number;
-  eval: string;
-  variation: string;
+  score: EngineScore;
+  depth: number;
+  firstMove: string;
+  moves: string;
 };
 
 type PgnLibraryItem = {
@@ -168,11 +175,6 @@ const initialSetup: Record<string, PieceCode> = {
   a1: "R", b1: "N", c1: "B", d1: "Q", e1: "K", f1: "B", g1: "N", h1: "R",
 };
 
-const sampleEngineLines = [
-  { eval: "+0.33", moves: "e4 e6 d4 d5 Nc3 Nf6 e5 Nfd7" },
-  { eval: "+0.32", moves: "Nf3" },
-  { eval: "+0.27", moves: "d4 d5 c4 e6 Nf3 Nf6 g3 c5" },
-];
 
 function normalizeFolderPath(value?: string | null) {
   return String(value || "").trim().replace(/^\/+|\/+$/g, "").replace(/\/{2,}/g, "/");
@@ -280,6 +282,10 @@ export default function AnalysisBoard({ initialFen, withEngine = true, canUseLib
   const pgnDirtyRef = useRef(false);
   const workerRef = useRef<Worker | null>(null);
   const engineJobIdRef = useRef<string | null>(null);
+  // A local search still running when the position changes keeps printing
+  // lines for the old position; count those stale searches and drop their output.
+  const workerSearchingRef = useRef(false);
+  const workerStaleRef = useRef(0);
   const analysisFenRef = useRef(initialPosition || gameRef.current.fen());
   const boardWrapRef = useRef<HTMLDivElement | null>(null);
   const pdfInputRef = useRef<HTMLInputElement | null>(null);
@@ -299,8 +305,6 @@ export default function AnalysisBoard({ initialFen, withEngine = true, canUseLib
   const [pieceTheme, setPieceTheme] = useState<PieceTheme>("classic");
   const [engineOn, setEngineOn] = useState(true);
   const [engineRunning, setEngineRunning] = useState(false);
-  const [bestMove, setBestMove] = useState("");
-  const [evalCp, setEvalCp] = useState<number | null>(null);
   const [engineLines, setEngineLines] = useState<EngineLine[]>([]);
   const [pdfName, setPdfName] = useState("");
   const [gamifiedBoardObjects, setGamifiedBoardObjects] = useState<Record<string, GamifiedObjectId>>({});
@@ -380,23 +384,29 @@ export default function AnalysisBoard({ initialFen, withEngine = true, canUseLib
       worker.postMessage("setoption name MultiPV value 3");
       worker.onmessage = (event) => {
         const line = typeof event.data === "string" ? event.data : "";
-        const best = line.match(/^bestmove\s(\S+)/);
-        const info = line.match(/\bmultipv\s+(\d+).*?\bscore\s+(cp|mate)\s+(-?\d+).*?\bpv\s+(.+)$/);
-        const cp = line.match(/score cp (-?\d+)/);
-        if (info) {
-          const multipv = Number(info[1]);
-          const evalText = info[2] === "mate" ? `M${info[3]}` : formatEval(Number(info[3]));
-          const variation = formatPv(analysisFenRef.current, info[4]);
-          setEngineLines((current) => {
-            const next = current.filter((item) => item.multipv !== multipv);
-            return [...next, { multipv, eval: evalText, variation }].sort((a, b) => a.multipv - b.multipv).slice(0, 3);
-          });
-        }
-        if (best) {
-          setBestMove(best[1]);
+        if (/^bestmove\b/.test(line)) {
+          if (workerStaleRef.current > 0) {
+            workerStaleRef.current -= 1;
+            return;
+          }
+          workerSearchingRef.current = false;
           setEngineRunning(false);
+          return;
         }
-        if (cp) setEvalCp(parseInt(cp[1], 10));
+        if (workerStaleRef.current > 0) return;
+        // Bound scores are mid-search guesses; wait for the exact score.
+        if (/\b(lowerbound|upperbound)\b/.test(line)) return;
+        const info = line.match(/\bscore\s+(cp|mate)\s+(-?\d+).*?\bpv\s+(.+)$/);
+        if (!info) return;
+        const fen = analysisFenRef.current;
+        const multipv = Number(line.match(/\bmultipv\s+(\d+)/)?.[1] || 1);
+        const depth = Number(line.match(/\bdepth\s+(\d+)/)?.[1] || 0);
+        const score = whitePovScore(info[1] as "cp" | "mate", Number(info[2]), fen);
+        const { firstMove, moves } = formatPv(fen, info[3]);
+        setEngineLines((current) => {
+          const next = current.filter((item) => item.multipv !== multipv);
+          return [...next, { multipv, score, depth, firstMove, moves }].sort((a, b) => a.multipv - b.multipv).slice(0, 3);
+        });
       };
     } catch {
       // Analysis board still works without engine assets.
@@ -408,17 +418,25 @@ export default function AnalysisBoard({ initialFen, withEngine = true, canUseLib
     setPosition(gameRef.current.fen());
   }
 
+  const stopLocalSearch = useCallback(() => {
+    const worker = workerRef.current;
+    if (!worker || !workerSearchingRef.current) return;
+    worker.postMessage("stop");
+    workerStaleRef.current += 1;
+    workerSearchingRef.current = false;
+  }, []);
+
   const analyze = useCallback(async (force = false) => {
     const worker = workerRef.current;
     if ((!worker && !withEngine) || (!engineOn && !force)) return;
     analysisFenRef.current = position;
+    stopLocalSearch();
     const previousJobId = engineJobIdRef.current;
     engineJobIdRef.current = null;
     if (previousJobId) {
       void fetch(`/v1/engine/jobs/${previousJobId}`, { method: "DELETE" }).catch(() => undefined);
     }
     setEngineRunning(true);
-    setBestMove("");
     setEngineLines([]);
 
     // Use the shared coordinator first; the local worker remains a resilient fallback.
@@ -448,11 +466,11 @@ export default function AnalysisBoard({ initialFen, withEngine = true, canUseLib
         const lines = Array.isArray(result.lines) ? result.lines : [];
         setEngineLines(lines.map((line: any) => ({
           multipv: Number(line.multipv || 1),
-          eval: line.evaluation?.type === "mate" ? `M${line.evaluation.value}` : formatEval(Number(line.evaluation?.value || 0)),
-          variation: formatPv(position, Array.isArray(line.pv) ? line.pv.join(" ") : String(line.pv || "")),
-        })).slice(0, 3));
-        if (result.bestMove) setBestMove(String(result.bestMove));
-        if (result.evaluation?.type === "cp") setEvalCp(Number(result.evaluation.value));
+          // Server results are raw engine scores, from the side to move.
+          score: whitePovScore(line.evaluation?.type === "mate" ? "mate" : "cp", Number(line.evaluation?.value || 0), position),
+          depth: Number(line.depth || result.depth || 0),
+          ...formatPv(position, Array.isArray(line.pv) ? line.pv.join(" ") : String(line.pv || "")),
+        })).sort((a: EngineLine, b: EngineLine) => a.multipv - b.multipv).slice(0, 3));
         setEngineRunning(false);
         engineJobIdRef.current = null;
         return;
@@ -465,10 +483,12 @@ export default function AnalysisBoard({ initialFen, withEngine = true, canUseLib
       setEngineRunning(false);
       return;
     }
+    stopLocalSearch();
     worker.postMessage("ucinewgame");
     worker.postMessage(`position fen ${position}`);
     worker.postMessage("go depth 16");
-  }, [engineOn, position, withEngine]);
+    workerSearchingRef.current = true;
+  }, [engineOn, position, stopLocalSearch, withEngine]);
 
   function currentAnalysisLine() {
     return variationsRef.current.find((variation) => variation.id === activeLineIdRef.current)?.moves || mainLineMovesRef.current;
@@ -529,8 +549,7 @@ export default function AnalysisBoard({ initialFen, withEngine = true, canUseLib
       setSelectedSquare(null);
       selectedPlyRef.current = branchAt + 1;
       setSelectedPly(branchAt + 1);
-      setBestMove("");
-      setEvalCp(null);
+      setEngineLines([]);
       setTab("engine");
       setGamifiedBoardObjects((current) => {
         if (!current[target]) return current;
@@ -597,8 +616,7 @@ export default function AnalysisBoard({ initialFen, withEngine = true, canUseLib
     const resetFen = normalizeBoardResourceFen(initialFen) || initialFen || startFen;
     gameRef.current = buildAnalysisGame(resetFen);
     baseFenRef.current = resetFen;
-    setBestMove("");
-    setEvalCp(null);
+    setEngineLines([]);
     setEngineLines([]);
     setGamifiedBoardObjects({});
     loadedPgnRef.current = "";
@@ -616,8 +634,7 @@ export default function AnalysisBoard({ initialFen, withEngine = true, canUseLib
     try {
       gameRef.current = new Chess(fen);
       baseFenRef.current = fen;
-      setBestMove("");
-      setEvalCp(null);
+      setEngineLines([]);
       setEngineLines([]);
       setGamifiedBoardObjects(gamifiedObjects || {});
       loadedPgnRef.current = "";
@@ -636,8 +653,7 @@ export default function AnalysisBoard({ initialFen, withEngine = true, canUseLib
       if (!normalizedFen) return false;
       gameRef.current = buildAnalysisGame(normalizedFen);
       baseFenRef.current = normalizedFen;
-      setBestMove("");
-      setEvalCp(null);
+      setEngineLines([]);
       setEngineLines([]);
       setGamifiedBoardObjects(gamifiedObjects || {});
       loadedPgnRef.current = "";
@@ -679,8 +695,7 @@ export default function AnalysisBoard({ initialFen, withEngine = true, canUseLib
       setIntroComments(tree.comments);
       selectedPlyRef.current = moves.length;
       setSelectedPly(moves.length);
-      setBestMove("");
-      setEvalCp(null);
+      setEngineLines([]);
       setEngineLines([]);
       setGamifiedBoardObjects({});
       refreshBoard();
@@ -694,8 +709,7 @@ export default function AnalysisBoard({ initialFen, withEngine = true, canUseLib
       resetAnalysisLines();
       selectedPlyRef.current = 0;
       setSelectedPly(0);
-      setBestMove("");
-      setEvalCp(null);
+      setEngineLines([]);
       setEngineLines([]);
       setGamifiedBoardObjects({});
       setPosition(fen);
@@ -756,10 +770,13 @@ export default function AnalysisBoard({ initialFen, withEngine = true, canUseLib
   }
 
   useEffect(() => {
-    if (!engineOn) return;
+    if (!engineOn) {
+      stopLocalSearch();
+      return;
+    }
     const timer = window.setTimeout(() => analyze(true), 120);
     return () => window.clearTimeout(timer);
-  }, [analyze, engineOn]);
+  }, [analyze, engineOn, stopLocalSearch]);
 
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
@@ -917,8 +934,6 @@ export default function AnalysisBoard({ initialFen, withEngine = true, canUseLib
               isDark={isDark}
               engineOn={engineOn}
               running={engineRunning}
-              bestMove={bestMove}
-              evalCp={evalCp}
               lines={engineLines}
               onToggle={() => {
                 const next = !engineOn;
@@ -952,18 +967,43 @@ function formatEval(cp: number) {
   return `${cp >= 0 ? "+" : ""}${(cp / 100).toFixed(2)}`;
 }
 
+// Engine scores are from the side to move. Turn them into White's point of
+// view so +ve always means White is better, whoever is on move.
+function whitePovScore(type: "cp" | "mate", value: number, fen: string): EngineScore {
+  const blackToMove = fen.split(" ")[1] === "b";
+  return { type, value: blackToMove ? -value : value };
+}
+
+function formatEngineScore(score: EngineScore) {
+  if (score.type === "mate") {
+    if (score.value === 0) return "#";
+    return score.value > 0 ? `#${score.value}` : `-#${Math.abs(score.value)}`;
+  }
+  return formatEval(score.value);
+}
+
 function formatPv(fen: string, pv: string) {
-  const game = new Chess(fen);
-  const san: string[] = [];
-  pv.split(/\s+/).slice(0, 8).forEach((uci) => {
-    try {
-      const move = game.move({ from: uci.slice(0, 2), to: uci.slice(2, 4), promotion: uci[4] || "q" });
-      if (move) san.push(move.san);
-    } catch {
-      // Ignore unreadable engine continuation moves.
-    }
-  });
-  return san.join(" ") || pv;
+  const parts: string[] = [];
+  let firstMove = "";
+  try {
+    const game = new Chess(fen);
+    pv.split(/\s+/).filter(Boolean).slice(0, 14).forEach((uci, index) => {
+      try {
+        const turn = game.turn();
+        const moveNumber = game.moveNumber();
+        const move = game.move({ from: uci.slice(0, 2), to: uci.slice(2, 4), promotion: uci[4] || "q" });
+        if (!move) return;
+        if (!firstMove) firstMove = move.san;
+        if (turn === "w") parts.push(`${moveNumber}. ${move.san}`);
+        else parts.push(index === 0 ? `${moveNumber}... ${move.san}` : move.san);
+      } catch {
+        // Ignore unreadable engine continuation moves.
+      }
+    });
+  } catch {
+    // Unreadable FEN: fall back to the raw engine moves.
+  }
+  return { firstMove, moves: parts.join(" ") || pv };
 }
 
 function pieceCodeToBoardPiece(piece: PieceCode) {
@@ -1238,24 +1278,19 @@ function EnginePanel({
   isDark,
   engineOn,
   running,
-  bestMove,
-  evalCp,
   lines,
   onToggle,
 }: {
   isDark: boolean;
   engineOn: boolean;
   running: boolean;
-  bestMove: string;
-  evalCp: number | null;
   lines: EngineLine[];
   onToggle: () => void;
 }) {
-  const visibleLines = lines.length
-    ? lines.map((line) => ({ eval: line.eval, moves: line.variation }))
-    : bestMove
-      ? [{ eval: evalCp !== null ? formatEval(evalCp) : "0.00", moves: bestMove }, ...sampleEngineLines.slice(1)]
-      : sampleEngineLines;
+  const top = lines[0];
+  const statCard = `flex items-center gap-3 rounded-xl border p-3 ${isDark ? "border-ink-600 bg-black/20" : "border-slate-200 bg-white"}`;
+  const statIcon = `grid h-9 w-9 flex-none place-items-center rounded-lg border ${isDark ? "border-ink-600 bg-white/5 text-blue-200" : "border-brand/20 bg-brand/5 text-brand"}`;
+  const statLabel = `text-[10px] font-semibold uppercase tracking-wider ${isDark ? "text-blue-200/70" : "text-slate-500"}`;
 
   return (
     <div>
@@ -1273,14 +1308,63 @@ function EnginePanel({
         </div>
         <span className="rounded-full bg-brand px-3 py-1 text-xs font-semibold text-white">{running ? "Running" : engineOn ? "Ready" : "Off"}</span>
       </div>
-      <div className="space-y-4">
-        {visibleLines.map((line, index) => (
-          <div key={index} className={`rounded-lg border p-4 shadow-sm ${isDark ? "border-ink-600 bg-black/20" : "border-slate-100 bg-white"}`}>
-            <div className="mb-3 font-semibold">{line.eval}</div>
-            <div className={isDark ? "text-blue-200/80" : "text-blue-900/70"}>{line.moves}</div>
+      {engineOn ? (
+        <div className="space-y-3">
+          <div className="grid grid-cols-2 gap-3">
+            <div className={statCard}>
+              <span className={statIcon}><Gauge size={17} /></span>
+              <div className="min-w-0">
+                <p className={statLabel}>Evaluation</p>
+                <p className="text-lg font-bold leading-tight">{top ? formatEngineScore(top.score) : "–"}</p>
+              </div>
+            </div>
+            <div className={statCard}>
+              <span className={statIcon}><Layers size={17} /></span>
+              <div className="min-w-0">
+                <p className={statLabel}>Depth</p>
+                <p className="text-lg font-bold leading-tight">
+                  {top?.depth || "–"}
+                  {top && running ? <span className={`ml-1 text-xs font-medium ${isDark ? "text-blue-200/60" : "text-slate-400"}`}>…</span> : null}
+                </p>
+              </div>
+            </div>
           </div>
-        ))}
-      </div>
+          {lines.length ? (
+            lines.map((line, index) => {
+              const best = index === 0;
+              return (
+                <div
+                  key={line.multipv}
+                  className={`overflow-hidden rounded-xl border ${best
+                    ? `border-l-4 border-brand ${isDark ? "bg-white/5" : "bg-brand/5"}`
+                    : isDark ? "border-ink-600 bg-black/20" : "border-slate-200 bg-white"}`}
+                >
+                  <div className={`flex items-center justify-between gap-2 border-b px-3 py-2 ${isDark ? "border-ink-600" : best ? "border-brand/15 bg-brand/5" : "border-slate-100 bg-slate-50"}`}>
+                    <span className={`text-xs font-semibold ${isDark ? "text-blue-100" : "text-slate-700"}`}>
+                      Line {line.multipv}
+                      <span className="ml-2 font-bold">{formatEngineScore(line.score)}</span>
+                    </span>
+                    {line.firstMove ? (
+                      <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-bold ${best ? "bg-brand text-white" : isDark ? "bg-white/10 text-blue-100" : "bg-brand/10 text-brand"}`}>
+                        <ArrowUpRight size={13} /> {line.firstMove}
+                      </span>
+                    ) : null}
+                  </div>
+                  <p className={`break-words px-3 py-2.5 text-sm leading-relaxed ${isDark ? "text-blue-200/80" : "text-slate-700"}`}>{line.moves}</p>
+                </div>
+              );
+            })
+          ) : (
+            <p className={`rounded-xl border p-3 text-sm ${isDark ? "border-ink-600 text-blue-200/80" : "border-slate-200 bg-slate-50 text-slate-600"}`}>
+              {running ? "Analysing…" : "No moves to analyse in this position."}
+            </p>
+          )}
+        </div>
+      ) : (
+        <p className={`rounded-xl border p-3 text-sm ${isDark ? "border-ink-600 text-blue-200/80" : "border-slate-200 bg-slate-50 text-slate-600"}`}>
+          Turn on the engine to see the evaluation and best lines.
+        </p>
+      )}
     </div>
   );
 }

@@ -58,6 +58,80 @@ const features = [
   { icon: "✦", title: "Build independent thinking", detail: "Practise explaining why a choice makes sense and taking responsibility for the next move." },
 ];
 
+// Screen-time section: three costs, each a glance, not a paragraph.
+const screenCosts = [
+  {
+    title: "Disrupted sleep",
+    detail: "Screens late in the day can push back bedtime and break up rest.",
+    icon: <path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5Z" />,
+  },
+  {
+    title: "Less active play",
+    detail: "Hours of sitting build sedentary habits associated with weight gain.",
+    icon: (
+      <>
+        <path d="M4 18v-5a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v5" />
+        <path d="M6 11V8a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v3" />
+        <path d="M3 18h18M5 18v2M19 18v2" />
+      </>
+    ),
+  },
+  {
+    title: "A developing brain",
+    detail: "Research links heavy use to changes in the prefrontal cortex.",
+    icon: (
+      <>
+        <path d="M9 4a3 3 0 0 0-3 3 3 3 0 0 0-2 5 3 3 0 0 0 2 5 3 3 0 0 0 6 1V6a2 2 0 0 0-3-2Z" />
+        <path d="M15 4a3 3 0 0 1 3 3 3 3 0 0 1 2 5 3 3 0 0 1-2 5 3 3 0 0 1-6 1" />
+      </>
+    ),
+  },
+];
+
+const prefrontalSkills = ["Attention", "Impulse control", "Decision-making"];
+
+/** Side view of a brain, facing left, with the prefrontal cortex lit. Decorative. */
+function BrainIllustration() {
+  const outline =
+    "M62 150C34 140 24 104 40 76C52 46 88 26 124 30C150 14 192 14 218 30C254 34 284 60 288 96C294 126 276 150 250 158C244 176 222 186 202 180C190 196 166 198 152 188C136 196 112 192 102 178C86 180 68 168 62 150Z";
+  return (
+    <svg className="brain-svg" viewBox="0 0 320 250" role="presentation">
+      <defs>
+        <clipPath id="bfd-brain-clip">
+          <path d={outline} />
+        </clipPath>
+        <radialGradient id="bfd-pfc-glow" cx="0.2" cy="0.4" r="0.34">
+          <stop offset="0" stopColor="#ffe66b" stopOpacity="1" />
+          <stop offset="0.6" stopColor="#ffe66b" stopOpacity="0.75" />
+          <stop offset="1" stopColor="#ffe66b" stopOpacity="0" />
+        </radialGradient>
+      </defs>
+      {/* cerebellum and brain stem sit behind the cerebrum */}
+      <path d="M196 176C204 200 208 214 212 236" className="brain-stem" />
+      <ellipse cx="236" cy="166" rx="34" ry="22" className="brain-cerebellum" />
+      <path d={outline} className="brain-body" />
+      <g clipPath="url(#bfd-brain-clip)">
+        <rect className="pfc" x="0" y="0" width="320" height="250" fill="url(#bfd-pfc-glow)" />
+        <g className="brain-folds">
+          <path d="M132 32C124 64 136 92 122 120C112 142 118 164 104 180" />
+          <path d="M84 52C98 66 92 86 106 98" />
+          <path d="M52 100C70 96 82 108 98 104" />
+          <path d="M60 136C78 130 88 142 104 136" />
+          <path d="M164 26C170 52 158 70 172 92C182 108 176 126 186 146" />
+          <path d="M210 32C204 54 222 66 214 88" />
+          <path d="M150 120C170 116 186 128 206 120C226 112 244 124 262 116" />
+          <path d="M242 54C248 76 266 80 274 104" />
+          <path d="M196 150C212 140 230 150 248 144" />
+        </g>
+      </g>
+      <path d={outline} className="brain-edge" />
+      {/* callout to the lit region */}
+      <circle cx="74" cy="92" r="5" className="pfc-dot" />
+      <path d="M74 92L30 30H8" className="pfc-line" />
+    </svg>
+  );
+}
+
 const pillars = [
   { num: "01 / LEARN", title: "Live, coach-led classes", detail: "Two structured live classes every week, matched to the child's current ability." },
   { num: "02 / PRACTISE", title: "Homework and feedback", detail: "Assignments, practice tools and coach-reviewed work keep learning active between sessions." },
@@ -419,19 +493,45 @@ export default function BookFreeDemoClassPage() {
           <div className="wrap">
             <SectionHead eyebrow="What excessive screen time can cost" />
             <div className="concern-card" data-reveal>
-              <div className="concern-title">
-                The bigger concern may be what excessive screen time means for a <span className="mark">developing brain.</span>
+              <div className="concern-grid">
+                <figure className="concern-visual">
+                  <span className="pfc-label">Prefrontal cortex</span>
+                  <BrainIllustration />
+                  <figcaption>
+                    <span className="pfc-caption">The part of the brain behind</span>
+                    <ul className="pfc-skills">
+                      {prefrontalSkills.map((skill) => (
+                        <li key={skill}>{skill}</li>
+                      ))}
+                    </ul>
+                  </figcaption>
+                </figure>
+                <div className="concern-copy">
+                  <div className="concern-title">
+                    Too much screen time can cost a <span className="mark">developing brain.</span>
+                  </div>
+                  <ul className="concern-costs">
+                    {screenCosts.map((cost, index) => (
+                      <li key={cost.title} style={{ "--i": index } as CSSProperties}>
+                        <span className="cost-icon" aria-hidden="true">
+                          <svg viewBox="0 0 24 24">{cost.icon}</svg>
+                        </span>
+                        <span>
+                          <strong>{cost.title}</strong>
+                          <span>{cost.detail}</span>
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
               </div>
-              <p>
-                Excessive screen time can disrupt sleep and encourage sedentary habits associated with weight gain. But one of the
-                most serious concerns raised in child-health and neuroscience research is its potential relationship with altered
-                brain development, including structural changes in the prefrontal cortex, which plays a vital role in attention,
-                impulse control and decision-making.
-              </p>
+              <div className="concern-turn">
+                <strong>The good news:</strong> every chess move works those same three skills.
+              </div>
               <div className="stat-source">
-                Research context: longitudinal and neuroimaging research on screen use and brain development.{" "}
+                Based on longitudinal and neuroimaging research on screen use and brain development.{" "}
                 <a href="https://pubmed.ncbi.nlm.nih.gov/41173869/" target="_blank" rel="noopener noreferrer">
-                  Read the study ↗
+                  Read the study
                 </a>
               </div>
             </div>

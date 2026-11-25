@@ -42,6 +42,7 @@ const post: BlogPost = {
   updatedAt: "2026-11-25",
   relatedCourses: ["intermediate-chess-course", "semi-pro-chess-course"],
   relatedPosts: [
+    "world-chess-championship-2026-game-2",
     "fide-world-chess-championship-2026",
     "world-chess-championship-2026-predictions",
     "chess-rules-for-beginners",
@@ -190,7 +191,7 @@ const post: BlogPost = {
     { type: "h2", id: "game-2", text: "What's next: Game 2" },
     {
       type: "p",
-      text: "Game 2 is on **Wednesday, 25 November**, starting at **7:30 pm IST** (3:00 pm in Geneva), and this time **Gukesh has the white pieces**. Games 2 and 3 follow on consecutive days before the first rest day on 27 November. We will review the match round by round, so check back on the blog after each game.",
+      text: "Game 2 is on **Wednesday, 25 November**, starting at **7:30 pm IST** (3:00 pm in Geneva), and this time **Gukesh has the white pieces**. Games 2 and 3 follow on consecutive days before the first rest day on 27 November. We will review the match round by round: read our [Game 2 review](/blog/world-chess-championship-2026-game-2) to see how Gukesh's London System went.",
     },
     {
       type: "cta",

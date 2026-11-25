@@ -282,10 +282,7 @@ export default function AnalysisBoard({ initialFen, withEngine = true, canUseLib
   const pgnDirtyRef = useRef(false);
   const workerRef = useRef<Worker | null>(null);
   const engineJobIdRef = useRef<string | null>(null);
-  // A local search still running when the position changes keeps printing
-  // lines for the old position; count those stale searches and drop their output.
-  const workerSearchingRef = useRef(false);
-  const workerStaleRef = useRef(0);
+  const localDepthRef = useRef(0);
   const analysisFenRef = useRef(initialPosition || gameRef.current.fen());
   const boardWrapRef = useRef<HTMLDivElement | null>(null);
   const pdfInputRef = useRef<HTMLInputElement | null>(null);
@@ -375,62 +372,66 @@ export default function AnalysisBoard({ initialFen, withEngine = true, canUseLib
     };
   }, [boardScale]);
 
-  useEffect(() => {
-    if (!withEngine) return;
-    try {
-      const worker = new Worker("/stockfish/stockfish.js");
-      workerRef.current = worker;
-      worker.postMessage("uci");
-      worker.postMessage("setoption name MultiPV value 3");
-      worker.onmessage = (event) => {
-        const line = typeof event.data === "string" ? event.data : "";
-        if (/^bestmove\b/.test(line)) {
-          if (workerStaleRef.current > 0) {
-            workerStaleRef.current -= 1;
-            return;
-          }
-          workerSearchingRef.current = false;
-          setEngineRunning(false);
-          return;
-        }
-        if (workerStaleRef.current > 0) return;
-        // Bound scores are mid-search guesses; wait for the exact score.
-        if (/\b(lowerbound|upperbound)\b/.test(line)) return;
-        const info = line.match(/\bscore\s+(cp|mate)\s+(-?\d+).*?\bpv\s+(.+)$/);
-        if (!info) return;
-        const fen = analysisFenRef.current;
-        const multipv = Number(line.match(/\bmultipv\s+(\d+)/)?.[1] || 1);
-        const depth = Number(line.match(/\bdepth\s+(\d+)/)?.[1] || 0);
-        const score = whitePovScore(info[1] as "cp" | "mate", Number(info[2]), fen);
-        const { firstMove, moves } = formatPv(fen, info[3]);
-        setEngineLines((current) => {
-          const next = current.filter((item) => item.multipv !== multipv);
-          return [...next, { multipv, score, depth, firstMove, moves }].sort((a, b) => a.multipv - b.multipv).slice(0, 3);
-        });
-      };
-    } catch {
-      // Analysis board still works without engine assets.
-    }
-    return () => workerRef.current?.terminate();
-  }, [withEngine]);
+  useEffect(() => () => {
+    workerRef.current?.terminate();
+    workerRef.current = null;
+  }, []);
 
   function refreshBoard() {
     setPosition(gameRef.current.fen());
   }
 
+  // This Stockfish build ignores "stop" mid-search and later reports the old
+  // search's result, so each position gets a fresh worker instead: whatever
+  // the old one was doing dies with it and can't mix into the new lines.
   const stopLocalSearch = useCallback(() => {
-    const worker = workerRef.current;
-    if (!worker || !workerSearchingRef.current) return;
-    worker.postMessage("stop");
-    workerStaleRef.current += 1;
-    workerSearchingRef.current = false;
+    workerRef.current?.terminate();
+    workerRef.current = null;
   }, []);
 
-  const analyze = useCallback(async (force = false) => {
-    const worker = workerRef.current;
-    if ((!worker && !withEngine) || (!engineOn && !force)) return;
-    analysisFenRef.current = position;
+  const startLocalSearch = useCallback((fen: string) => {
     stopLocalSearch();
+    let worker: Worker;
+    try {
+      worker = new Worker("/stockfish/stockfish.js");
+    } catch {
+      return false;
+    }
+    workerRef.current = worker;
+    worker.onmessage = (event) => {
+      if (workerRef.current !== worker) return;
+      const line = typeof event.data === "string" ? event.data : "";
+      if (/^bestmove\b/.test(line)) {
+        setEngineRunning(false);
+        return;
+      }
+      // Bound scores are mid-search guesses; wait for the exact score.
+      if (/\b(lowerbound|upperbound)\b/.test(line)) return;
+      const info = line.match(/\bscore\s+(cp|mate)\s+(-?\d+).*?\bpv\s+(.+)$/);
+      if (!info) return;
+      const multipv = Number(line.match(/\bmultipv\s+(\d+)/)?.[1] || 1);
+      const depth = Number(line.match(/\bdepth\s+(\d+)/)?.[1] || 0);
+      const score = whitePovScore(info[1] as "cp" | "mate", Number(info[2]), fen);
+      const { firstMove, moves } = formatPv(fen, info[3]);
+      if (multipv === 1) localDepthRef.current = depth;
+      setEngineLines((current) => {
+        const next = current.filter((item) => item.multipv !== multipv);
+        return [...next, { multipv, score, depth, firstMove, moves }].sort((a, b) => a.multipv - b.multipv).slice(0, 3);
+      });
+    };
+    worker.onerror = () => {
+      if (workerRef.current === worker) setEngineRunning(false);
+    };
+    worker.postMessage("uci");
+    worker.postMessage("setoption name MultiPV value 3");
+    worker.postMessage(`position fen ${fen}`);
+    worker.postMessage("go depth 18");
+    return true;
+  }, [stopLocalSearch]);
+
+  const analyze = useCallback(async (force = false) => {
+    if (!withEngine || (!engineOn && !force)) return;
+    analysisFenRef.current = position;
     const previousJobId = engineJobIdRef.current;
     engineJobIdRef.current = null;
     if (previousJobId) {
@@ -438,8 +439,15 @@ export default function AnalysisBoard({ initialFen, withEngine = true, canUseLib
     }
     setEngineRunning(true);
     setEngineLines([]);
+    localDepthRef.current = 0;
 
-    // Use the shared coordinator first; the local worker remains a resilient fallback.
+    // The browser engine starts at once, so nobody waits on the server queue
+    // (no free server worker used to mean ~24s of "Analysing..." per move).
+    const localStarted = startLocalSearch(position);
+
+    // The shared server engine runs alongside; its answer is used only if it
+    // arrives for this same position and is at least as deep as ours.
+    let result: any = null;
     try {
       const response = await fetch("/v1/engine/analyse", {
         method: "POST",
@@ -447,11 +455,13 @@ export default function AnalysisBoard({ initialFen, withEngine = true, canUseLib
         body: JSON.stringify({ fen: position, multiPv: 3, depth: 16, source: "ANALYSIS_BOARD" }),
       });
       const created = await response.json().catch(() => null);
-      let result = response.ok ? created?.result : null;
-      if (!result && response.ok && created?.jobId) {
+      result = response.ok ? created?.result : null;
+      if (!result && response.ok && created?.jobId && analysisFenRef.current === position) {
         engineJobIdRef.current = String(created.jobId);
         for (let attempt = 0; attempt < 30; attempt += 1) {
           await new Promise((resolve) => window.setTimeout(resolve, 800));
+          // The board moved on: the next analyse call already cancelled this job.
+          if (analysisFenRef.current !== position) return;
           const jobResponse = await fetch(`/v1/engine/jobs/${created.jobId}`, { cache: "no-store" });
           const job = await jobResponse.json().catch(() => null);
           if (job?.status === "COMPLETED") {
@@ -461,34 +471,32 @@ export default function AnalysisBoard({ initialFen, withEngine = true, canUseLib
           if (job?.status === "FAILED" || job?.status === "CANCELLED") break;
         }
       }
-      if (analysisFenRef.current !== position) return;
-      if (result) {
-        const lines = Array.isArray(result.lines) ? result.lines : [];
-        setEngineLines(lines.map((line: any) => ({
-          multipv: Number(line.multipv || 1),
-          // Server results are raw engine scores, from the side to move.
-          score: whitePovScore(line.evaluation?.type === "mate" ? "mate" : "cp", Number(line.evaluation?.value || 0), position),
-          depth: Number(line.depth || result.depth || 0),
-          ...formatPv(position, Array.isArray(line.pv) ? line.pv.join(" ") : String(line.pv || "")),
-        })).sort((a: EngineLine, b: EngineLine) => a.multipv - b.multipv).slice(0, 3));
-        setEngineRunning(false);
-        engineJobIdRef.current = null;
-        return;
-      }
     } catch {
-      // Fall through to the local worker when the coordinator is unavailable.
+      // The browser engine already covers this position.
     }
+    if (analysisFenRef.current !== position) return;
+    if (engineJobIdRef.current) engineJobIdRef.current = null;
 
-    if (!worker) {
+    const serverLines: EngineLine[] = (Array.isArray(result?.lines) ? result.lines : [])
+      .map((line: any) => ({
+        multipv: Number(line.multipv || 1),
+        // Server results are raw engine scores, from the side to move.
+        score: whitePovScore(line.evaluation?.type === "mate" ? "mate" : "cp", Number(line.evaluation?.value || 0), position),
+        depth: Number(line.depth || result.depth || 0),
+        ...formatPv(position, Array.isArray(line.pv) ? line.pv.join(" ") : String(line.pv || "")),
+      }))
+      .filter((line: EngineLine) => line.firstMove)
+      .sort((a: EngineLine, b: EngineLine) => a.multipv - b.multipv)
+      .slice(0, 3);
+
+    if (serverLines.length && serverLines[0].depth >= localDepthRef.current) {
+      stopLocalSearch();
+      setEngineLines(serverLines);
       setEngineRunning(false);
       return;
     }
-    stopLocalSearch();
-    worker.postMessage("ucinewgame");
-    worker.postMessage(`position fen ${position}`);
-    worker.postMessage("go depth 16");
-    workerSearchingRef.current = true;
-  }, [engineOn, position, stopLocalSearch, withEngine]);
+    if (!localStarted) setEngineRunning(false);
+  }, [engineOn, position, startLocalSearch, stopLocalSearch, withEngine]);
 
   function currentAnalysisLine() {
     return variationsRef.current.find((variation) => variation.id === activeLineIdRef.current)?.moves || mainLineMovesRef.current;

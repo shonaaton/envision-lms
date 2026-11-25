@@ -877,10 +877,6 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId, br
   const activeLoadedPgnRef = useRef<HTMLButtonElement | null>(null);
   const engineRef = useRef<Worker | null>(null);
   const engineFenRef = useRef("");
-  // A search still running when the board changes keeps printing lines for the
-  // old position; count those stale searches and drop their output.
-  const engineSearchingRef = useRef(false);
-  const engineStaleRef = useRef(0);
   const loadInFlightRef = useRef(false);
   const refreshQueuedRef = useRef(false);
   const refreshTimerRef = useRef<number | null>(null);
@@ -1435,63 +1431,57 @@ export default function LiveClassroom({ classroomId, role, userId, sessionId, br
   }, [pgnOpen]);
 
   useEffect(() => {
-    const stopEngineSearch = () => {
-      if (!engineRef.current || !engineSearchingRef.current) return;
-      engineRef.current.postMessage("stop");
-      engineStaleRef.current += 1;
-      engineSearchingRef.current = false;
-    };
+    // This Stockfish build ignores "stop" mid-search and later reports the old
+    // search's result, so each position gets a fresh worker: whatever the old
+    // one was doing dies with it and can't mix into the new lines.
+    engineRef.current?.terminate();
+    engineRef.current = null;
     if (!live?.engineEnabled || !live?.fen || activeTab !== "engine") {
-      stopEngineSearch();
       setEngineLines([]);
       setEngineDone(false);
       if (!live?.engineEnabled) setEngineText("Engine disabled");
       return;
     }
+    const analysisFen = normalizeEngineFen(live.fen);
+    engineFenRef.current = analysisFen;
+    setEngineText("Analyzing...");
+    setEngineLines([]);
+    setEngineDone(false);
+    let worker: Worker;
     try {
-      if (!engineRef.current) {
-        engineRef.current = new Worker("/stockfish/stockfish.js");
-        engineRef.current.onmessage = (event) => {
-          const line = String(event.data || "");
-          if (/^bestmove\b/.test(line)) {
-            if (engineStaleRef.current > 0) {
-              engineStaleRef.current -= 1;
-              return;
-            }
-            engineSearchingRef.current = false;
-            setEngineDone(true);
-            return;
-          }
-          if (engineStaleRef.current > 0) return;
-          // Bound scores are mid-search guesses; wait for the exact score.
-          if (/\b(lowerbound|upperbound)\b/.test(line)) return;
-          const scoreInfo = line.match(/\bscore\s+(cp|mate)\s+(-?\d+).*?\bpv\s+(.+)$/);
-          if (!scoreInfo) return;
-          const fen = engineFenRef.current;
-          const multipv = Number(line.match(/\bmultipv\s+(\d+)/)?.[1] || 1);
-          const depth = Number(line.match(/\bdepth\s+(\d+)/)?.[1] || 0);
-          const score = whitePovScore(scoreInfo[1] as "cp" | "mate", Number(scoreInfo[2]), fen);
-          const { firstMove, moves } = formatEnginePv(fen, scoreInfo[3]);
-          setEngineLines((current) => {
-            const next = current.filter((item) => item.multipv !== multipv);
-            return [...next, { multipv, score, depth, firstMove, moves }].sort((a, b) => a.multipv - b.multipv).slice(0, 3);
-          });
-        };
-        engineRef.current.postMessage("uci");
-        engineRef.current.postMessage("setoption name MultiPV value 3");
-      }
-      stopEngineSearch();
-      const analysisFen = normalizeEngineFen(live.fen);
-      engineFenRef.current = analysisFen;
-      setEngineText("Analyzing...");
-      setEngineLines([]);
-      setEngineDone(false);
-      engineRef.current.postMessage(`position fen ${analysisFen}`);
-      engineRef.current.postMessage("go depth 18");
-      engineSearchingRef.current = true;
+      worker = new Worker("/stockfish/stockfish.js");
     } catch {
       setEngineText("Engine unavailable in this browser session");
+      return;
     }
+    engineRef.current = worker;
+    worker.onmessage = (event) => {
+      if (engineRef.current !== worker) return;
+      const line = String(event.data || "");
+      if (/^bestmove\b/.test(line)) {
+        setEngineDone(true);
+        return;
+      }
+      // Bound scores are mid-search guesses; wait for the exact score.
+      if (/\b(lowerbound|upperbound)\b/.test(line)) return;
+      const scoreInfo = line.match(/\bscore\s+(cp|mate)\s+(-?\d+).*?\bpv\s+(.+)$/);
+      if (!scoreInfo) return;
+      const multipv = Number(line.match(/\bmultipv\s+(\d+)/)?.[1] || 1);
+      const depth = Number(line.match(/\bdepth\s+(\d+)/)?.[1] || 0);
+      const score = whitePovScore(scoreInfo[1] as "cp" | "mate", Number(scoreInfo[2]), analysisFen);
+      const { firstMove, moves } = formatEnginePv(analysisFen, scoreInfo[3]);
+      setEngineLines((current) => {
+        const next = current.filter((item) => item.multipv !== multipv);
+        return [...next, { multipv, score, depth, firstMove, moves }].sort((a, b) => a.multipv - b.multipv).slice(0, 3);
+      });
+    };
+    worker.onerror = () => {
+      if (engineRef.current === worker) setEngineText("Engine unavailable in this browser session");
+    };
+    worker.postMessage("uci");
+    worker.postMessage("setoption name MultiPV value 3");
+    worker.postMessage(`position fen ${analysisFen}`);
+    worker.postMessage("go depth 18");
   }, [activeTab, live?.engineEnabled, live?.fen]);
 
   useEffect(() => () => {

@@ -26,6 +26,7 @@ export async function register() {
   const { processLeaveSweep } = await import("@/lib/leave/leaveService");
   const { processClassMonitorSweep } = await import("@/lib/classMonitor/classMonitorService");
   const { processHolidayAnnouncements } = await import("@/lib/holidays/holidayNotifications");
+  const { processNewBlogPostEmails } = await import("@/lib/blog/newPostMailJob");
   const { sealLegacyTempPasswords } = await import("@/lib/tempPasswordMigration");
   const { processRetentionSweep } = await import("@/lib/retention/retentionSweep");
   const { processTournamentDetailsMonth } = await import("@/lib/retention/tournamentDetailsService");
@@ -107,6 +108,16 @@ export async function register() {
       name: "academy_holiday_announcements",
       intervalMs: 2 * 60_000,
       run: () => processHolidayAnnouncements(),
+    },
+    {
+      /**
+       * A deploy that adds a blog post emails every active user (and a
+       * student's parent) once, with an in-app notice. The first run only
+       * records the posts already live. BLOG_NEW_POST_EMAILS=off pauses it.
+       */
+      name: "blog_new_post_emails",
+      intervalMs: 10 * 60_000,
+      run: () => processNewBlogPostEmails(),
     },
     {
       /**

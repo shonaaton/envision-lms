@@ -35,6 +35,7 @@ const post: BlogPost = {
   updatedAt: "2026-11-25",
   relatedCourses: ["beginner-chess-course", "intermediate-chess-course", "semi-pro-chess-course"],
   relatedPosts: [
+    "world-chess-championship-2026-game-2",
     "world-chess-championship-2026-game-1",
     "world-chess-championship-2026-predictions",
     "why-chennai-is-the-chess-capital-of-india",
@@ -54,7 +55,7 @@ const post: BlogPost = {
     },
     {
       type: "p",
-      text: "**Update, 25 November:** Game 1 ended in a 38-move draw in the Berlin, so the score is ½–½. Read our [World Chess Championship 2026 Game 1 review](/blog/world-chess-championship-2026-game-1) for the key moves and what students can learn from them.",
+      text: "**Update, 25 November:** the score is 1–1 after two draws. Game 1 was a 38-move draw in the Berlin and Game 2 a 20-move draw in the London System. Read our [Game 1 review](/blog/world-chess-championship-2026-game-1) and [Game 2 review](/blog/world-chess-championship-2026-game-2) for the key moves and what students can learn from them.",
     },
     {
       type: "callout",

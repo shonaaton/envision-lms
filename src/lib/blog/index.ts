@@ -36,6 +36,7 @@ import progressGuide from "@/lib/blog/posts/track-your-chess-progress-and-fees";
 import worldChampionship2026 from "@/lib/blog/posts/fide-world-chess-championship-2026";
 import worldChampionshipPredictions from "@/lib/blog/posts/world-chess-championship-2026-predictions";
 import worldChampionshipGame1 from "@/lib/blog/posts/world-chess-championship-2026-game-1";
+import worldChampionshipGame2 from "@/lib/blog/posts/world-chess-championship-2026-game-2";
 
 /**
  * Every published post. A post exists on the site, in the sitemap, on the blog
@@ -66,6 +67,7 @@ const ALL_POSTS: BlogPost[] = [
   worldChampionship2026,
   worldChampionshipPredictions,
   worldChampionshipGame1,
+  worldChampionshipGame2,
   // City guides: each supports one city page (or, for online vs offline, all
   // of them) without targeting that page's own phrases.
   onlineVsOffline,

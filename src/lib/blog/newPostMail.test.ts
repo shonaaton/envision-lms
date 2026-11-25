@@ -50,3 +50,20 @@ describe("addressesFor", () => {
     expect(addressesFor({ role: "student", email: "", parentEmail: "no-email.invalid" })).toEqual([]);
   });
 });
+
+describe("newPostMailHtml", () => {
+  it("keeps a button for every post, escapes text and adds the unsubscribe footer", async () => {
+    const { newPostMailHtml } = await import("@/lib/blog/newPostMail");
+    const html = newPostMailHtml(
+      [{ ...post("a", "2026-11-26"), h1: "Gukesh <b>wins</b>" }, post("b", "2026-11-26")],
+      "https://x.test",
+      "Riya",
+      "https://x.test/unsubscribe/blog/abc/sig"
+    );
+    expect(html).toContain('href="https://x.test/blog/a"');
+    expect(html).toContain('href="https://x.test/blog/b"');
+    expect(html).toContain("Gukesh &lt;b&gt;wins&lt;/b&gt;");
+    expect(html).toContain('href="https://x.test/unsubscribe/blog/abc/sig"');
+    expect(html).toContain("Hello Riya,");
+  });
+});

@@ -48,6 +48,17 @@ const BlogMailRecipientSchema = new Schema(
 );
 BlogMailRecipientSchema.index({ mailing: 1, email: 1 }, { unique: true });
 
+/** An address that asked not to get "new blog post" emails. Per address, because parents have no account. */
+const BlogEmailOptOutSchema = new Schema(
+  {
+    email: { type: String, required: true, unique: true, lowercase: true, trim: true },
+    /** The email the link came from, for the record. */
+    recipient: { type: Schema.Types.ObjectId, ref: "BlogMailRecipient" },
+  },
+  { timestamps: true }
+);
+
+export const BlogEmailOptOut = models.BlogEmailOptOut || model("BlogEmailOptOut", BlogEmailOptOutSchema);
 export const BlogPostMailState = models.BlogPostMailState || model("BlogPostMailState", BlogPostMailStateSchema);
 export const BlogMailing = models.BlogMailing || model("BlogMailing", BlogMailingSchema);
 export const BlogMailRecipient = models.BlogMailRecipient || model("BlogMailRecipient", BlogMailRecipientSchema);

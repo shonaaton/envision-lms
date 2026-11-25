@@ -2,10 +2,11 @@ import "server-only";
 
 import { resolvePublicAppUrl } from "@/lib/appUrl";
 import { blogPosts } from "@/lib/blog";
-import { addressesFor, newPostMailCopy, planNewPostMailing, type MailablePost } from "@/lib/blog/newPostMail";
+import { blogUnsubscribeUrl } from "@/lib/blog/blogMailUnsubscribe";
+import { addressesFor, newPostMailCopy, newPostMailHtml, planNewPostMailing, type MailablePost } from "@/lib/blog/newPostMail";
 import { dbConnect } from "@/lib/db";
 import { sendAutomationEmail } from "@/lib/emailAutomation";
-import { BlogMailing, BlogMailRecipient, BlogPostMailState } from "@/models/BlogMailing";
+import { BlogEmailOptOut, BlogMailing, BlogMailRecipient, BlogPostMailState } from "@/models/BlogMailing";
 import { Notification } from "@/models/Fee";
 import { User } from "@/models/User";
 
@@ -67,7 +68,7 @@ async function claimMailing() {
   );
 }
 
-async function deliverTo(user: any, mailing: any, posts: MailablePost[], baseUrl: string) {
+async function deliverTo(user: any, mailing: any, posts: MailablePost[], baseUrl: string, optedOut: Set<string>) {
   const own = newPostMailCopy(posts, baseUrl, user.name);
   const dedupKey = `blog_new_post:${mailing._id}:${user._id}`;
   await Notification.updateOne(
@@ -87,20 +88,26 @@ async function deliverTo(user: any, mailing: any, posts: MailablePost[], baseUrl
   let sent = 0;
   let failed = 0;
   for (const email of addressesFor(user)) {
+    if (optedOut.has(email)) continue;
     // One copy per address per mailing: siblings share a parent's inbox.
+    let recipient: any;
     try {
-      await BlogMailRecipient.create({ mailing: mailing._id, email });
+      recipient = await BlogMailRecipient.create({ mailing: mailing._id, email });
     } catch (error: any) {
       if (error?.code === 11000) continue;
       throw error;
     }
     const isParent = user.role === "student" && email === String(user.parentEmail || "").toLowerCase() && email !== String(user.email || "").toLowerCase();
-    const copy = isParent ? newPostMailCopy(posts, baseUrl, user.parentName) : own;
+    const greetName = isParent ? user.parentName : user.name;
+    const copy = isParent ? newPostMailCopy(posts, baseUrl, greetName) : own;
+    const unsubscribeUrl = await blogUnsubscribeUrl(baseUrl, String(recipient._id));
     try {
       const result: any = await sendAutomationEmail({
         to: email,
         subject: copy.subject,
-        message: copy.message,
+        message: unsubscribeUrl ? `${copy.message}\n\nUnsubscribe from blog emails: ${unsubscribeUrl}` : copy.message,
+        htmlBody: newPostMailHtml(posts, baseUrl, greetName, unsubscribeUrl),
+        htmlIsFinal: true,
         actionUrl: copy.actionUrl,
         actionLabel: "Read the article",
         metadata: { kind: "blog_new_post", dedupKey: `${dedupKey}:${email}`, userId: String(user._id), mailing: String(mailing._id) },
@@ -133,7 +140,11 @@ async function deliver(mailing: any, baseUrl: string) {
       .limit(CHUNK)
       .lean();
     if (!users.length) break;
-    const results = await Promise.allSettled(users.map((user) => deliverTo(user, mailing, posts, baseUrl)));
+    const addresses = users.flatMap((user) => addressesFor(user));
+    const optedOut = new Set<string>(
+      (await BlogEmailOptOut.find({ email: { $in: addresses } }, { email: 1 }).lean()).map((row: any) => row.email)
+    );
+    const results = await Promise.allSettled(users.map((user) => deliverTo(user, mailing, posts, baseUrl, optedOut)));
     let sent = 0;
     let failed = 0;
     results.forEach((result, index) => {

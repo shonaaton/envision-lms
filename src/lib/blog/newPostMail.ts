@@ -56,3 +56,37 @@ export function addressesFor(user: { role?: string; email?: string | null; paren
   }
   return [...out];
 }
+
+function escapeHtml(value: unknown) {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+/**
+ * The email body as finished HTML. The generic email builder keeps one link
+ * (as the button) and drops every other link line, which would lose the
+ * second and later posts and the unsubscribe link, so this email brings its
+ * own body.
+ */
+export function newPostMailHtml(posts: MailablePost[], baseUrl: string, name: string | undefined, unsubscribeUrl: string) {
+  const link = (post: MailablePost) => `${baseUrl.replace(/\/+$/, "")}/blog/${post.slug}`;
+  const intro = posts.length === 1 ? "We have just published a new article on the Envision Chess Academy blog:" : "We have just published new articles on the Envision Chess Academy blog:";
+  const items = posts
+    .map(
+      (post) =>
+        `<div style="margin:18px 0;padding:14px 16px;border:1px solid #eadff0;border-radius:10px">` +
+        `<p style="margin:0 0 6px;font-weight:700;font-size:16px">${escapeHtml(post.h1)}</p>` +
+        `<p style="margin:0 0 12px;color:#475569">${escapeHtml(post.excerpt)}</p>` +
+        `<a href="${escapeHtml(link(post))}" style="display:inline-block;background:#5a1372;color:#ffffff;text-decoration:none;padding:10px 16px;border-radius:8px;font-weight:700">Read the article</a>` +
+        `</div>`
+    )
+    .join("");
+  const footer = unsubscribeUrl
+    ? `<p style="margin-top:24px;font-size:12px;color:#64748b">You get this email because you have an account with Envision Chess Academy. Don't want emails about new blog articles? <a href="${escapeHtml(unsubscribeUrl)}" style="color:#64748b">Unsubscribe</a>. Class, homework and fee emails are not affected.</p>`
+    : "";
+  return `<p>Hello ${escapeHtml(name?.trim() || "there")},</p><p>${escapeHtml(intro)}</p>${items}<p>Happy reading,<br>Team Envision Chess Academy</p>${footer}`;
+}

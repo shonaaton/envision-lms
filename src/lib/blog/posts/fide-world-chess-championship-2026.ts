@@ -32,9 +32,10 @@ const post: BlogPost = {
   excerpt:
     "India's D. Gukesh defends his title against Uzbekistan's Javokhir Sindarov in Geneva from 24 November. Here is who they are, how the match works, when to watch in India and what to look for.",
   publishedAt: "2026-11-23",
-  updatedAt: "2026-11-25",
+  updatedAt: "2026-11-27",
   relatedCourses: ["beginner-chess-course", "intermediate-chess-course", "semi-pro-chess-course"],
   relatedPosts: [
+    "world-chess-championship-2026-game-3",
     "world-chess-championship-2026-game-2",
     "world-chess-championship-2026-game-1",
     "world-chess-championship-2026-predictions",
@@ -55,7 +56,7 @@ const post: BlogPost = {
     },
     {
       type: "p",
-      text: "**Update, 25 November:** the score is 1–1 after two draws. Game 1 was a 38-move draw in the Berlin and Game 2 a 20-move draw in the London System. Read our [Game 1 review](/blog/world-chess-championship-2026-game-1) and [Game 2 review](/blog/world-chess-championship-2026-game-2) for the key moves and what students can learn from them.",
+      text: "**Update, 27 November:** the score is 1½–1½ after three draws: a 38-move Berlin in Game 1, a 20-move London System in Game 2 and a 60-move fight in Game 3. Read our [Game 1](/blog/world-chess-championship-2026-game-1), [Game 2](/blog/world-chess-championship-2026-game-2) and [Game 3](/blog/world-chess-championship-2026-game-3) reviews for the key moves and what students can learn from them.",
     },
     {
       type: "callout",

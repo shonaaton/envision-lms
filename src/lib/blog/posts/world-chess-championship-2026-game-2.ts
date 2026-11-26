@@ -42,6 +42,7 @@ const post: BlogPost = {
   updatedAt: "2026-11-25",
   relatedCourses: ["beginner-chess-course", "intermediate-chess-course"],
   relatedPosts: [
+    "world-chess-championship-2026-game-3",
     "world-chess-championship-2026-game-1",
     "fide-world-chess-championship-2026",
     "world-chess-championship-2026-predictions",
@@ -177,7 +178,7 @@ const post: BlogPost = {
     { type: "h2", id: "game-3", text: "What's next: Game 3" },
     {
       type: "p",
-      text: "Game 3 is on **Thursday, 26 November**, at **7:30 pm IST** (3:00 pm in Geneva), and **Sindarov has White** again. It is the last game before the first rest day on 27 November. After that, Gukesh has White in Game 4 on Saturday, 28 November. We will review every game here on the blog.",
+      text: "Game 3 is on **Thursday, 26 November**, at **7:30 pm IST** (3:00 pm in Geneva), and **Sindarov has White** again. It is the last game before the first rest day on 27 November. After that, Gukesh has White in Game 4 on Saturday, 28 November. Read our [Game 3 review](/blog/world-chess-championship-2026-game-3) to see how Gukesh's Berlin surprise went.",
     },
     {
       type: "cta",

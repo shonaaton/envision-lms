@@ -2833,6 +2833,18 @@ export const WHATSAPP_TEMPLATE_DEFINITIONS = [
     ]
   },
   {
+    "name": "career_invite",
+    "language": "en",
+    "category": "UTILITY",
+    "sourceAutomation": "careersMessages",
+    "body": "Hello {{1}}, Envision Chess Academy would like you to apply for the {{2}} role. Please fill in the short application form here, your name and number are already filled in: {{3}}\n\nTeam Envision Chess Academy",
+    "variables": [
+      { "position": 1, "key": "applicant_name", "sample": "Priya" },
+      { "position": 2, "key": "role_title", "sample": "Online Chess Coach" },
+      { "position": 3, "key": "form_link", "sample": "https://envisionchessacademy.com/careers/online-chess-coach?invite=3f9c2a7b1d&apply=1" }
+    ]
+  },
+  {
     "name": WHATSAPP_OTP_TEMPLATE_NAME,
     "language": "en",
     "category": "AUTHENTICATION",

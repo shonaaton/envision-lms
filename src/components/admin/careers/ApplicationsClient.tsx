@@ -18,13 +18,15 @@ import {
   Star,
   Trash2,
   UserCheck,
+  UserPlus,
   X,
   XCircle,
 } from "lucide-react";
 import { APPLICATION_STAGES, BASIC_FIELDS, HIRE_ACCOUNT_ROLES, answerText, stageLabel } from "@/lib/careers/careersConfig";
 import type { ApplicationView } from "@/lib/careers/careersService";
+import InvitesPanel from "@/components/admin/careers/InvitesPanel";
 
-type PostingOption = { id: string; title: string; hireRole: string; hireAccessRole: string | null };
+type PostingOption = { id: string; title: string; hireRole: string; hireAccessRole: string | null; accepting?: boolean };
 
 const TONE: Record<string, string> = {
   sky: "bg-sky-100 text-sky-800",
@@ -69,6 +71,8 @@ export default function ApplicationsClient({
     [searchParams]
   );
   const openId = searchParams.get("id") || "";
+  const view = searchParams.get("view") === "invites" ? "invites" : "applications";
+  const [inviteOpen, setInviteOpen] = useState(false);
   const [rows, setRows] = useState<ApplicationView[]>([]);
   const [counts, setCounts] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(true);
@@ -125,12 +129,56 @@ export default function ApplicationsClient({
           <h1 className="text-3xl font-black text-brand">Applications</h1>
           <p className="text-sm text-slate-600">Only applications whose WhatsApp code was entered (or could not be sent) appear here.</p>
         </div>
-        {canExport ? (
+        <div className="flex flex-wrap gap-2">
+        {canEdit ? (
+          <button
+            className="btn-primary"
+            onClick={() => {
+              if (view !== "invites") router.replace(query({ view: "invites", id: "" }));
+              setInviteOpen(true);
+            }}
+          >
+            <UserPlus size={15} /> Invite applicants
+          </button>
+        ) : null}
+        {canExport && view === "applications" ? (
           <a href={`/api/admin/careers/applications/export?${new URLSearchParams({ ...filters, stage: filters.stage === "all" ? "" : filters.stage })}`} className="btn-outline">
             <Download size={15} /> Excel
           </a>
         ) : null}
+        </div>
       </header>
+
+      <div className="inline-flex rounded-xl border border-slate-200 bg-white p-1 text-sm font-black">
+        {([["applications", "Applications"], ["invites", "Invited"]] as const).map(([value, label]) => (
+          <button
+            key={value}
+            onClick={() => router.replace(query({ view: value === "invites" ? "invites" : "", id: "" }))}
+            className={`rounded-lg px-4 py-1.5 ${view === value ? "bg-brand text-white" : "text-slate-600 hover:bg-slate-50"}`}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {view === "invites" ? (
+        <>
+          <select className={inputClass} value={filters.posting} onChange={(event) => router.replace(query({ posting: event.target.value }))}>
+            <option value="">All openings</option>
+            {postings.map((posting) => <option key={posting.id} value={posting.id}>{posting.title}</option>)}
+          </select>
+          <InvitesPanel
+            postings={postings}
+            posting={filters.posting}
+            canEdit={canEdit}
+            canDelete={canDelete}
+            inviteOpen={inviteOpen}
+            setInviteOpen={setInviteOpen}
+            onOpenApplication={(id) => router.replace(query({ view: "", stage: "all", id }))}
+          />
+        </>
+      ) : (
+      <>
 
       <div className="flex flex-wrap gap-2">
         {[{ value: "active", label: "In progress", count: active }, ...APPLICATION_STAGES.map((stage) => ({ value: stage.value, label: stage.label, count: counts[stage.value] || 0 })), { value: "all", label: "All", count: total }].map((chip) => (
@@ -202,6 +250,9 @@ export default function ApplicationsClient({
           </tbody>
         </table>
       </div>
+
+      </>
+      )}
 
       {open ? (
         <Drawer

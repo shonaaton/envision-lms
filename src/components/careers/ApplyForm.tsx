@@ -70,7 +70,20 @@ function questionPages(questions: JobQuestion[]): JobQuestion[][] {
  * Each step is checked with the same validateApplication the API runs, so a
  * step only moves on when the server would accept it.
  */
-export default function ApplyForm({ posting, preview = false, variant = "modal" }: { posting: PostingLike; preview?: boolean; variant?: "modal" | "inline" }) {
+/** From an invite link: the details the team entered, filled in for them. */
+export type InvitePrefill = { token: string; name: string; email: string; countryCode: string; phone: string };
+
+export default function ApplyForm({
+  posting,
+  preview = false,
+  variant = "modal",
+  invite = null,
+}: {
+  posting: PostingLike;
+  preview?: boolean;
+  variant?: "modal" | "inline";
+  invite?: InvitePrefill | null;
+}) {
   const modes = useMemo(() => ({ ...defaultBasicFields(), ...posting.basicFields }) as BasicFieldModes, [posting.basicFields]);
   const questions = useMemo(() => posting.questions.filter((question) => question.active !== false), [posting.questions]);
   const pages = useMemo<Page[]>(() => {
@@ -90,7 +103,11 @@ export default function ApplyForm({ posting, preview = false, variant = "modal" 
   const [open, setOpen] = useState(variant === "inline");
   const [phase, setPhase] = useState<Phase>("form");
   const [pageIndex, setPageIndex] = useState(0);
-  const [basics, setBasics] = useState<Record<string, string>>({ name: "", countryCode: "+91", phone: "" });
+  const [basics, setBasics] = useState<Record<string, string>>(() =>
+    invite
+      ? { name: invite.name, countryCode: invite.countryCode || "+91", phone: invite.phone, ...(invite.email ? { email: invite.email } : {}) }
+      : { name: "", countryCode: "+91", phone: "" }
+  );
   const [answers, setAnswers] = useState<Record<string, unknown>>({});
   const [resume, setResume] = useState<File | null>(null);
   const [website, setWebsite] = useState("");
@@ -203,7 +220,7 @@ export default function ApplyForm({ posting, preview = false, variant = "modal" 
     fail("");
     try {
       const body = new FormData();
-      body.set("payload", JSON.stringify({ ...basics, answers, postingId: posting.id, website, sourcePath: window.location.pathname }));
+      body.set("payload", JSON.stringify({ ...basics, answers, postingId: posting.id, website, sourcePath: window.location.pathname, ...(invite ? { inviteToken: invite.token } : {}) }));
       if (resume) body.set("resume", resume);
       const response = await fetch("/api/careers/apply", { method: "POST", body });
       const payload = await response.json().catch(() => ({}));

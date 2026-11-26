@@ -40,6 +40,7 @@ export async function register() {
   const { processDueDemoLeadReminders } = await import("@/lib/demoLeadReminders");
   const { processDueDemoLeadWhatsApp } = await import("@/lib/demoLeadWhatsApp");
   const { processDueOfflineLeadReminders } = await import("@/lib/offlineLeads");
+  const { processInviteReminders } = await import("@/lib/careers/inviteService");
 
   installRuntimeProcessLogging();
   installRuntimeStderrCapture();
@@ -275,6 +276,15 @@ export async function register() {
       name: "weekly_engagement_messages",
       intervalMs: 60 * 60_000,
       run: () => processWeeklyEngagement(),
+    },
+    {
+      /**
+       * Careers invites: one automatic reminder 3 days after the invite to
+       * anyone who has not applied (10:00-19:00 IST, claimed per invite).
+       */
+      name: "careers_invite_reminders",
+      intervalMs: 60 * 60_000,
+      run: () => processInviteReminders(),
     },
     {
       /**

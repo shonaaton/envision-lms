@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { dbConnect } from "@/lib/db";
 import { LIVE_STAGES, isPostingAcceptingApplications, validateApplication } from "@/lib/careers/careersConfig";
 import { announceJobApplication } from "@/lib/careers/careersService";
+import { inviteIdForToken } from "@/lib/careers/inviteService";
 import { removeResume, saveResume, type StoredResume } from "@/lib/careers/resumeFiles";
 import { exactNationalNumber } from "@/lib/phoneCountryCodes";
 import { consumeRateLimit, getClientIp, jsonRateLimitHeaders } from "@/lib/requestSecurity";
@@ -68,7 +69,9 @@ export async function POST(req: Request) {
 
     if (hasFile && posting.resume !== "off") stored = await saveResume(file as File);
 
+    const invite = await inviteIdForToken(payload.inviteToken, posting._id).catch(() => undefined);
     const fields = {
+      ...(invite ? { invite } : {}),
       posting: posting._id,
       postingTitle: posting.title,
       department: posting.department,

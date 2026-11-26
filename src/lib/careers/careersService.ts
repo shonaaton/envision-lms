@@ -264,6 +264,7 @@ export async function announceJobApplication(id: string) {
     raiseJobApplicationTask(application, reviewers.find((person) => person.userId)?.userId || null),
     sendApplicationReceived(application),
     notifyReviewersAboutApplication(application, reviewers).catch((error) => console.error("[careers] reviewer notice failed", error)),
+    import("@/lib/careers/inviteService").then(({ markInviteApplied }) => markInviteApplied(application)).catch((error) => console.error("[careers] invite update failed", error)),
   ]);
 }
 

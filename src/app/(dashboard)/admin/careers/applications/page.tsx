@@ -20,7 +20,7 @@ export default async function CareersApplicationsPage() {
   return (
     <Suspense>
       <ApplicationsClient
-        postings={postings.map((posting) => ({ id: posting.id, title: posting.title, hireRole: posting.hireRole, hireAccessRole: posting.hireAccessRole }))}
+        postings={postings.map((posting) => ({ id: posting.id, title: posting.title, hireRole: posting.hireRole, hireAccessRole: posting.hireAccessRole, accepting: posting.accepting }))}
         accessRoles={accessRoles}
         canEdit={Boolean(canEdit)}
         canHire={Boolean(canHire)}

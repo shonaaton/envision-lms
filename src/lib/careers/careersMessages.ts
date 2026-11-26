@@ -149,6 +149,25 @@ export function sendHired(application: Applicant) {
 }
 
 /**
+ * The invite to apply ("Invite applicants"), and its reminders: the same
+ * career_invite template both times, so only one waits on Meta.
+ */
+export function sendInvite(invite: Applicant & { link: string }, reminder = false) {
+  const role = invite.postingTitle || "an open";
+  const name = firstName(invite.name);
+  return toApplicant(invite, {
+    kind: "career_invite",
+    template: "career_invite",
+    params: [name, role, invite.link],
+    subject: reminder ? `Reminder: your application for ${role}` : `You're invited to apply - ${role}`,
+    message: reminder
+      ? `Hello ${name},\n\nA quick reminder: we would still like you to apply for the ${role} role at Envision Chess Academy. The short form takes a few minutes, and your name and number are already filled in.\n\nFill it in here: ${invite.link}${SIGN_OFF}`
+      : `Hello ${name},\n\nEnvision Chess Academy would like to invite you to apply for the ${role} role. Please fill in the short application form - your name and number are already filled in.\n\nFill it in here: ${invite.link}${SIGN_OFF}`,
+    actionUrl: invite.link,
+  });
+}
+
+/**
  * Tells the careers reviewers (Sayan Bose and Dhritabrata Kundu, see
  * careersPeople.ts) about a new, verified application: an email and an in-app
  * notification each.

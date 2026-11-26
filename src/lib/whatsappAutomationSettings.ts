@@ -18,6 +18,8 @@ export const OFF_UNTIL_ENABLED_TEMPLATES: ReadonlySet<string> = new Set<string>(
   "career_interview_scheduled",
   "career_application_update",
   "career_hired",
+  // Careers invites (2026-11-27): invite + reminders share it; email and the copied link work meanwhile.
+  "career_invite",
 ]);
 
 export function defaultTemplateEnabled(templateName: string) {

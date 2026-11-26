@@ -87,6 +87,7 @@ function actionLabelFromKind(kind?: unknown) {
     welcome: "Sign In",
     career_application_received: "View Openings",
     career_application_admin: "Review Application",
+    career_invite: "Fill In the Form",
   };
   return labels[String(kind || "")] || "Open in LMS";
 }

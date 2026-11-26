@@ -6,6 +6,7 @@ import ApplyForm, { ApplyNowButton } from "@/components/careers/ApplyForm";
 import { MarketingFooter, MarketingHeader } from "@/components/marketing/MarketingChrome";
 import { EMPLOYMENT_TYPES, JOB_DEPARTMENTS, WORK_MODES, labelOf } from "@/lib/careers/careersConfig";
 import { getPublicPosting } from "@/lib/careers/careersService";
+import { inviteForForm } from "@/lib/careers/inviteService";
 import { publicMetadata } from "@/lib/seo";
 
 export const dynamic = "force-dynamic";
@@ -21,9 +22,12 @@ export async function generateMetadata({ params }: { params: { slug: string } })
   });
 }
 
-export default async function CareerOpeningPage({ params }: { params: { slug: string } }) {
+export default async function CareerOpeningPage({ params, searchParams }: { params: { slug: string }; searchParams?: { invite?: string | string[] } }) {
   const posting = await getPublicPosting(params.slug).catch(() => null);
   if (!posting) notFound();
+  // An invite link (?invite=) fills in the name, number and email the team entered.
+  const inviteToken = Array.isArray(searchParams?.invite) ? searchParams?.invite[0] : searchParams?.invite;
+  const invite = inviteToken && posting.accepting ? await inviteForForm(inviteToken, posting.id).catch(() => null) : null;
 
   return (
     <main className="landing-compact min-h-screen bg-white text-brand-900">
@@ -65,7 +69,7 @@ export default async function CareerOpeningPage({ params }: { params: { slug: st
         </div>
         <div id="apply" className="lg:sticky lg:top-24">
           {posting.accepting ? (
-            <ApplyForm posting={posting} />
+            <ApplyForm posting={posting} invite={invite} />
           ) : (
             <div className="rounded-2xl border border-brand/10 bg-[#fbf8fc] p-6">
               <h2 className="text-lg font-black">This role is closed</h2>

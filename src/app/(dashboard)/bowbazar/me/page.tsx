@@ -1,3 +1,4 @@
+import { redirectToLogin } from "@/lib/redirectToLogin";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { BookOpenCheck, CalendarDays, NotebookPen, Repeat, Trophy, Video } from "lucide-react";
@@ -32,7 +33,7 @@ const STATUS_STYLE: Record<string, string> = {
 export default async function BowbazarMyClassPage() {
   const session = await auth();
   const user = session?.user as any;
-  if (!user) redirect("/login");
+  if (!user) redirectToLogin();
   if (!user.branch || user.role !== "student") redirect(user.branch ? "/bowbazar" : "/dashboard");
   const [view, log] = await Promise.all([myBranchView(String(user.id)), myClassLog(String(user.id))]);
   const homeworkToDo = (log?.homework || []).filter((item) => !item.submitted).length;

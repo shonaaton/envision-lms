@@ -1,3 +1,4 @@
+import { redirectToLogin } from "@/lib/redirectToLogin";
 import Link from "next/link";
 import { rosterForSession } from "@/lib/classroomStudentExits";
 import { notFound, redirect } from "next/navigation";
@@ -234,7 +235,7 @@ export default async function ClassroomSummaryPage({
   searchParams: { session?: string };
 }) {
   const session = await auth();
-  if (!session) redirect("/login");
+  if (!session) redirectToLogin();
   const userId = (session.user as any).id;
   const role = (session.user as any).role as "student" | "instructor" | "admin" | "sub-admin";
   if (!(await canAccessFeature("classrooms", session.user as any, "view"))) redirect("/dashboard");

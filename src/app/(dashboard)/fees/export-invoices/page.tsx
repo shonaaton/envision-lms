@@ -1,3 +1,4 @@
+import { redirectToLogin } from "@/lib/redirectToLogin";
 import { auth } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import { Download, FileSpreadsheet, Globe2, Plus } from "lucide-react";
@@ -34,7 +35,7 @@ function shortDate(key: string) {
 
 export default async function ExportInvoicesPage({ searchParams }: { searchParams?: Promise<Record<string, string | string[] | undefined>> }) {
   const session = await auth();
-  if (!(session?.user as any)?.id) redirect("/login");
+  if (!(session?.user as any)?.id) redirectToLogin();
   const permissions = await getFeaturePermissionState("feeReports", session!.user as any, ["view", "export"]);
   if (!isFeesManager((session!.user as any).role) || !(permissions.view || permissions.export)) redirect("/fees");
   const params = searchParams ? await searchParams : {};

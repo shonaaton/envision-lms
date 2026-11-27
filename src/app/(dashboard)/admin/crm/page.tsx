@@ -1,3 +1,4 @@
+import { redirectToLogin } from "@/lib/redirectToLogin";
 import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { canAccessFeature } from "@/lib/featureAccess";
@@ -9,7 +10,7 @@ export const dynamic = "force-dynamic";
 export default async function CrmAdminPage() {
   const session = await auth();
   const user = session?.user as any;
-  if (!user?.id) redirect("/login");
+  if (!user?.id) redirectToLogin();
   if (!(await canAccessFeature("crmAdmin", user, "view"))) redirect("/dashboard");
 
   const health = await getCrmHealth();

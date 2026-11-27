@@ -1,3 +1,4 @@
+import { redirectToLogin } from "@/lib/redirectToLogin";
 import { dbConnect } from "@/lib/db";
 import { getFeaturePermissionState } from "@/lib/featureAccess";
 import { isFeesManager } from "@/lib/feesAccess";
@@ -45,7 +46,7 @@ export default async function DeletedInvoicesPage({ searchParams }: { searchPara
   const session = await auth();
   const role = (session?.user as any)?.role;
   const userId = (session?.user as any)?.id;
-  if (!userId) redirect("/login");
+  if (!userId) redirectToLogin();
   if (!isFeesManager(role)) redirect("/fees");
 
   const permissions = await getFeaturePermissionState("invoices", session!.user as any, ["view", "edit"]);

@@ -1,3 +1,4 @@
+import { redirectToLogin } from "@/lib/redirectToLogin";
 import { redirect } from "next/navigation";
 
 import { auth } from "@/lib/auth";
@@ -8,7 +9,7 @@ export const dynamic = "force-dynamic";
 
 export default async function ClosedClassroomsPage() {
   const session = await auth();
-  if (!session) redirect("/login");
+  if (!session) redirectToLogin();
   const role = String((session.user as any).role || "");
   if (!["admin", "sub-admin", "instructor"].includes(role)) redirect("/classrooms");
   if (!(await canAccessFeature("classrooms", session.user as any, "view"))) redirect("/dashboard?restricted=1");

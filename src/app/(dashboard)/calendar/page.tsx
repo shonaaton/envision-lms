@@ -1,3 +1,4 @@
+import { redirectToLogin } from "@/lib/redirectToLogin";
 import { auth } from "@/lib/auth";
 import { dbConnect } from "@/lib/db";
 import CalendarWorkspace from "@/components/calendar/CalendarWorkspace";
@@ -9,7 +10,7 @@ export const dynamic = "force-dynamic";
 
 export default async function CalendarPage() {
   const session = await auth();
-  if (!session) redirect("/login");
+  if (!session) redirectToLogin();
   const role = ((session.user as any)?.role || "student") as "student" | "instructor" | "admin" | "sub-admin";
   const userId = (session?.user as any)?.id;
   const canJoin = await canAccessFeature("classrooms", session.user as any, "join");

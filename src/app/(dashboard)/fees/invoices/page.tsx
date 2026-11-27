@@ -1,3 +1,4 @@
+import { redirectToLogin } from "@/lib/redirectToLogin";
 import { auth } from "@/lib/auth";
 import { resolvePublicAppUrl } from "@/lib/appUrl";
 import { dbConnect } from "@/lib/db";
@@ -674,7 +675,7 @@ export default async function FeeInvoicesPage({ searchParams }: { searchParams?:
   const session = await auth();
   const role = (session?.user as any)?.role;
   const userId = (session?.user as any)?.id;
-  if (!userId) redirect("/login");
+  if (!userId) redirectToLogin();
   const permissions = await getFeaturePermissionState("invoices", session!.user as any, ["view", "invoice", "edit", "payment", "credit", "export"]);
   if (!permissions.view) redirect("/dashboard");
   const manager = isFeesManager(role);

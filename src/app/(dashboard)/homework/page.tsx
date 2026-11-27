@@ -1,3 +1,4 @@
+import { redirectToLogin } from "@/lib/redirectToLogin";
 import { auth } from "@/lib/auth";
 import { dbConnect } from "@/lib/db";
 import { Homework, Submission } from "@/models/Homework";
@@ -96,7 +97,7 @@ type TrackingTab = "all" | "pending" | "submitted" | "late";
 
 export default async function HomeworkListPage({ searchParams }: { searchParams?: { status?: string } }) {
   const session = await auth();
-  if (!session?.user) redirect("/login");
+  if (!session?.user) redirectToLogin();
   const userId = (session?.user as any).id;
   const role = (session?.user as any).role;
   // Branch staff track their branch's homework; it is kept off the online lists.

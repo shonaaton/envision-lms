@@ -1,3 +1,4 @@
+import { redirectToLogin } from "@/lib/redirectToLogin";
 import { auth } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import DashboardFrame from "@/components/layout/DashboardFrame";
@@ -22,7 +23,7 @@ export const dynamic = "force-dynamic";
 
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
   const session = await auth();
-  if (!session?.user) redirect("/login");
+  if (!session?.user) redirectToLogin();
   const role = (session.user as any).role as "student" | "instructor" | "admin" | "sub-admin";
   const accountStatus = (session.user as any).accountStatus;
   const isSuperAdmin = await isSuperAdminSession(session.user as any);

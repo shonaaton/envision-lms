@@ -1,3 +1,4 @@
+import { redirectToLogin } from "@/lib/redirectToLogin";
 import { redirect } from "next/navigation";
 import { ChessDashboardClient, StudentSelectorClient } from "@/components/chess/ChessDashboardClient";
 import { auth } from "@/lib/auth";
@@ -9,7 +10,7 @@ export const dynamic = "force-dynamic";
 
 export default async function AdminPlayerAnalyticsPage({ searchParams }: { searchParams: { studentId?: string; q?: string; status?: string } }) {
   const session = await auth();
-  if (!session?.user) redirect("/login");
+  if (!session?.user) redirectToLogin();
   if (!(await canAccessFeature("playerAnalytics", session.user as any, "view_all"))) redirect("/dashboard?restricted=1");
   if (searchParams.studentId) {
     const access = await resolveAuthorizedChessStudent(searchParams.studentId, "view");

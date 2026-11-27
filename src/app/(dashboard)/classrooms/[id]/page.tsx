@@ -1,3 +1,4 @@
+import { redirectToLogin } from "@/lib/redirectToLogin";
 import { auth } from "@/lib/auth";
 import { dbConnect } from "@/lib/db";
 import { deriveScheduledSessionStatus, isJoinWindowOpenOnServer } from "@/lib/classroomSessions";
@@ -52,7 +53,7 @@ function pickScheduledSession(classroom: any, requestedSessionId: string | undef
 
 export default async function ClassroomDetail({ params, searchParams }: { params: { id: string }; searchParams: { session?: string } }) {
   const session = await auth();
-  if (!session) redirect("/login");
+  if (!session) redirectToLogin();
   const userId = (session?.user as any).id;
   const role = (session?.user as any).role as "student" | "instructor" | "admin" | "sub-admin";
   if (!(await canAccessFeature("classrooms", session.user as any, "join"))) redirect("/classrooms");

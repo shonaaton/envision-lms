@@ -1,3 +1,4 @@
+import { redirectToLogin } from "@/lib/redirectToLogin";
 import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { dbConnect } from "@/lib/db";
@@ -10,7 +11,7 @@ export const dynamic = "force-dynamic";
 
 export default async function ProfilePage() {
   const session = await auth();
-  if (!session?.user) redirect("/login");
+  if (!session?.user) redirectToLogin();
 
   const role = (session.user as any).role as string;
   if (!["student", "instructor", "admin", "sub-admin"].includes(role)) redirect("/dashboard");
@@ -22,7 +23,7 @@ export default async function ProfilePage() {
     .select("name username email countryCode phone role accountStatus city country gender avatar fideId rating studentLevel parentName")
     .lean();
 
-  if (!user) redirect("/login");
+  if (!user) redirectToLogin();
 
   const storedAvatar = String(user.avatar || "");
   const safeAvatar =

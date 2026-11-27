@@ -1,3 +1,4 @@
+import { redirectToLogin } from "@/lib/redirectToLogin";
 import { auth } from "@/lib/auth";
 import { dbConnect } from "@/lib/db";
 import { User } from "@/models/User";
@@ -29,7 +30,7 @@ export default async function LeaderboardPage({
   searchParams: { scope?: string; rankBy?: string; batch?: string; course?: string; level?: string; classroom?: string };
 }) {
   const session = await auth();
-  if (!session) redirect("/login");
+  if (!session) redirectToLogin();
   const role = (session.user as any).role as "student" | "instructor" | "admin" | "sub-admin";
   const userId = (session.user as any).id as string;
   const privilegedViewer = role === "admin" || role === "sub-admin";

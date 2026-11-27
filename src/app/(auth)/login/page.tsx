@@ -25,6 +25,7 @@ import {
 import { ACADEMY_LOGO_URL } from "@/lib/branding";
 import { publicAchievementList } from "@/lib/achievementData";
 import { SESSION_ENDED_COOKIE } from "@/lib/sessionNotices";
+import { safeReturnPath } from "@/lib/returnPath";
 
 const portalBenefits = [
   { label: "Join upcoming classes", value: "Live classroom links and schedule reminders", icon: CalendarDays },
@@ -119,7 +120,8 @@ export default function LoginPage() {
       window.localStorage.removeItem(rememberedLoginKey);
     }
     toast.success("Welcome back");
-    router.push("/dashboard");
+    // Back to the page that sent them here (an exam or class link), else the dashboard.
+    router.push(safeReturnPath(new URLSearchParams(window.location.search).get("callbackUrl")));
     router.refresh();
   }
 

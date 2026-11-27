@@ -1,3 +1,4 @@
+import { redirectToLogin } from "@/lib/redirectToLogin";
 import { auth } from "@/lib/auth";
 import { dbConnect } from "@/lib/db";
 import { formatINR } from "@/lib/utils";
@@ -70,7 +71,7 @@ export default async function CreditHistoryPage() {
   const session = await auth();
   const role = (session?.user as any)?.role;
   const userId = (session?.user as any)?.id;
-  if (!userId) redirect("/login");
+  if (!userId) redirectToLogin();
   if (!(await canAccessFeature("studentFees", session!.user as any, "view"))) redirect("/dashboard");
   const manager = isFeesManager(role);
 

@@ -1,3 +1,4 @@
+import { redirectToLogin } from "@/lib/redirectToLogin";
 import { auth } from "@/lib/auth";
 import { dbConnect } from "@/lib/db";
 import { createInvoice, getAcademySettings, invoiceBreakup, markInvoicePaid } from "@/lib/fees";
@@ -202,7 +203,7 @@ async function createManualInvoice(formData: FormData): Promise<CreateInvoiceRes
 export default async function NewInvoicePage({ searchParams }: { searchParams?: Promise<Record<string, string | string[] | undefined>> }) {
   const session = await auth();
   const userId = (session?.user as any)?.id;
-  if (!userId) redirect("/login");
+  if (!userId) redirectToLogin();
   const permissions = await getFeaturePermissionState("invoices", session!.user as any, ["view", "invoice", "payment", "credit"]);
   if (!permissions.view || !permissions.invoice || !isFeesManager((session!.user as any)?.role)) redirect("/fees/invoices");
   await dbConnect();

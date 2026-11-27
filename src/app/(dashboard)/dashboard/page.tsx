@@ -1,3 +1,4 @@
+import { redirectToLogin } from "@/lib/redirectToLogin";
 import { branchAccountIds, onlineActivityFilter } from "@/lib/branch/hideFromOnline";
 import { auth } from "@/lib/auth";
 import { dbConnect } from "@/lib/db";
@@ -2316,7 +2317,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Da
   const session = await auth();
   // The layout redirects too, but a page renders alongside its layout rather
   // than after it - without this the page runs on for a user who is not there.
-  if (!session?.user) redirect("/login");
+  if (!session?.user) redirectToLogin();
   const userId = (session?.user as any)?.id;
   const role = (session?.user as any)?.role as "student" | "instructor" | "admin" | "sub-admin" | undefined;
 

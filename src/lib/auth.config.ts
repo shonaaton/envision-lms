@@ -1,6 +1,7 @@
 import type { NextAuthConfig } from "next-auth";
 import { isInactiveRestrictedPath } from "./inactiveAccess";
 import { branchHomePath, isBranchAllowedPath } from "./branch/paths";
+import { DEFAULT_RETURN_PATH, safeReturnPath } from "./returnPath";
 
 /**
  * Edge-safe NextAuth config (no DB imports).
@@ -166,7 +167,14 @@ export const authConfig = {
       // Node route /api/auth/resume checks and then continues to /dashboard.
       // Sending a deleted account straight to /dashboard looped: the dashboard
       // found no account and sent it back here.
-      if (isLoginRoute && isLoggedIn) return Response.redirect(new URL("/api/auth/resume", nextUrl));
+      if (isLoginRoute && isLoggedIn) {
+        // Already signed in and sent to /login by an old tab or a link: keep the page
+        // they were going to (an exam, a class) so resume can continue there.
+        const resume = new URL("/api/auth/resume", nextUrl);
+        const back = safeReturnPath(nextUrl.searchParams.get("callbackUrl"));
+        if (back !== DEFAULT_RETURN_PATH) resume.searchParams.set("callbackUrl", back);
+        return Response.redirect(resume);
+      }
       if (isAuthRoute) return true;
       if (!isLoggedIn) return false; // triggers redirect to signIn
       if (isInactiveAccount && isInactiveRestrictedPath(nextUrl.pathname)) return Response.redirect(new URL("/dashboard", nextUrl));

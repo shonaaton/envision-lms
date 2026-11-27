@@ -1,3 +1,4 @@
+import { redirectToLogin } from "@/lib/redirectToLogin";
 import { auth } from "@/lib/auth";
 import { dbConnect } from "@/lib/db";
 import { ensureMonthlyInvoices } from "@/lib/fees";
@@ -53,7 +54,7 @@ export default async function FeesDashboardPage() {
   const session = await auth();
   const role = (session?.user as any)?.role;
   const userId = (session?.user as any)?.id;
-  if (!userId) redirect("/login");
+  if (!userId) redirectToLogin();
   const [dashboardPermissions, feePlanPermissions, studentFeePermissions, creditPermissions, invoicePermissions, reportPermissions] = await Promise.all([
     getFeaturePermissionState("feeDashboard", session!.user as any, ["view"]),
     getFeaturePermissionState("feePlans", session!.user as any, ["view", "edit"]),

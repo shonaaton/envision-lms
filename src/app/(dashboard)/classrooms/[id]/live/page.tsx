@@ -1,3 +1,4 @@
+import { redirectToLogin } from "@/lib/redirectToLogin";
 import { auth } from "@/lib/auth";
 import { dbConnect } from "@/lib/db";
 import { deriveScheduledSessionStatus, isJoinWindowOpenOnServer } from "@/lib/classroomSessions";
@@ -58,7 +59,7 @@ function bounce(destination: string, reason: string): never {
 
 export default async function ClassroomLivePage({ params, searchParams }: { params: { id: string }; searchParams: { session?: string } }) {
   const session = await auth();
-  if (!session) redirect("/login");
+  if (!session) redirectToLogin();
   const userId = (session?.user as any).id;
   const role = (session?.user as any).role as "student" | "instructor" | "admin" | "sub-admin";
   if (!(await canAccessFeature("classrooms", session.user as any, "join"))) bounce("/classrooms", "no_join_permission");

@@ -1,6 +1,7 @@
 import { cookies } from "next/headers";
 import { getSessionAccountState, signOut } from "@/lib/auth";
 import { SESSION_ENDED_COOKIE } from "@/lib/sessionNotices";
+import { safeReturnPath } from "@/lib/returnPath";
 
 export const dynamic = "force-dynamic";
 
@@ -22,7 +23,7 @@ export const dynamic = "force-dynamic";
  * itself. Redirects are relative: behind the proxy, the request URL does not
  * carry the public host.
  */
-export async function GET() {
+export async function GET(request: Request) {
   const state = await getSessionAccountState();
   if (state === "missing") {
     // Tells the login page why it is showing. A cookie rather than only the
@@ -33,7 +34,8 @@ export async function GET() {
     // and redirects; throws, like every Next.js redirect.
     await signOut({ redirectTo: "/login?session=ended" });
   }
-  if (state === "exists") return redirectTo("/dashboard");
+  // On to the page that sent them to /login (an exam or class link), else the dashboard.
+  if (state === "exists") return redirectTo(safeReturnPath(new URL(request.url).searchParams.get("callbackUrl")));
   if (state === "none") return redirectTo("/login");
   return new Response(UNAVAILABLE_PAGE, {
     status: 503,

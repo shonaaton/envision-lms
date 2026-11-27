@@ -1,4 +1,5 @@
-import { notFound, redirect } from "next/navigation";
+import { redirectToLogin } from "@/lib/redirectToLogin";
+import { notFound } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { dbConnect } from "@/lib/db";
 import { Batch } from "@/models/Batch";
@@ -12,7 +13,7 @@ const UNASSIGNED_GROUP_NAME = "Unassigned Batches";
 
 export default async function ClassroomGroupPage({ params }: { params: { id: string } }) {
   const session = await auth();
-  if (!session) redirect("/login");
+  if (!session) redirectToLogin();
 
   const user = session.user as any;
   const role = user.role as "student" | "instructor" | "admin" | "sub-admin";

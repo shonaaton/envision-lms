@@ -14,7 +14,7 @@ import {
   FULL_DAY_NOTICE_HOURS,
   LEAVE_HREF,
   MARKETING_ACCESS_ROLE_NAME_KEY,
-  MAX_HALF_DAY_CLASSES,
+  HALF_DAY_HOURS,
   MAX_LEAVE_DAYS_AHEAD,
   OPEN_LEAVE_STATUSES,
   applyLeaveSchema,
@@ -22,6 +22,7 @@ import {
   cancelBlockReason,
   creditCheckError,
   creditCost,
+  halfDaySpanError,
   describeLeaveSessions,
   describeLeaveSessionsInDetail,
   effectiveCoachId,
@@ -165,11 +166,12 @@ export async function applyForLeave(viewer: LeaveViewer, raw: unknown, now = new
     sessions = classes;
   } else if (classes.length) {
     const chosen = Array.from(new Set(input.sessionIds));
-    if (!chosen.length) throw new LeaveError(`Choose the class${MAX_HALF_DAY_CLASSES > 1 ? "es" : ""} ${forOther ? `${applicantName} will` : "you will"} miss (at most ${MAX_HALF_DAY_CLASSES}).`);
-    if (chosen.length > MAX_HALF_DAY_CLASSES) throw new LeaveError(`A half day covers at most ${MAX_HALF_DAY_CLASSES} classes. Apply for a full day instead.`);
+    if (!chosen.length) throw new LeaveError(`Choose the classes ${forOther ? `${applicantName} will` : "you will"} miss (within ${HALF_DAY_HOURS} hours).`);
     const byId = new Map(classes.map((item) => [item.sessionId, item]));
     sessions = chosen.map((id) => byId.get(id)).filter(Boolean) as TeachingClass[];
     if (sessions.length !== chosen.length) throw new LeaveError(`One of the chosen classes is no longer on ${their} schedule for that day. Refresh and choose again.`);
+    const span = halfDaySpanError(sessions);
+    if (span) throw new LeaveError(span);
   } else if (input.sessionIds.length) {
     throw new LeaveError(`Those classes are no longer on ${their} schedule for that day. Refresh and choose again.`);
   }
@@ -457,7 +459,7 @@ export async function listLeaves(viewer: LeaveViewer, now = new Date()) {
     leaves: all.map(serialize),
     credits: viewer.canApply ? await getCreditState(viewer.id) : null,
     staff: viewer.canApplyForOthers ? (await staffCreditRows(await eligibleStaff())).filter((row) => row.userId !== viewer.id) : [],
-    rules: { fullDayNoticeHours: FULL_DAY_NOTICE_HOURS, halfDayNoticeHours: halfDayNoticeHours(), maxHalfDayClasses: MAX_HALF_DAY_CLASSES, maxDaysAhead: MAX_LEAVE_DAYS_AHEAD },
+    rules: { fullDayNoticeHours: FULL_DAY_NOTICE_HOURS, halfDayNoticeHours: halfDayNoticeHours(), halfDayHours: HALF_DAY_HOURS, maxDaysAhead: MAX_LEAVE_DAYS_AHEAD },
     today: todayKey,
   };
 }

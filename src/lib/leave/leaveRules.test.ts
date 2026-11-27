@@ -11,6 +11,8 @@ import {
   describeLeaveSessionsInDetail,
   formatCredits,
   halfDayNoticeHours,
+  halfDaySpanError,
+  halfDaySpanMinutes,
   isSessionCovered,
   leaveActionSchema,
   leaveCreditActionSchema,
@@ -67,6 +69,14 @@ describe("notice", () => {
     expect(noticeError({ type: "half_day", dateKey: day, sessions }, new Date(first - 3 * 3600_000 - 60_000), 3)).toBeNull();
     expect(noticeError({ type: "half_day", dateKey: day, sessions }, new Date(first - 3 * 3600_000 + 60_000), 3)).toMatch(/3 hours/);
     expect(leaveStartsAt({ type: "half_day", dateKey: day, sessions }).getTime()).toBe(first);
+  });
+
+  it("lets a half day cover any classes that fit in 3 hours, start of first to end of last", () => {
+    const at = (time: string, minutes = 60) => ({ sessionId: time, start: academyDateTime(day, time), end: new Date(academyDateTime(day, time).getTime() + minutes * 60_000) });
+    expect(halfDaySpanError([at("16:00"), at("17:00"), at("18:00")])).toBeNull();
+    expect(halfDaySpanMinutes([at("18:00"), at("16:00")])).toBe(180);
+    expect(halfDaySpanError([at("16:00"), at("18:30")])).toMatch(/3 hours/);
+    expect(halfDaySpanError([at("16:00", 240)])).toMatch(/full day/);
   });
 
   it("allows a class-free half day for today but not a past day", () => {

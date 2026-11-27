@@ -22,7 +22,8 @@ export const LEAVE_CREDIT_ENTRY_TYPES = ["grant", "adjustment", "deduction", "re
 
 export const FULL_DAY_NOTICE_HOURS = 24;
 export const DEFAULT_HALF_DAY_NOTICE_HOURS = 3;
-export const MAX_HALF_DAY_CLASSES = 2;
+/** A half day is a 3-hour block: the chosen classes, first start to last end, must fit inside it. */
+export const HALF_DAY_HOURS = 3;
 /** How far ahead a leave may be asked for. */
 export const MAX_LEAVE_DAYS_AHEAD = 180;
 /** The access role whose sub-admins sit outside the leave system. */
@@ -128,6 +129,20 @@ export function leaveStartsAt(input: { type: LeaveType; dateKey: string; session
     return new Date(Math.min(...input.sessions.map((session) => new Date(session.start).getTime())));
   }
   return academyDateTime(input.dateKey, "00:00");
+}
+
+/** Minutes from the start of the first class to the end of the last (a class with no end counts as its start). */
+export function halfDaySpanMinutes(sessions: LeaveSessionLike[]) {
+  if (!sessions.length) return 0;
+  const starts = sessions.map((session) => new Date(session.start).getTime());
+  const ends = sessions.map((session, index) => (session.end ? new Date(session.end).getTime() : starts[index]));
+  return Math.max(0, Math.round((Math.max(...ends) - Math.min(...starts)) / 60_000));
+}
+
+/** Null when the chosen classes fit in a half day's hours, else the reason. */
+export function halfDaySpanError(sessions: LeaveSessionLike[], hours = HALF_DAY_HOURS) {
+  if (halfDaySpanMinutes(sessions) <= hours * 60) return null;
+  return `A half day is ${hours} hours of leave: the chosen classes must fit within ${hours} hours, from the start of the first to the end of the last. Apply for a full day instead.`;
 }
 
 /**

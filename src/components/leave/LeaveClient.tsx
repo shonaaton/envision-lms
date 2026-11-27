@@ -4,18 +4,18 @@ import Link from "next/link";
 import { CalendarOff, CalendarPlus, CheckCircle2, Clock, Coins, UserRoundCheck } from "lucide-react";
 import { toast } from "sonner";
 import { academyDateKey, academyDateTime } from "@/lib/academyTime";
-import { cancelBlockReason, creditCost, formatCredits, leaveDayLabel, type LeaveViewer, type SerializedLeave } from "@/lib/leave/leaveRules";
+import { cancelBlockReason, creditCost, formatCredits, halfDaySpanError, halfDaySpanMinutes, leaveDayLabel, type LeaveViewer, type SerializedLeave } from "@/lib/leave/leaveRules";
 import LeaveCreditsPanel from "./LeaveCreditsPanel";
 import { Drawer, StatusChip, TypeChip, button, danger, dateTime, field, secondary, sendJson, timeOnly } from "./leaveUi";
 
 type Credits = { limited: boolean; balance: number; held: number; available: number } | null;
-type Rules = { fullDayNoticeHours: number; halfDayNoticeHours: number; maxHalfDayClasses: number; maxDaysAhead: number };
+type Rules = { fullDayNoticeHours: number; halfDayNoticeHours: number; halfDayHours: number; maxDaysAhead: number };
 type StaffRow = { userId: string; name: string; role: string; limited: boolean; balance: number | null; held: number };
 type Data = { mine: SerializedLeave[]; leaves: SerializedLeave[]; credits: Credits; rules: Rules; today: string; staff?: StaffRow[] };
 type TeachingClass = { classroom: string; sessionId: string; title: string; start: string; end: string; studentCount: number };
 type Drawer = { mode: "apply" } | { mode: "reject" | "cancel"; leave: SerializedLeave } | null;
 
-const DEFAULT_RULES: Rules = { fullDayNoticeHours: 24, halfDayNoticeHours: 3, maxHalfDayClasses: 2, maxDaysAhead: 180 };
+const DEFAULT_RULES: Rules = { fullDayNoticeHours: 24, halfDayNoticeHours: 3, halfDayHours: 3, maxDaysAhead: 180 };
 
 export default function LeaveClient({ viewer, initialId = "", initialTab = "" }: { viewer: LeaveViewer; initialId?: string; initialTab?: string }) {
   const [data, setData] = useState<Data>({ mine: [], leaves: [], credits: null, rules: DEFAULT_RULES, today: academyDateKey(new Date()) });
@@ -119,7 +119,7 @@ export default function LeaveClient({ viewer, initialId = "", initialTab = "" }:
             {credits.limited
               ? "A full day uses 1 credit and a half day 0.5, taken when the leave is approved. Pending requests hold their credits; a rejected or cancelled leave gives them back."
               : "An admin has not set a credit limit for you, so leave does not use credits."}
-            {" "}Full day: apply at least {data.rules.fullDayNoticeHours} hours before the day starts. Half day: at least {data.rules.halfDayNoticeHours} hours before your first chosen class, at most {data.rules.maxHalfDayClasses} classes.
+            {" "}Full day: apply at least {data.rules.fullDayNoticeHours} hours before the day starts. Half day: {data.rules.halfDayHours} hours of leave — your chosen classes must fit within {data.rules.halfDayHours} hours — applied for at least {data.rules.halfDayNoticeHours} hours before the first one.
           </p>
         </section>
       )}
@@ -278,13 +278,20 @@ function ApplyForm({ viewer, staff, rules, credits: ownCredits, today, busy, set
     return now > deadline ? `Half-day leave needs ${rules.halfDayNoticeHours} hours' notice before your first chosen class (by ${dateTime(new Date(deadline))} IST).` : null;
   })();
   const needsClasses = type === "half_day" && Boolean(classes?.length);
+  const spanProblem = needsClasses ? halfDaySpanError(selected, rules.halfDayHours) : null;
+  const spanMinutes = halfDaySpanMinutes(selected);
   const creditProblem = credits?.limited && credits.available + 1e-9 < cost
     ? `${forOther ? `${who} has` : "You have"} ${formatCredits(credits.available)} credit(s) available and this leave needs ${formatCredits(cost)}.${forOther && viewer.canManageCredits ? " Add credits on the Credits tab first." : ""}`
     : null;
-  const canSubmit = (viewer.canApply || forOther) && Boolean(date) && classes !== null && !notice && !creditProblem && reason.trim().length >= 5 && (!needsClasses || (selected.length >= 1 && selected.length <= rules.maxHalfDayClasses));
+  const canSubmit = (viewer.canApply || forOther) && Boolean(date) && classes !== null && !notice && !creditProblem && reason.trim().length >= 5 && (!needsClasses || (selected.length >= 1 && !spanProblem));
+
+  /** Would adding this class push the chosen classes past the half day's hours? */
+  function wouldOverflow(item: TeachingClass) {
+    return Boolean(halfDaySpanError([...selected, item], rules.halfDayHours));
+  }
 
   function toggle(sessionId: string) {
-    setChosen((current) => current.includes(sessionId) ? current.filter((id) => id !== sessionId) : current.length >= rules.maxHalfDayClasses ? current : [...current, sessionId]);
+    setChosen((current) => current.includes(sessionId) ? current.filter((id) => id !== sessionId) : [...current, sessionId]);
   }
 
   async function submit(event: FormEvent) {
@@ -314,7 +321,7 @@ function ApplyForm({ viewer, staff, rules, credits: ownCredits, today, busy, set
       <fieldset>
         <legend className="text-sm font-semibold">Leave type</legend>
         <div className="mt-2 grid grid-cols-2 gap-2">
-          {([["full_day", "Full day", forOther ? "1 credit" : `1 credit · ${rules.fullDayNoticeHours}h notice`], ["half_day", "Half day", `0.5 credit · up to ${rules.maxHalfDayClasses} classes`]] as const).map(([value, label, hint]) => (
+          {([["full_day", "Full day", forOther ? "1 credit" : `1 credit · ${rules.fullDayNoticeHours}h notice`], ["half_day", "Half day", `0.5 credit · ${rules.halfDayHours} hours`]] as const).map(([value, label, hint]) => (
             <label key={value} className={`cursor-pointer rounded-lg border p-3 text-sm ${type === value ? "border-brand bg-purple-50" : "border-slate-200"}`}>
               <input type="radio" name="type" value={value} checked={type === value} onChange={() => { setType(value); setChosen([]); }} className="sr-only" />
               <span className="block font-bold text-brand">{label}</span>
@@ -328,14 +335,14 @@ function ApplyForm({ viewer, staff, rules, credits: ownCredits, today, busy, set
 
       {date && (
         <div className="rounded-lg border border-slate-200 p-3">
-          <p className="text-sm font-semibold">{type === "half_day" && classes?.length ? `Choose the class${rules.maxHalfDayClasses > 1 ? "es" : ""} ${forOther ? `${who} will` : "you will"} miss (up to ${rules.maxHalfDayClasses})` : forOther ? `${who}'s classes that day` : "Your classes that day"}</p>
+          <p className="text-sm font-semibold">{type === "half_day" && classes?.length ? `Choose the classes ${forOther ? `${who} will` : "you will"} miss (within ${rules.halfDayHours} hours)` : forOther ? `${who}'s classes that day` : "Your classes that day"}</p>
           {!viewer.canApply && !forOther ? <p className="mt-2 text-sm text-slate-500">Choose who the leave is for.</p> : classesError ? <p className="mt-2 text-sm text-rose-700">{classesError}</p> : classes === null ? <p className="mt-2 text-sm text-slate-500">Loading classes…</p> : !classes.length ? (
             <p className="mt-2 text-sm text-slate-500">{forOther ? `${who} has` : "You have"} no classes on {leaveDayLabel(date)}.{type === "half_day" ? " No class needs to be chosen." : ""}</p>
           ) : (
             <ul className="mt-2 space-y-1.5">
               {classes.map((item) => {
                 const checked = chosen.includes(item.sessionId);
-                const disabled = type === "full_day" || (!checked && chosen.length >= rules.maxHalfDayClasses);
+                const disabled = type === "full_day" || (!checked && wouldOverflow(item));
                 return (
                   <li key={item.sessionId}>
                     <label className={`flex items-center gap-3 rounded-lg px-2 py-1.5 text-sm ${type === "half_day" ? "cursor-pointer hover:bg-purple-50" : ""} ${disabled && type === "half_day" ? "opacity-50" : ""}`}>
@@ -350,6 +357,7 @@ function ApplyForm({ viewer, staff, rules, credits: ownCredits, today, busy, set
             </ul>
           )}
           {type === "full_day" && Boolean(classes?.length) && <p className="mt-2 text-xs text-slate-500">All of these classes will need a substitute.</p>}
+          {needsClasses && selected.length > 0 && <p className="mt-2 text-xs text-slate-500">Chosen: {Math.floor(spanMinutes / 60)}h{spanMinutes % 60 ? ` ${spanMinutes % 60}m` : ""} of {rules.halfDayHours}h. Classes that would go past {rules.halfDayHours} hours are greyed out.</p>}
         </div>
       )}
 

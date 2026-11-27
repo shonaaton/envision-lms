@@ -180,13 +180,14 @@ export function TournamentDetailClient({
     void refresh();
   }, [refresh]);
 
-  // A student with a live board belongs at the board, not on this page.
+  // A player (student, or staff in a "Coaches can play" event) with a live
+  // board belongs at the board, not on this page.
   useEffect(() => {
     const activeGameId = state.activeGame?._id ? String(state.activeGame._id) : "";
-    if (role !== "student" || !activeGameId || autoOpenedGameRef.current === activeGameId) return;
+    if ((role !== "student" && !(role !== "admin" && state.canPlay)) || !activeGameId || autoOpenedGameRef.current === activeGameId) return;
     autoOpenedGameRef.current = activeGameId;
     router.push(`/tournaments/${tournamentId}/play`);
-  }, [role, router, state.activeGame?._id, tournamentId]);
+  }, [role, router, state.activeGame?._id, state.canPlay, tournamentId]);
 
   const runAction = useCallback(
     async (path: string, body?: any) => {

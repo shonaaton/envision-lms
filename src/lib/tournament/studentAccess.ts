@@ -16,8 +16,37 @@ import { canAccessFeature, getFeatureAccessMap, type SessionUser } from "@/lib/f
 export const STUDENT_TOURNAMENT_BLOCKED_MESSAGE =
   "Tournaments are not open to your account yet, so you cannot join. Please contact the academy.";
 
-export async function memberCanPlayTournaments(user: SessionUser | null | undefined) {
+/**
+ * Staff below admin - coaches (role `instructor`, Bowbazar's coach and branch
+ * admin included) and sub-admins - only watch a tournament unless its
+ * organiser switched "Coaches can play" on for that event. The switch is the
+ * grant: Feature Access gives coaches View, not Join, and that is left as it
+ * is so staff stay spectators everywhere else. Admins can always play.
+ */
+const SWITCHED_STAFF_ROLES = ["instructor", "sub-admin"];
+
+export const STAFF_WATCH_ONLY_MESSAGE =
+  'Coaches and sub-admins can watch this tournament but not play. An admin can turn on "Coaches can play" in Edit details.';
+
+export function isSwitchedStaffRole(role: string | undefined) {
+  return SWITCHED_STAFF_ROLES.includes(String(role));
+}
+
+export function coachesCanPlay(tournament: any) {
+  return Boolean(tournament?.access?.coachesCanPlay);
+}
+
+/** Whether someone of this role may take a board in this tournament. */
+export function roleCanPlayTournament(role: string | undefined, tournament: any) {
+  return role === "student" || role === "admin" || (SWITCHED_STAFF_ROLES.includes(String(role)) && coachesCanPlay(tournament));
+}
+
+export async function memberCanPlayTournaments(user: SessionUser | null | undefined, tournament?: any) {
   if (!user) return false;
+  if (SWITCHED_STAFF_ROLES.includes(String((user as any).role))) {
+    // Staff need the event's switch and the tournament pages (View).
+    return coachesCanPlay(tournament) && canAccessFeature("tournaments", user, "view");
+  }
   const [view, join] = await Promise.all([
     canAccessFeature("tournaments", user, "view"),
     canAccessFeature("tournaments", user, "join"),

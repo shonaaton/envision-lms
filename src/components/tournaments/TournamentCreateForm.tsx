@@ -48,6 +48,7 @@ type Draft = {
   customFen: string;
   allActiveStudents: boolean;
   includeCoaches: boolean;
+  coachesCanPlay: boolean;
   includeInactiveStudents: boolean;
   includeBranchStudents: boolean;
   batches: string[];
@@ -133,6 +134,7 @@ function buildClientErrors(draft: Draft, step: number) {
     const hasInternalAccess =
       draft.allActiveStudents ||
       draft.includeCoaches ||
+      draft.coachesCanPlay ||
       draft.includeInactiveStudents ||
       draft.includeBranchStudents ||
       draft.batches.length > 0 ||
@@ -197,6 +199,7 @@ export default function TournamentCreateForm({
     customFen: "",
     allActiveStudents: false,
     includeCoaches: false,
+    coachesCanPlay: false,
     includeInactiveStudents: false,
     includeBranchStudents: false,
     batches: [],
@@ -537,6 +540,10 @@ export default function TournamentCreateForm({
             <label className="flex items-start gap-3 rounded-md border border-slate-200 p-3">
               <input checked={draft.includeCoaches} onChange={(event) => update("includeCoaches", event.target.checked)} type="checkbox" className="mt-1" />
               <span><b>Coach Visibility</b><br /><small className="text-slate-500">Coaches can view participants, pairings, games, and standings.</small></span>
+            </label>
+            <label className="flex items-start gap-3 rounded-md border border-slate-200 p-3">
+              <input checked={draft.coachesCanPlay} onChange={(event) => update("coachesCanPlay", event.target.checked)} type="checkbox" className="mt-1" />
+              <span><b>Coaches Can Play</b><br /><small className="text-slate-500">Coaches and sub-admins, Bowbazar centre included, can join and play, not just watch.</small></span>
             </label>
             <Field label="Selected Student Search" description="Find individual students by name, email, or level.">
               <div className="relative">

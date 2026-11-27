@@ -65,6 +65,8 @@ const TournamentSchema = new Schema(
     access: {
       allActiveStudents: { type: Boolean, default: false },
       includeCoaches: { type: Boolean, default: false },
+      // Coaches may join and play, not just watch (lib/tournament/studentAccess.ts).
+      coachesCanPlay: { type: Boolean, default: false },
       includeInactiveStudents: { type: Boolean, default: false },
       batches: [{ type: Schema.Types.ObjectId, ref: "Batch", index: true }],
       courses: [{ type: Schema.Types.ObjectId, ref: "Course", index: true }],

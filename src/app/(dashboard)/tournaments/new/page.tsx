@@ -122,6 +122,7 @@ async function createTournament(_: CreateTournamentState, formData: FormData): P
     formData.get("allActiveStudents") !== "yes" &&
     formData.get("includeInactiveStudents") !== "yes" &&
     formData.get("includeCoaches") !== "yes" &&
+    formData.get("coachesCanPlay") !== "yes" &&
     formData.get("includeBranchStudents") !== "yes" &&
     !selectedBatchIds.length &&
     !selectedStudentIds.length &&
@@ -198,6 +199,7 @@ async function createTournament(_: CreateTournamentState, formData: FormData): P
         access: {
           allActiveStudents: formData.get("allActiveStudents") === "yes",
           includeCoaches: formData.get("includeCoaches") === "yes",
+          coachesCanPlay: formData.get("coachesCanPlay") === "yes",
           includeInactiveStudents: formData.get("includeInactiveStudents") === "yes",
           batches: selectedBatchIds,
           courses: selectedCourseIds,

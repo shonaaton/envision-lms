@@ -162,7 +162,7 @@ export async function sendTournamentReminder(tournament: any, minutes: Tournamen
     // "Open the tournament page" is no use to a member that page bounces back
     // to the dashboard (Feature Access); the organiser sees a warning instead.
     const reachable = await Promise.all(
-      found.map((user) => memberCanPlayTournaments({ id: String(user._id), role: user.role, accountStatus: user.accountStatus }))
+      found.map((user) => memberCanPlayTournaments({ id: String(user._id), role: user.role, accountStatus: user.accountStatus }, tournament))
     );
     const users = found.filter((_, index) => reachable[index]);
     const link = memberTournamentLink(tournament);

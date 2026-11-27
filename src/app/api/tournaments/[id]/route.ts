@@ -48,6 +48,10 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
       if (tournament.status === "starting_soon" && next.getTime() - Date.now() > 15 * 60 * 1000) tournament.status = "upcoming";
     }
   }
+  // "Coaches can play" lives under access (lib/tournament/studentAccess.ts).
+  if (typeof body.coachesCanPlay === "boolean") {
+    tournament.set("access.coachesCanPlay", body.coachesCanPlay);
+  }
   if (body.startingPosition) tournament.startingPosition = body.startingPosition;
   if (body.externalInvite) {
     const current = tournament.externalInvite || {};

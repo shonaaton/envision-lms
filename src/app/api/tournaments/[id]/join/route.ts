@@ -12,7 +12,7 @@ import { recordActivity } from "@/lib/activity";
 import { lateEntryOpen } from "@/lib/tournament/lichessRules";
 import { inactiveStudentMessage } from "@/lib/studentAccess";
 import { emitTournamentUpdate } from "@/lib/tournamentSocketServer";
-import { memberCanPlayTournaments, STUDENT_TOURNAMENT_BLOCKED_MESSAGE } from "@/lib/tournament/studentAccess";
+import { coachesCanPlay, isSwitchedStaffRole, memberCanPlayTournaments, roleCanPlayTournament, STAFF_WATCH_ONLY_MESSAGE, STUDENT_TOURNAMENT_BLOCKED_MESSAGE } from "@/lib/tournament/studentAccess";
 
 export const dynamic = "force-dynamic";
 
@@ -66,6 +66,7 @@ export async function POST(_: Request, { params }: { params: { id: string } }) {
     const eligible =
       role === "student" ||
       role === "admin" ||
+      roleCanPlayTournament(role, tournament) ||
       tournament.access?.allActiveStudents ||
       (tournament.access?.users || []).map((id: any) => String(id)).includes(userId) ||
       (tournament.participants || []).some((player: any) => objectId(player) === userId);
@@ -73,7 +74,10 @@ export async function POST(_: Request, { params }: { params: { id: string } }) {
     // The tournament room is a dashboard page that sends anyone without
     // Tournaments view/join away; entering them would only get them paired
     // and forfeited (14 Nov 2026). See lib/tournament/studentAccess.ts.
-    if (!(await memberCanPlayTournaments(session.user as any))) {
+    if (isSwitchedStaffRole(role) && !coachesCanPlay(tournament)) {
+      return NextResponse.json({ error: STAFF_WATCH_ONLY_MESSAGE, code: "staff_watch_only" }, { status: 403 });
+    }
+    if (!(await memberCanPlayTournaments(session.user as any, tournament))) {
       return NextResponse.json({ error: STUDENT_TOURNAMENT_BLOCKED_MESSAGE, code: "tournaments_not_open" }, { status: 403 });
     }
     if (!(tournament.participants || []).some((player: any) => objectId(player) === userId)) {

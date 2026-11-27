@@ -7,6 +7,7 @@ import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { Link2, Trophy } from "lucide-react";
 import { StudentAccessWarning } from "@/components/tournaments/StudentAccessWarning";
+import { coachesCanPlay, roleCanPlayTournament } from "@/lib/tournament/studentAccess";
 import { TournamentDetailClient } from "@/components/tournaments/TournamentDetailClient";
 import { SelectOnFocusInput } from "@/components/tournaments/SelectOnFocusInput";
 import { TournamentGame } from "@/models/TournamentGame";
@@ -98,7 +99,7 @@ export default async function TournamentDetailPage({ params }: { params: { id: s
       </div>
     );
   }
-  const allowed = role === "admin" || role === "instructor" || tournament.access?.allActiveStudents || (tournament.access?.users || []).map((id: any) => id.toString()).includes(userId) || (tournament.participants || []).some((p: any) => p._id?.toString() === userId);
+  const allowed = role === "admin" || role === "instructor" || (role === "sub-admin" && coachesCanPlay(tournament)) || tournament.access?.allActiveStudents || (tournament.access?.users || []).map((id: any) => id.toString()).includes(userId) || (tournament.participants || []).some((p: any) => p._id?.toString() === userId);
   if (!allowed) return <div className="p-6">You do not have access to this tournament.</div>;
   const joined = (tournament.participants || []).some((p: any) => p._id?.toString() === userId);
   const myPlayerKey = playerKeyForUser(String(userId || ""));
@@ -122,7 +123,7 @@ export default async function TournamentDetailPage({ params }: { params: { id: s
     currentSeat: toPlain(buildCurrentSeat({ userId: String(userId || ""), joined, tournament, activeGame, myGames })),
     participantState: toPlain(participantState),
     canManage: role === "admin",
-    canPlay: (role === "student" && !isInactiveStudent) || role === "admin",
+    canPlay: !isInactiveStudent && roleCanPlayTournament(role, tournament),
   };
   /**
    * The page is a shell: access, the initial payload, and the invite link an

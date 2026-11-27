@@ -45,3 +45,35 @@ describe("studentRoleTournamentAccess", () => {
     expect((await studentRoleTournamentAccess()).ok).toBe(true);
   });
 });
+
+describe("coaches can play switch", () => {
+  const off = { access: {} };
+  const on = { access: { coachesCanPlay: true } };
+
+  it("lets students and admins play in any event", async () => {
+    const { roleCanPlayTournament } = await import("./studentAccess");
+    for (const role of ["student", "admin"]) {
+      expect(roleCanPlayTournament(role, off)).toBe(true);
+      expect(roleCanPlayTournament(role, on)).toBe(true);
+    }
+  });
+
+  it("keeps coaches and sub-admins watching unless the event switches them in", async () => {
+    const { roleCanPlayTournament } = await import("./studentAccess");
+    for (const role of ["instructor", "sub-admin"]) {
+      expect(roleCanPlayTournament(role, off)).toBe(false);
+      expect(roleCanPlayTournament(role, null)).toBe(false);
+      expect(roleCanPlayTournament(role, on)).toBe(true);
+    }
+    expect(roleCanPlayTournament("", on)).toBe(false);
+  });
+
+  it("counts a coach as a player only in a switched-on event", async () => {
+    const { memberCanPlayTournaments } = await import("./studentAccess");
+    const coach = { id: "c1", role: "instructor" } as any;
+    expect(await memberCanPlayTournaments(coach, off)).toBe(false);
+    expect(await memberCanPlayTournaments(coach)).toBe(false);
+    expect(await memberCanPlayTournaments(coach, on)).toBe(true);
+    expect(await memberCanPlayTournaments({ id: "s1", role: "student" } as any)).toBe(true);
+  });
+});

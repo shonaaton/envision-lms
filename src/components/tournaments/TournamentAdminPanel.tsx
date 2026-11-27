@@ -273,6 +273,7 @@ export function TournamentAdminPanel({
                   entryRestrictions: tournament?.entryRestrictions || "",
                   lateJoiningAllowed: tournament?.lateJoiningAllowed !== false,
                   chatEnabled: Boolean(tournament?.chatEnabled),
+                  coachesCanPlay: Boolean(tournament?.access?.coachesCanPlay),
                 });
                 setEditOpen(true);
               }}
@@ -461,6 +462,14 @@ export function TournamentAdminPanel({
               onChange={(event) => setEditDraft({ ...editDraft, chatEnabled: event.target.checked })}
             />
             Enable tournament chat
+          </label>
+          <label className="flex min-h-11 items-center gap-2 text-sm text-slate-700">
+            <input
+              type="checkbox"
+              checked={Boolean(editDraft.coachesCanPlay)}
+              onChange={(event) => setEditDraft({ ...editDraft, coachesCanPlay: event.target.checked })}
+            />
+            Coaches and sub-admins can join and play (Bowbazar included)
           </label>
         </div>
         <DialogActions

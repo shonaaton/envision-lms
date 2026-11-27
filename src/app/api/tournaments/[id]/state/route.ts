@@ -1,5 +1,5 @@
 import { playerSeen, presentPlayerKeys } from "@/lib/tournament/presence";
-import { memberCanPlayTournaments } from "@/lib/tournament/studentAccess";
+import { coachesCanPlay, memberCanPlayTournaments, roleCanPlayTournament } from "@/lib/tournament/studentAccess";
 import { NextResponse } from "next/server";
 import mongoose from "mongoose";
 import { auth } from "@/lib/auth";
@@ -96,6 +96,7 @@ export async function GET(request: Request, { params }: { params: { id: string }
     (session &&
       (role === "admin" ||
         role === "instructor" ||
+        (role === "sub-admin" && coachesCanPlay(tournament)) ||
         tournament.access?.allActiveStudents ||
         (tournament.access?.users || []).map((id: any) => String(id)).includes(String(userId)) ||
         (tournament.participants || []).some((player: any) => objectId(player) === String(userId))));
@@ -103,7 +104,7 @@ export async function GET(request: Request, { params }: { params: { id: string }
   // The play room polls this while open: a sign of life for Arena pairing
   // when the socket cannot connect. Not for a member the dashboard bounces off
   // the tournament pages (lib/tournament/studentAccess.ts).
-  if (isGuest || (session && (await memberCanPlayTournaments(session.user as any)))) playerSeen(params.id, myPlayerKey);
+  if (isGuest || (session && (await memberCanPlayTournaments(session.user as any, tournament)))) playerSeen(params.id, myPlayerKey);
 
   const playerGames = {
     tournament: params.id,
@@ -275,7 +276,7 @@ export async function GET(request: Request, { params }: { params: { id: string }
     },
     myPlayerKey,
     canManage,
-    canPlay: isGuest || role === "student" || role === "admin",
+    canPlay: isGuest || roleCanPlayTournament(role, tournament),
     guestUsername: isGuest ? guestUsername : "",
   });
 }

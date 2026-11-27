@@ -126,7 +126,7 @@ async function admitToTournamentRoom(tournamentId: string, headers: Record<strin
       // the tournament pages (no Tournaments view/join) is never counted as
       // present: they were paired in the split second before the bounce, then
       // forfeited (14 Nov 2026).
-      if (await memberCanPlayTournaments({ id: userId, role: role as any })) playerKeys.push(`user:${userId}`);
+      if (await memberCanPlayTournaments({ id: userId, role: role as any }, tournament)) playerKeys.push(`user:${userId}`);
     }
   }
 

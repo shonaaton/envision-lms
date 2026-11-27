@@ -16,6 +16,8 @@ type Tab = "moves" | "standings" | "boards";
  * are stacked and visible; on smaller screens they share a tab strip below the
  * board so the board itself keeps the full width.
  */
+export type SidePanelSection = Tab;
+
 export function SidePanel({
   moves,
   standings,
@@ -25,6 +27,7 @@ export function SidePanel({
   tournamentId,
   stacked,
   online,
+  sections = ["moves", "standings", "boards"],
 }: {
   moves: string[];
   standings: any[];
@@ -36,6 +39,8 @@ export function SidePanel({
   stacked: boolean;
   /** Who is in the room; left out, standings show no dots. */
   online?: Set<string>;
+  /** Which sections to show; the desktop play screen keeps moves in its game panel. */
+  sections?: Tab[];
 }) {
   const [tab, setTab] = useState<Tab>("moves");
 
@@ -102,11 +107,13 @@ export function SidePanel({
   if (stacked) {
     return (
       <div className="space-y-4">
-        <Section title="Moves">{movesSection}</Section>
-        <Section title="Standings" hint={tieBreak?.label}>
-          {standingsSection}
-        </Section>
-        <Section title="Live boards">{boardsSection}</Section>
+        {sections.includes("moves") ? <Section title="Moves">{movesSection}</Section> : null}
+        {sections.includes("standings") ? (
+          <Section title="Standings" hint={tieBreak?.label}>
+            {standingsSection}
+          </Section>
+        ) : null}
+        {sections.includes("boards") ? <Section title="Live boards">{boardsSection}</Section> : null}
       </div>
     );
   }

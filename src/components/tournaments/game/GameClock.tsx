@@ -13,6 +13,7 @@ export function GameClock({
   running,
   label,
   compact = false,
+  size,
 }: {
   ms: number;
   /** This side is to move. */
@@ -21,7 +22,10 @@ export function GameClock({
   running: boolean;
   label: string;
   compact?: boolean;
+  /** "lg" is the desktop game panel's clock, full width above or below the moves. */
+  size?: "sm" | "md" | "lg";
 }) {
+  const scale = size || (compact ? "sm" : "md");
   const critical = running && ms < 10_000;
   const low = running && ms < 30_000;
 
@@ -33,7 +37,11 @@ export function GameClock({
       aria-label={`${label}: ${formatClock(ms)}`}
       className={[
         "flex items-center justify-center rounded-lg border tabular-nums font-semibold transition-colors duration-200",
-        compact ? "min-w-[76px] px-2.5 py-1 text-lg" : "min-w-[104px] px-3.5 py-1.5 text-2xl sm:text-3xl",
+        scale === "sm"
+          ? "min-w-[76px] px-2.5 py-1 text-lg"
+          : scale === "lg"
+            ? "w-full justify-start px-4 py-2 text-4xl tracking-tight"
+            : "min-w-[84px] px-2.5 py-1 text-xl sm:min-w-[100px] sm:px-3 sm:text-2xl",
         active && critical
           ? "border-red-300 bg-red-50 text-red-700"
           : active

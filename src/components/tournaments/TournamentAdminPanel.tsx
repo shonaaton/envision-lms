@@ -14,6 +14,7 @@ import {
   Play,
   Shield,
   SkipForward,
+  Trash2,
   UserMinus,
 } from "lucide-react";
 import { GameDialog } from "./game/GameDialog";
@@ -80,6 +81,10 @@ export function TournamentAdminPanel({
   const isOver = ["completed", "finished", "cancelled"].includes(status);
   const isSwiss = tournament?.type === "swiss";
   const completedGames = games.filter((game: any) => game.status === "completed");
+  // The schedule is fixed from the first pairing (the server checks this too).
+  const scheduleLocked = isPlaying || isOver || games.length > 0;
+  // Delete is for events nobody finished a game in; anything else is cancelled and kept.
+  const canDelete = !isPlaying && completedGames.length === 0;
 
   const ask = (next: Confirmable) => setConfirm(next);
 
@@ -132,6 +137,43 @@ export function TournamentAdminPanel({
     setAnnounceOpen(false);
     setAnnounceDraft({ title: "Tournament announcement", message: "" });
     await onRefresh();
+  }
+
+  async function deleteTournament() {
+    const response = await fetch(`/api/tournaments/${tournamentId}`, { method: "DELETE" });
+    if (!response.ok) {
+      const payload = await response.json().catch(() => null);
+      onError(payload?.error || "Could not delete the tournament.");
+      return;
+    }
+    window.location.href = "/tournaments";
+  }
+
+  async function saveEdit() {
+    const body: any = {
+      name: editDraft.name,
+      description: editDraft.description,
+      entryRestrictions: editDraft.entryRestrictions,
+      lateJoiningAllowed: editDraft.lateJoiningAllowed,
+      chatEnabled: editDraft.chatEnabled,
+      coachesCanPlay: editDraft.coachesCanPlay,
+    };
+    if (!scheduleLocked) {
+      const start = new Date(editDraft.startAt);
+      if (!editDraft.startAt || Number.isNaN(start.getTime())) {
+        onError("Choose a valid start date and time.");
+        return;
+      }
+      body.startAt = start.toISOString();
+      body.initialClockSeconds = Math.round(Number(editDraft.clockMinutes) * 60);
+      body.incrementSeconds = Number(editDraft.incrementSeconds || 0);
+      if (tournament?.type === "arena") body.arenaDurationMinutes = Number(editDraft.arenaDurationMinutes);
+      if (isSwiss) {
+        body.rounds = Number(editDraft.rounds);
+        body.breakBetweenRoundsMinutes = Number(editDraft.breakBetweenRoundsMinutes || 0);
+      }
+    }
+    if (await onPatch(body)) setEditOpen(false);
   }
 
   async function clone() {
@@ -274,6 +316,12 @@ export function TournamentAdminPanel({
                   lateJoiningAllowed: tournament?.lateJoiningAllowed !== false,
                   chatEnabled: Boolean(tournament?.chatEnabled),
                   coachesCanPlay: Boolean(tournament?.access?.coachesCanPlay),
+                  startAt: toLocalInput(tournament?.startAt),
+                  clockMinutes: String(clockSecondsOf(tournament) / 60),
+                  incrementSeconds: String(Number(tournament?.incrementSeconds || 0)),
+                  arenaDurationMinutes: String(Number(tournament?.arenaDurationMinutes || 0)),
+                  rounds: String(Number(tournament?.rounds || 0)),
+                  breakBetweenRoundsMinutes: String(Number(tournament?.breakBetweenRoundsMinutes || 0)),
                 });
                 setEditOpen(true);
               }}
@@ -293,6 +341,24 @@ export function TournamentAdminPanel({
             />
             <AdminButton icon={<Megaphone size={14} />} label="Announce" onClick={() => setAnnounceOpen(true)} />
             <AdminButton icon={<Copy size={14} />} label="Clone" onClick={clone} />
+            {canDelete ? (
+              <AdminButton
+                icon={<Trash2 size={14} />}
+                label="Delete"
+                tone="danger"
+                onClick={() =>
+                  ask({
+                    title: "Delete this tournament for good?",
+                    description:
+                      "The tournament, its player list and any unfinished boards are removed from every list. This cannot be undone, and players are not messaged.",
+                    confirmLabel: "Delete tournament",
+                    tone: "danger",
+                    run: deleteTournament,
+                  })
+                }
+                disabled={pending}
+              />
+            ) : null}
           </Group>
 
           {/* Getting data out. */}
@@ -440,6 +506,85 @@ export function TournamentAdminPanel({
               onChange={(event) => setEditDraft({ ...editDraft, description: event.target.value })}
             />
           </Field>
+          <fieldset className="space-y-3 rounded-lg border border-slate-200 p-3">
+            <legend className="px-1 text-xs font-semibold text-slate-600">Schedule</legend>
+            {scheduleLocked ? (
+              <p className="text-xs text-slate-500">Games have been paired, so the start time, clock and length are fixed.</p>
+            ) : null}
+            <Field label="Start date and time">
+              <input
+                type="datetime-local"
+                className="input"
+                disabled={scheduleLocked}
+                value={editDraft.startAt || ""}
+                onChange={(event) => setEditDraft({ ...editDraft, startAt: event.target.value })}
+              />
+            </Field>
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="Clock (minutes)">
+                <input
+                  type="number"
+                  min={0.25}
+                  step={0.25}
+                  className="input"
+                  disabled={scheduleLocked}
+                  value={editDraft.clockMinutes ?? ""}
+                  onChange={(event) => setEditDraft({ ...editDraft, clockMinutes: event.target.value })}
+                />
+              </Field>
+              <Field label="Increment (seconds)">
+                <input
+                  type="number"
+                  min={0}
+                  max={180}
+                  className="input"
+                  disabled={scheduleLocked}
+                  value={editDraft.incrementSeconds ?? ""}
+                  onChange={(event) => setEditDraft({ ...editDraft, incrementSeconds: event.target.value })}
+                />
+              </Field>
+            </div>
+            {tournament?.type === "arena" ? (
+              <Field label="Arena length (minutes)">
+                <input
+                  type="number"
+                  min={1}
+                  max={1440}
+                  className="input"
+                  disabled={scheduleLocked}
+                  value={editDraft.arenaDurationMinutes ?? ""}
+                  onChange={(event) => setEditDraft({ ...editDraft, arenaDurationMinutes: event.target.value })}
+                />
+              </Field>
+            ) : null}
+            {isSwiss ? (
+              <div className="grid grid-cols-2 gap-3">
+                <Field label="Rounds">
+                <input
+                  type="number"
+                  min={1}
+                  max={50}
+                  className="input"
+                  disabled={scheduleLocked}
+                  value={editDraft.rounds ?? ""}
+                  onChange={(event) => setEditDraft({ ...editDraft, rounds: event.target.value })}
+                />
+              </Field>
+                <Field label="Break between rounds (min)">
+                <input
+                  type="number"
+                  min={0}
+                  max={120}
+                  className="input"
+                  disabled={scheduleLocked}
+                  value={editDraft.breakBetweenRoundsMinutes ?? ""}
+                  onChange={(event) => setEditDraft({ ...editDraft, breakBetweenRoundsMinutes: event.target.value })}
+                />
+              </Field>
+              </div>
+            ) : null}
+            {!scheduleLocked ? <p className="text-xs text-slate-500">A new start time sends fresh 30- and 10-minute reminders.</p> : null}
+          </fieldset>
           <Field label="Entry notes">
             <input
               className="input"
@@ -474,9 +619,7 @@ export function TournamentAdminPanel({
         </div>
         <DialogActions
           onCancel={() => setEditOpen(false)}
-          onSave={async () => {
-            if (await onPatch(editDraft)) setEditOpen(false);
-          }}
+          onSave={saveEdit}
         />
       </GameDialog>
 
@@ -580,6 +723,21 @@ export function TournamentAdminPanel({
       </GameDialog>
     </section>
   );
+}
+
+/** Stored clock in seconds; older events only have whole minutes. */
+function clockSecondsOf(tournament: any) {
+  const seconds = Number(tournament?.initialClockSeconds || 0);
+  return seconds > 0 ? seconds : Number(tournament?.timeControlMinutes || 0) * 60;
+}
+
+/** A Date as the value a datetime-local input expects, in the browser's own zone. */
+function toLocalInput(value: any) {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
 }
 
 function Group({ title, children }: { title: string; children: React.ReactNode }) {

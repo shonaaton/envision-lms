@@ -16,7 +16,9 @@ import { BOARD_DARK_SQUARE, BOARD_LIGHT_SQUARE, buildBoardSquareStyles, findKing
 import { legalTargetsFromGame } from "@/lib/chessboardUi";
 import { GameDialog } from "./game/GameDialog";
 import { GameStatus, type GameStatusKind } from "./game/GameStatus";
-import { PlayerBar } from "./game/PlayerBar";
+import { PlayerBar, PlayerIdentity, type PlayerInfo } from "./game/PlayerBar";
+import { GameClock } from "./game/GameClock";
+import { MoveList } from "./game/MoveList";
 import { isRoomOpenStatus, useOnlinePlayers } from "@/lib/tournament/useOnlinePlayers";
 import { SidePanel } from "./game/SidePanel";
 import { useBoardSizing } from "./game/useBoardSizing";
@@ -767,6 +769,95 @@ export function TournamentPlayClient({
 
   const showResultDialog = Boolean(game) && !gameIsActive && dismissedResultFor !== gameId;
 
+  const opponentClockMs = opponentIsWhite ? clocks.whiteClockMs : clocks.blackClockMs;
+  const myClockMs = opponentIsWhite ? clocks.blackClockMs : clocks.whiteClockMs;
+  const opponentActive = Boolean(gameIsActive && game?.turn === (opponentIsWhite ? "w" : "b"));
+  const myClockActive = Boolean(gameIsActive && game?.turn === (opponentIsWhite ? "b" : "w"));
+  const opponentInfo: PlayerInfo = {
+    name: opponentName || "Opponent",
+    rating: opponentIsWhite ? game?.whiteRating : game?.blackRating,
+    rank: rankOf(standings, opponentKey) || undefined,
+    points: standingFor(opponentKey)?.points,
+    onStreak: standingFor(opponentKey)?.onStreak,
+    berserk: opponentIsWhite ? game?.berserkWhite : game?.berserkBlack,
+    online: gameIsActive && opponentKey ? online.has(String(opponentKey)) : undefined,
+  };
+  const myInfo: PlayerInfo = {
+    name: myName || "You",
+    rating: opponentIsWhite ? game?.blackRating : game?.whiteRating,
+    rank: myRank || undefined,
+    points: myStanding?.points,
+    onStreak: myStanding?.onStreak,
+    berserk: opponentIsWhite ? game?.berserkBlack : game?.berserkWhite,
+    isYou: true,
+  };
+
+  const statusLine = (
+    <GameStatus
+      kind={statusKind}
+      detail={statusDetail}
+      action={
+        statusKind === "read-only" ? (
+          <button type="button" onClick={claimBoard} className="rounded-md bg-amber-700 px-2.5 py-1 text-xs font-semibold text-white">
+            Play here
+          </button>
+        ) : statusKind === "premove" ? (
+          <button type="button" onClick={() => setPremove(null)} className="rounded-md bg-white px-2.5 py-1 text-xs font-semibold text-teal-800">
+            Cancel
+          </button>
+        ) : null
+      }
+    />
+  );
+
+  // Rendered under the board on phones and inside the game panel on desktop.
+  const controls = (
+    <>
+      {gameIsActive ? (
+        <>
+          <button
+            type="button"
+            onClick={() => setConfirmAction("resign")}
+            disabled={!hasBoardControl}
+            className="btn min-h-11 border border-red-200 bg-red-50 text-red-700 hover:bg-red-100 disabled:opacity-50"
+          >
+            <Flag size={15} aria-hidden /> Resign
+          </button>
+          <button
+            type="button"
+            onClick={() => setConfirmAction("draw")}
+            disabled={!hasBoardControl || swissDrawLocked}
+            title={swissDrawLocked ? "Draw offers open at move 30 in a Swiss tournament" : undefined}
+            className="btn-outline min-h-11 disabled:opacity-50"
+          >
+            <Handshake size={15} aria-hidden /> {drawOffered ? "Accept draw" : "Offer draw"}
+          </button>
+          {drawOffered ? (
+            <button type="button" onClick={() => submitResult("decline_draw")} className="btn-ghost min-h-11">
+              <X size={15} aria-hidden /> Decline
+            </button>
+          ) : null}
+          {canBerserkNow ? (
+            <button type="button" onClick={() => submitResult("berserk")} className="btn-accent min-h-11">
+              <Zap size={15} aria-hidden /> Berserk
+            </button>
+          ) : null}
+        </>
+      ) : null}
+      {tournamentPlaying ? (
+        participantState?.status === "paused" ? (
+          <button type="button" onClick={() => setQueueStatus("resume")} className="btn col-span-2 min-h-11 bg-emerald-600 text-white hover:bg-emerald-700">
+            <Play size={15} aria-hidden /> {isArena ? "Resume queue" : "Play next round"}
+          </button>
+        ) : (
+          <button type="button" onClick={() => setQueueStatus("pause")} className="btn-ghost col-span-2 min-h-11">
+            <Pause size={15} aria-hidden /> {isArena ? "Pause after this game" : "Sit out next round"}
+          </button>
+        )
+      ) : null}
+    </>
+  );
+
   const sidePanelProps = {
     moves: game?.moveHistorySAN || [],
     standings,
@@ -829,21 +920,26 @@ export function TournamentPlayClient({
           </div>
         ) : null}
 
-        <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_340px] xl:grid-cols-[minmax(0,1fr)_380px]">
+        <div className="lg:flex lg:items-start lg:justify-center lg:gap-4">
+          {/* Wide screens: standings and live boards get their own column, so
+              the board and its game panel keep the full height. */}
           {game ? (
-            <section ref={columnRef} className="flex min-w-0 flex-col gap-2 [&>*]:mx-auto [&>*]:w-full [&>*]:max-w-[var(--board-size)]" style={boardColumnStyle}>
-              <PlayerBar
-                name={opponentName || "Opponent"}
-                rating={opponentIsWhite ? game.whiteRating : game.blackRating}
-                clockMs={opponentIsWhite ? clocks.whiteClockMs : clocks.blackClockMs}
-                active={gameIsActive && game.turn === (opponentIsWhite ? "w" : "b")}
-                running={gameIsActive}
-                rank={rankOf(standings, opponentKey) || undefined}
-                points={standingFor(opponentKey)?.points}
-                onStreak={standingFor(opponentKey)?.onStreak}
-                berserk={opponentIsWhite ? game.berserkWhite : game.berserkBlack}
-                online={gameIsActive && opponentKey ? online.has(String(opponentKey)) : undefined}
-              />
+            <aside className="hidden w-[260px] shrink-0 xl:block">
+              <SidePanel {...sidePanelProps} stacked sections={["standings", "boards"]} />
+            </aside>
+          ) : null}
+
+          {game ? (
+            <section
+              ref={columnRef}
+              className="flex min-w-0 flex-1 flex-col gap-2 [&>*]:mx-auto [&>*]:w-full [&>*]:max-w-[var(--board-size)] lg:[&>*]:mr-0 xl:[&>*]:mx-auto"
+              style={boardColumnStyle}
+            >
+              {/* Phones and tablets: a slim row for each player frames the board.
+                  From lg the clocks live in the game panel beside it. */}
+              <div className="lg:hidden">
+                <PlayerBar {...opponentInfo} clockMs={opponentClockMs} active={opponentActive} running={gameIsActive} />
+              </div>
 
               {/* Square, absolutely-filled area: measuring it can never feed back
                   into the size of the board it contains. */}
@@ -869,88 +965,22 @@ export function TournamentPlayClient({
                 </div>
               </div>
 
-              <PlayerBar
-                name={myName || "You"}
-                rating={opponentIsWhite ? game.blackRating : game.whiteRating}
-                clockMs={opponentIsWhite ? clocks.blackClockMs : clocks.whiteClockMs}
-                active={gameIsActive && game.turn === (opponentIsWhite ? "b" : "w")}
-                running={gameIsActive}
-                rank={myRank || undefined}
-                points={myStanding?.points}
-                onStreak={myStanding?.onStreak}
-                berserk={opponentIsWhite ? game.berserkBlack : game.berserkWhite}
-                isYou
-              />
-
-              <GameStatus
-                kind={statusKind}
-                detail={statusDetail}
-                action={
-                  statusKind === "read-only" ? (
-                    <button type="button" onClick={claimBoard} className="rounded-md bg-amber-700 px-2.5 py-1 text-xs font-semibold text-white">
-                      Play here
-                    </button>
-                  ) : statusKind === "premove" ? (
-                    <button type="button" onClick={() => setPremove(null)} className="rounded-md bg-white px-2.5 py-1 text-xs font-semibold text-teal-800">
-                      Cancel
-                    </button>
-                  ) : null
-                }
-              />
-
-              {/* Controls sit below the board and never over it. */}
-              <div ref={footerRef} className="flex flex-wrap items-center gap-2">
-                {gameIsActive ? (
-                  <>
-                    <button
-                      type="button"
-                      onClick={() => setConfirmAction("resign")}
-                      disabled={!hasBoardControl}
-                      className="btn min-h-11 border border-red-200 bg-red-50 text-red-700 hover:bg-red-100 disabled:opacity-50"
-                    >
-                      <Flag size={15} aria-hidden /> Resign
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setConfirmAction("draw")}
-                      disabled={!hasBoardControl || swissDrawLocked}
-                      title={swissDrawLocked ? "Draw offers open at move 30 in a Swiss tournament" : undefined}
-                      className="btn-outline min-h-11 disabled:opacity-50"
-                    >
-                      <Handshake size={15} aria-hidden /> {drawOffered ? "Accept draw" : "Offer draw"}
-                    </button>
-                    {drawOffered ? (
-                      <button type="button" onClick={() => submitResult("decline_draw")} className="btn-ghost min-h-11">
-                        <X size={15} aria-hidden /> Decline
-                      </button>
-                    ) : null}
-                    {canBerserkNow ? (
-                      <button type="button" onClick={() => submitResult("berserk")} className="btn-accent min-h-11">
-                        <Zap size={15} aria-hidden /> Berserk
-                      </button>
-                    ) : null}
-                  </>
-                ) : null}
-                {tournamentPlaying ? (
-                  participantState?.status === "paused" ? (
-                    <button type="button" onClick={() => setQueueStatus("resume")} className="btn min-h-11 bg-emerald-600 text-white hover:bg-emerald-700">
-                      <Play size={15} aria-hidden /> {isArena ? "Resume queue" : "Play next round"}
-                    </button>
-                  ) : (
-                    <button type="button" onClick={() => setQueueStatus("pause")} className="btn-ghost min-h-11">
-                      <Pause size={15} aria-hidden /> {isArena ? "Pause after this game" : "Sit out next round"}
-                    </button>
-                  )
-                ) : null}
+              <div ref={footerRef} className="lg:hidden">
+                <PlayerBar {...myInfo} clockMs={myClockMs} active={myClockActive} running={gameIsActive} />
               </div>
 
-              {/* Below the board where the panel column has collapsed under it. */}
+              <div className="space-y-2 lg:hidden">
+                {statusLine}
+                <div className="flex flex-wrap items-center gap-2">{controls}</div>
+              </div>
+
+              {/* Below the board where the panel columns have collapsed under it. */}
               <div className="mt-2 !max-w-none lg:hidden">
                 <SidePanel {...sidePanelProps} stacked={false} />
               </div>
             </section>
           ) : (
-            <section ref={columnRef} className="min-w-0">
+            <section ref={columnRef} className="min-w-0 flex-1">
               <WaitingPanel
                 state={state}
                 publicRoom={publicRoom}
@@ -971,10 +1001,44 @@ export function TournamentPlayClient({
             </section>
           )}
 
-          <aside className="hidden lg:block">
-            <SidePanel {...sidePanelProps} stacked />
-          </aside>
+          {game ? (
+            <aside className="hidden w-[300px] shrink-0 lg:block xl:w-[320px]" style={{ height: Math.max(boardWidth, 460) }}>
+              <div className="flex h-full flex-col overflow-hidden rounded-xl border border-slate-200/80 bg-white shadow-sm">
+                <div className={`border-b border-slate-100 p-3 transition-colors ${opponentActive ? "bg-brand-50/50" : ""}`}>
+                  <GameClock ms={opponentClockMs} active={opponentActive} running={gameIsActive} label={`${opponentInfo.name} clock`} size="lg" />
+                  <div className="mt-2">
+                    <PlayerIdentity {...opponentInfo} />
+                  </div>
+                </div>
+                <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
+                  <MoveList moves={game?.moveHistorySAN || []} />
+                </div>
+                <div className="space-y-2 border-t border-slate-100 p-3">
+                  {statusLine}
+                  <div className="grid grid-cols-2 gap-2 [&>*]:justify-center [&>*]:px-2">{controls}</div>
+                </div>
+                <div className={`border-t border-slate-100 p-3 transition-colors ${myClockActive ? "bg-brand-50/50" : ""}`}>
+                  <PlayerIdentity {...myInfo} />
+                  <div className="mt-2">
+                    <GameClock ms={myClockMs} active={myClockActive} running={gameIsActive} label={`${myInfo.name} clock`} size="lg" />
+                  </div>
+                </div>
+              </div>
+            </aside>
+          ) : (
+            <aside className="hidden w-[340px] shrink-0 lg:block">
+              <SidePanel {...sidePanelProps} stacked />
+            </aside>
+          )}
         </div>
+
+        {/* lg only: no third column yet, so standings and boards sit underneath. */}
+        {game ? (
+          <div className="mt-4 hidden gap-4 lg:grid lg:grid-cols-2 xl:hidden">
+            <SidePanel {...sidePanelProps} stacked sections={["standings"]} />
+            <SidePanel {...sidePanelProps} stacked sections={["boards"]} />
+          </div>
+        ) : null}
       </div>
 
       <GameDialog

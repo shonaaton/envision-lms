@@ -184,6 +184,10 @@ export function ensureTournamentStandings(tournament: TournamentLike) {
       recentResults: Array.isArray(existing?.recentResults) ? existing.recentResults : [],
     };
   });
+  // Rebuilt in join order, so it must be ranked again: clients take a
+  // player's rank from their position. Unsorted, every Arena pairing pass put
+  // the first to join at #1 on 0 points above a player on 2 (27 Nov 2026).
+  tournament.standings = sortStandings(tournament.standings as any, scoringOptionsFor(tournament));
   return tournament.standings;
 }
 
